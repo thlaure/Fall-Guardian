@@ -1,0 +1,260 @@
+import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+import '../models/contact.dart';
+import '../repositories/contacts_repository.dart';
+
+class ContactsScreen extends StatefulWidget {
+  const ContactsScreen({super.key});
+
+  @override
+  State<ContactsScreen> createState() => _ContactsScreenState();
+}
+
+class _ContactsScreenState extends State<ContactsScreen> {
+  final _repo = ContactsRepository();
+  List<Contact> _contacts = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final contacts = await _repo.getAll();
+    setState(() {
+      _contacts = contacts;
+      _loading = false;
+    });
+  }
+
+  Future<void> _addContact() async {
+    final result = await showDialog<Contact>(
+      context: context,
+      builder: (_) => const _ContactDialog(),
+    );
+    if (result != null) {
+      await _repo.add(result);
+      await _load();
+    }
+  }
+
+  Future<void> _editContact(Contact contact) async {
+    final result = await showDialog<Contact>(
+      context: context,
+      builder: (_) => _ContactDialog(existing: contact),
+    );
+    if (result != null) {
+      await _repo.update(result);
+      await _load();
+    }
+  }
+
+  Future<void> _deleteContact(Contact contact) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove contact?'),
+        content: Text('Remove ${contact.name} from emergency contacts?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child:
+                  const Text('Remove', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _repo.remove(contact.id);
+      await _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1A1A2E),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text('Emergency Contacts',
+            style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addContact,
+        backgroundColor: const Color(0xFF533483),
+        child: const Icon(Icons.add, color: Colors.white),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _contacts.isEmpty
+              ? _EmptyState(onAdd: _addContact)
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _contacts.length,
+                  itemBuilder: (_, i) => _ContactTile(
+                    contact: _contacts[i],
+                    onEdit: () => _editContact(_contacts[i]),
+                    onDelete: () => _deleteContact(_contacts[i]),
+                  ),
+                ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onAdd;
+  const _EmptyState({required this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.people_outline, size: 72, color: Colors.white24),
+          const SizedBox(height: 16),
+          const Text('No contacts yet',
+              style: TextStyle(color: Colors.white54, fontSize: 18)),
+          const SizedBox(height: 8),
+          const Text('Add family members to notify on fall detection.',
+              style: TextStyle(color: Colors.white38, fontSize: 14),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Contact'),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF533483)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactTile extends StatelessWidget {
+  final Contact contact;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _ContactTile({
+    required this.contact,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: const Color(0xFF0F3460),
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFF533483),
+          child: Text(contact.name[0].toUpperCase(),
+              style: const TextStyle(color: Colors.white)),
+        ),
+        title:
+            Text(contact.name, style: const TextStyle(color: Colors.white)),
+        subtitle: Text(contact.phone,
+            style: const TextStyle(color: Colors.white60)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+                icon: const Icon(Icons.edit, color: Colors.white54),
+                onPressed: onEdit),
+            IconButton(
+                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                onPressed: onDelete),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactDialog extends StatefulWidget {
+  final Contact? existing;
+  const _ContactDialog({this.existing});
+
+  @override
+  State<_ContactDialog> createState() => _ContactDialogState();
+}
+
+class _ContactDialogState extends State<_ContactDialog> {
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _name = TextEditingController(text: widget.existing?.name ?? '');
+    _phone = TextEditingController(text: widget.existing?.phone ?? '');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.existing != null;
+    return AlertDialog(
+      title: Text(isEditing ? 'Edit Contact' : 'Add Contact'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _name,
+              decoration: const InputDecoration(
+                  labelText: 'Name', prefixIcon: Icon(Icons.person)),
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Required' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phone,
+              decoration: const InputDecoration(
+                  labelText: 'Phone Number', prefixIcon: Icon(Icons.phone)),
+              keyboardType: TextInputType.phone,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Required' : null,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton(
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              final contact = Contact(
+                id: widget.existing?.id ?? const Uuid().v4(),
+                name: _name.text.trim(),
+                phone: _phone.text.trim(),
+              );
+              Navigator.pop(context, contact);
+            }
+          },
+          child: Text(isEditing ? 'Save' : 'Add'),
+        ),
+      ],
+    );
+  }
+}
