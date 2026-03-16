@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Fall Guardian</string>
+    <key>CFBundleDisplayName</key>
+    <string>Fall Guardian</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.fallguardian.app</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- Location permission -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Fall Guardian uses your location to include it in emergency SMS alerts.</string>
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Fall Guardian uses your location in the background to send with emergency SMS alerts.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Fall Guardian uses your location to include it in emergency SMS alerts.</string>
+
+    <!-- Background modes: watch communication + location + notifications -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+        <string>fetch</string>
+        <string>location</string>
+    </array>
+
+    <!-- WatchConnectivity companion -->
+    <key>WKCompanionAppBundleIdentifier</key>
+    <string>com.fallguardian.app</string>
+
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIMainStoryboardFile</key>
+    <string></string>
+
+    <key>NSSupportsLiveActivities</key>
+    <false/>
+</dict>
+</plist>
