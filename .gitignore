@@ -1,6 +1,6 @@
 # macOS
 .DS_Store
 
-# Xcode user state
+# Xcode user data
 *.xcuserstate
 xcuserdata/
