@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import 'contacts_screen.dart';
@@ -5,7 +6,8 @@ import 'history_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final Future<void> Function(int timestamp)? onSimulateFall;
+  const HomeScreen({super.key, this.onSimulateFall});
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +61,22 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const Spacer(),
+            if (kDebugMode && onSimulateFall != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      onSimulateFall!(DateTime.now().millisecondsSinceEpoch),
+                  icon: const Icon(Icons.bug_report, color: Colors.orangeAccent),
+                  label: const Text(
+                    'Simulate Fall (debug)',
+                    style: TextStyle(color: Colors.orangeAccent),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.orangeAccent),
+                  ),
+                ),
+              ),
             Text(
               l10n.homeFootnote,
               textAlign: TextAlign.center,
