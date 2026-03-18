@@ -158,11 +158,13 @@ The algorithm is implemented identically in Kotlin (`wear_os_app`) and Swift (`w
 
 | Tool | Purpose |
 |------|---------|
-| Flutter SDK ≥ 3.0 | Phone app |
+| Flutter SDK ≥ 3.43 (beta channel) | Phone app |
 | Android Studio | Wear OS app + Android phone |
-| Xcode ≥ 15 | watchOS app + iPhone |
+| Xcode ≥ 26 | watchOS app + iPhone |
 | Galaxy Watch (or emulator) | Wear OS testing |
 | Apple Watch (or simulator) | watchOS testing |
+
+> Flutter beta channel is required for iOS 26 simulator compatibility. Switch with `flutter channel beta && flutter upgrade`.
 
 ---
 
@@ -171,13 +173,18 @@ The algorithm is implemented identically in Kotlin (`wear_os_app`) and Swift (`w
 ```bash
 cd flutter_app
 flutter pub get
-flutter run          # Android
-flutter run --device <ios-device-id>   # iOS
+flutter run                   # picks the connected device
+flutter run -d emulator-5554  # explicit Android emulator
+flutter run -d <ios-udid>     # explicit iOS simulator
 ```
 
-**Android** — the `WearDataListenerService` is automatically registered in `AndroidManifest.xml`. No extra configuration needed; it will receive Data Layer events when the phone and watch share the same Google account.
+**Android** — the `WearDataListenerService` is automatically registered in `AndroidManifest.xml`. No extra configuration needed; it receives Data Layer events when the phone and watch share the same Google account.
 
-**iOS** — open `flutter_app/ios/Runner.xcworkspace` in Xcode, set your Team and Bundle Identifier (`com.yourname.fallguardian`), then run. The watchOS bundle ID must match with `.watch` suffix.
+**iOS** — the `ios/` directory must exist (it is generated and committed). If it is missing, regenerate it with:
+```bash
+flutter create --platforms=ios --org com.fallguardian .
+```
+Then open `flutter_app/ios/Runner.xcworkspace` in Xcode to set your Team under *Signing & Capabilities* before running on a physical device.
 
 ---
 
@@ -234,7 +241,29 @@ If you get false positives from normal activity (hand gestures, sitting down har
 
 ---
 
-## Testing
+## Unit tests
+
+The Flutter app has unit and widget tests covering models, repositories, and the fall alert screen.
+
+```bash
+cd flutter_app
+flutter test              # run all tests
+flutter test --coverage   # with coverage report
+```
+
+Test files are under `flutter_app/test/`:
+
+| File | What it covers |
+|------|---------------|
+| `models/contact_test.dart` | JSON serialization, `copyWith` |
+| `models/fall_event_test.dart` | JSON serialization, all status values |
+| `repositories/contacts_repository_test.dart` | add / remove / update / save |
+| `repositories/fall_events_repository_test.dart` | add, newest-first sort, clear |
+| `screens/fall_alert_screen_test.dart` | countdown render, cancel flow |
+
+---
+
+## Manual testing
 
 ### Verify detection
 Hold the watch on your wrist, stand up straight, then quickly flick your arm downward and tilt your wrist to horizontal. This mimics the impact + tilt signature of a fall. The 30-second countdown should appear on the phone within 1–2 seconds.
@@ -257,15 +286,14 @@ Restart the Galaxy Watch. Open the Fall Guardian app — it should be running wi
 
 ### Flutter (`flutter_app/pubspec.yaml`)
 
-| Package | Purpose |
-|---------|---------|
-| `geolocator` | GPS location |
-| `flutter_sms` | SMS sending |
-| `shared_preferences` | Contacts + settings persistence |
-| `flutter_local_notifications` | Full-screen fall alert notification |
-| `permission_handler` | Runtime permission requests |
-| `uuid` | Unique IDs for events and contacts |
-| `intl` | Date formatting in History screen |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `geolocator` | ^10.1.0 | GPS location |
+| `flutter_sms` | ^3.0.1 | SMS sending |
+| `shared_preferences` | ^2.2.2 | Contacts + settings persistence |
+| `flutter_local_notifications` | ^17.0.0 | Full-screen fall alert notification |
+| `uuid` | ^4.3.3 | Unique IDs for events and contacts |
+| `intl` | ^0.20.2 | Date formatting in History screen |
 
 ### Wear OS (`wear_os_app/app/build.gradle`)
 
