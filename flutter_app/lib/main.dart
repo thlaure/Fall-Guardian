@@ -78,7 +78,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF1A1A2E),
       ),
-      home: const HomeScreen(),
+      home: HomeScreen(onSimulateFall: _onFallDetected),
     );
   }
 }
