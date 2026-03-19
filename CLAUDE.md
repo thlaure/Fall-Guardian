@@ -28,7 +28,7 @@ dart format lib/       # auto-format
 ## Key technical decisions
 
 ### iOS — UIScene lifecycle (iOS 26)
-`ios/Runner/SceneDelegate.swift` opts into the UIScene lifecycle required by iOS 26. `AppDelegate.swift` registers plugins and sets up the WatchConnectivity channel lazily in `applicationDidBecomeActive` because `window` is `nil` during `didFinishLaunchingWithOptions` under UIScene.
+`ios/Runner/SceneDelegate.swift` opts into the UIScene lifecycle required by iOS 26. `AppDelegate.swift` conforms to `FlutterImplicitEngineDelegate` (required by Flutter 3.43+). Plugin registration and WatchConnectivity channel setup happen in `didInitializeImplicitFlutterEngine(_:)` via `engineBridge.pluginRegistry` and `engineBridge.applicationRegistrar.messenger()`. The old `applicationDidBecomeActive` approach causes a black screen on iOS 26.
 
 ### iOS — project file regeneration
 The `ios/` directory (including `Runner.xcodeproj`) was generated via `flutter create --platforms=ios --org com.fallguardian .`. If it ever goes missing, that command recreates it. `WatchSessionManager.swift` must remain registered in `project.pbxproj` — it was added manually (UUIDs: file ref `B1C2D3E4F5A6B7C8D9E0F1A2`, build file `A1B2C3D4E5F6A7B8C9D0E1F2`).
