@@ -23,11 +23,20 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 
   Future<void> _load() async {
-    final contacts = await _repo.getAll();
-    setState(() {
-      _contacts = contacts;
-      _loading = false;
-    });
+    try {
+      final contacts = await _repo.getAll();
+      setState(() {
+        _contacts = contacts;
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load contacts.')),
+        );
+      }
+    }
   }
 
   Future<void> _addContact() async {

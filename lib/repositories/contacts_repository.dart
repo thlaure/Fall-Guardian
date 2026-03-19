@@ -8,9 +8,15 @@ class ContactsRepository {
   Future<List<Contact>> getAll() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
-    return raw
-        .map((s) => Contact.fromJson(jsonDecode(s) as Map<String, dynamic>))
-        .toList();
+    final contacts = <Contact>[];
+    for (final s in raw) {
+      try {
+        contacts.add(Contact.fromJson(jsonDecode(s) as Map<String, dynamic>));
+      } catch (_) {
+        // skip corrupted entry
+      }
+    }
+    return contacts;
   }
 
   Future<void> save(List<Contact> contacts) async {
