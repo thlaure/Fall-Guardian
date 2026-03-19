@@ -30,6 +30,7 @@ android {
 
     buildTypes {
         release {
+            // TODO: replace with a proper release keystore before shipping to production.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

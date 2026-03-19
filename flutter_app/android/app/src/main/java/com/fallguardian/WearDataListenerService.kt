@@ -1,7 +1,9 @@
 package com.fallguardian
 
 import android.content.Intent
+import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import java.nio.ByteBuffer
 
@@ -12,10 +14,16 @@ import java.nio.ByteBuffer
 class WearDataListenerService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
-        if (messageEvent.path == "/fall_event") {
-            val timestamp = ByteBuffer.wrap(messageEvent.data).long
-            handleFallDetected(timestamp)
+        if (messageEvent.path != "/fall_event") return
+        // Validate that the sender is an actually connected Wearable node.
+        val connectedNodes = try {
+            Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+        } catch (_: Exception) {
+            return
         }
+        if (connectedNodes.none { it.id == messageEvent.sourceNodeId }) return
+        val timestamp = ByteBuffer.wrap(messageEvent.data).long
+        handleFallDetected(timestamp)
     }
 
     private fun handleFallDetected(timestamp: Long) {

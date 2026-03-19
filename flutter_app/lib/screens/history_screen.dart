@@ -23,11 +23,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _load() async {
-    final events = await _repo.getAll();
-    setState(() {
-      _events = events;
-      _loading = false;
-    });
+    try {
+      final events = await _repo.getAll();
+      setState(() {
+        _events = events;
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load history.')),
+        );
+      }
+    }
   }
 
   Future<void> _clearHistory() async {

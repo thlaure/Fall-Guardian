@@ -1,5 +1,6 @@
 package com.fallguardian
 
+import android.content.Intent
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
@@ -27,6 +28,19 @@ class MainActivity : FlutterActivity(), MessageClient.OnMessageReceivedListener 
         super.configureFlutterEngine(flutterEngine)
         weakInstance = java.lang.ref.WeakReference(this)
         channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        // Handle fall event launched via intent (activity was not running)
+        intent?.getLongExtra("fall_timestamp", Long.MIN_VALUE)
+            ?.takeIf { it != Long.MIN_VALUE }
+            ?.let { sendFallDetectedToFlutter(it) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Handle fall event when activity is already running (singleTop)
+        intent.getLongExtra("fall_timestamp", Long.MIN_VALUE)
+            .takeIf { it != Long.MIN_VALUE }
+            ?.let { sendFallDetectedToFlutter(it) }
     }
 
     override fun onResume() {

@@ -8,10 +8,15 @@ class FallEventsRepository {
   Future<List<FallEvent>> getAll() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getStringList(_key) ?? [];
-    return raw
-        .map((s) => FallEvent.fromJson(jsonDecode(s) as Map<String, dynamic>))
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final events = <FallEvent>[];
+    for (final s in raw) {
+      try {
+        events.add(FallEvent.fromJson(jsonDecode(s) as Map<String, dynamic>));
+      } catch (_) {
+        // skip corrupted entry
+      }
+    }
+    return events..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
 
   Future<void> add(FallEvent event) async {
