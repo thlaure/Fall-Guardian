@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'package:geolocator/geolocator.dart';
 import '../l10n/app_localizations.dart';
 import '../models/fall_event.dart';
@@ -12,8 +13,9 @@ import 'package:uuid/uuid.dart';
 
 class FallAlertScreen extends StatefulWidget {
   final int fallTimestamp;
+  final Stream<void>? cancelStream;
 
-  const FallAlertScreen({super.key, required this.fallTimestamp});
+  const FallAlertScreen({super.key, required this.fallTimestamp, this.cancelStream});
 
   @override
   State<FallAlertScreen> createState() => _FallAlertScreenState();
@@ -25,6 +27,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
   int _remaining = _countdownSeconds;
   Timer? _timer;
+  StreamSubscription<void>? _cancelSub;
   bool _dismissed = false;
   bool _sending = false;
   String _statusMessage = '';
@@ -37,6 +40,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     super.initState();
     _setupPulse();
     _startCountdown();
+    _cancelSub = widget.cancelStream?.listen((_) => _cancel());
   }
 
   void _setupPulse() {
@@ -122,6 +126,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   @override
   void dispose() {
     _timer?.cancel();
+    _cancelSub?.cancel();
     _pulseController.dispose();
     super.dispose();
   }

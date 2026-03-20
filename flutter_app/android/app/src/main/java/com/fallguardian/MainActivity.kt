@@ -1,15 +1,11 @@
 package com.fallguardian
 
 import android.content.Intent
-import com.google.android.gms.wearable.MessageClient
-import com.google.android.gms.wearable.MessageEvent
-import com.google.android.gms.wearable.Wearable
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.nio.ByteBuffer
 
-class MainActivity : FlutterActivity(), MessageClient.OnMessageReceivedListener {
+class MainActivity : FlutterActivity() {
 
     companion object {
         const val CHANNEL = "fall_guardian/watch"
@@ -58,23 +54,6 @@ class MainActivity : FlutterActivity(), MessageClient.OnMessageReceivedListener 
         return intent.`package` == packageName || callingActivity?.packageName == packageName
     }
 
-    override fun onResume() {
-        super.onResume()
-        Wearable.getMessageClient(this).addListener(this)
-    }
-
-    override fun onPause() {
-        super.onPause()
-        Wearable.getMessageClient(this).removeListener(this)
-    }
-
-    override fun onMessageReceived(messageEvent: MessageEvent) {
-        if (messageEvent.path == "/fall_event") {
-            val timestamp = ByteBuffer.wrap(messageEvent.data).long
-            sendFallDetectedToFlutter(timestamp)
-        }
-    }
-
     /**
      * Called by WearDataListenerService (background) or onDataChanged (foreground)
      * when a fall event arrives from the watch.
@@ -82,6 +61,12 @@ class MainActivity : FlutterActivity(), MessageClient.OnMessageReceivedListener 
     fun sendFallDetectedToFlutter(timestamp: Long) {
         runOnUiThread {
             channel.invokeMethod("onFallDetected", mapOf("timestamp" to timestamp))
+        }
+    }
+
+    fun sendCancelAlertToFlutter() {
+        runOnUiThread {
+            channel.invokeMethod("onAlertCancelled", null)
         }
     }
 
