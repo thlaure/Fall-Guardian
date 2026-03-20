@@ -14,7 +14,7 @@ class AppLocalizationsFr extends AppLocalizations {
   // ── Home ─────────────────────────────────────────────────────────────────
   @override String get homeStatusTitle => 'Protégé';
   @override String get homeStatusBody =>
-      'La détection de chutes PSP est active.\n'
+      'La détection de chutes est active.\n'
       'Une alerte de 30 secondes apparaîtra si une chute est détectée.';
   @override String get homeContactsTitle => 'Contacts d\'urgence';
   @override String get homeContactsSubtitle => 'Gérer qui est alerté';
@@ -65,11 +65,11 @@ class AppLocalizationsFr extends AppLocalizations {
   // ── Settings ─────────────────────────────────────────────────────────────
   @override String get settingsTitle => 'Paramètres';
   @override String get settingsSaved => 'Paramètres enregistrés';
-  @override String get thresholdsSection => 'Seuils de détection PSP';
+  @override String get thresholdsSection => 'Seuils de détection de chutes';
   @override String get thresholdsInfo =>
       'Ces seuils contrôlent la sensibilité. Des seuils de chute libre plus bas '
-      'et d\'impact plus élevés réduisent les fausses alertes. Les chutes PSP '
-      'manquent souvent de phase de chute libre — impact + inclinaison seuls '
+      'et d\'impact plus élevés réduisent les fausses alertes. Certaines chutes '
+      'manquent de phase de chute libre — impact + inclinaison seuls '
       'déclencheront une alerte.';
   @override String get freeFallLabel => 'Seuil de chute libre';
   @override String get freeFallDesc =>

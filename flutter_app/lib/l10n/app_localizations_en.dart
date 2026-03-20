@@ -14,7 +14,7 @@ class AppLocalizationsEn extends AppLocalizations {
   // ── Home ─────────────────────────────────────────────────────────────────
   @override String get homeStatusTitle => 'Protected';
   @override String get homeStatusBody =>
-      'PSP fall detection is active.\nA 30-second alert will appear if a fall is detected.';
+      'Fall detection is active.\nA 30-second alert will appear if a fall is detected.';
   @override String get homeContactsTitle => 'Emergency Contacts';
   @override String get homeContactsSubtitle => 'Manage who gets alerted';
   @override String get homeHistoryTitle => 'Fall History';
@@ -63,10 +63,10 @@ class AppLocalizationsEn extends AppLocalizations {
   // ── Settings ─────────────────────────────────────────────────────────────
   @override String get settingsTitle => 'Settings';
   @override String get settingsSaved => 'Settings saved';
-  @override String get thresholdsSection => 'PSP Fall Detection Thresholds';
+  @override String get thresholdsSection => 'Fall Detection Thresholds';
   @override String get thresholdsInfo =>
       'These thresholds control sensitivity. Lower free-fall and higher impact '
-      'thresholds reduce false positives. PSP falls often lack a free-fall '
+      'thresholds reduce false positives. Some falls lack a free-fall '
       'phase — impact + tilt alone will trigger an alert.';
   @override String get freeFallLabel => 'Free-fall threshold';
   @override String get freeFallDesc =>
