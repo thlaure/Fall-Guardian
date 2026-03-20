@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
@@ -22,11 +23,17 @@ class FallGuardianApp extends StatefulWidget {
 class _FallGuardianAppState extends State<FallGuardianApp> {
   final _watchService = WatchCommunicationService();
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _cancelAlertController = StreamController<void>.broadcast();
 
   @override
   void initState() {
     super.initState();
     _watchService.setFallDetectedCallback(_onFallDetected);
+    _watchService.setCancelAlertCallback(_onAlertCancelled);
+  }
+
+  void _onAlertCancelled() {
+    _cancelAlertController.add(null);
   }
 
   Future<void> _onFallDetected(int timestamp) async {
@@ -34,14 +41,25 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
     final context = _navigatorKey.currentContext;
     final l10n = context != null ? AppLocalizations.of(context) : null;
 
-    await NotificationService().showFallDetectedNotification(
-      title: l10n?.notifTitle ?? '⚠️ Fall Detected',
-      body: l10n?.notifBody ?? 'Open app to cancel or send alert in 30 seconds',
-    );
+    // Only show the notification when the app is backgrounded (e.g. screen locked).
+    // When the app is in the foreground FallAlertScreen is pushed directly, so
+    // showing a heads-up banner would require a second tap to dismiss it before
+    // the user can interact with the cancel button.
+    final isInForeground =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    if (!isInForeground) {
+      await NotificationService().showFallDetectedNotification(
+        title: l10n?.notifTitle ?? '⚠️ Fall Detected',
+        body: l10n?.notifBody ?? 'Open app to cancel or send alert in 30 seconds',
+      );
+    }
 
     _navigatorKey.currentState?.push(
       MaterialPageRoute(
-        builder: (_) => FallAlertScreen(fallTimestamp: timestamp),
+        builder: (_) => FallAlertScreen(
+          fallTimestamp: timestamp,
+          cancelStream: _cancelAlertController.stream,
+        ),
         fullscreenDialog: true,
       ),
     );
@@ -49,6 +67,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
 
   @override
   void dispose() {
+    _cancelAlertController.close();
     _watchService.dispose();
     super.dispose();
   }
@@ -71,13 +90,17 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
       locale: null, // null = follow device locale automatically
       // ─────────────────────────────────────────────────────────────────────
       theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF533483)),
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF533483),
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF1A1A2E),
       ),
+      themeMode: ThemeMode.system,
       home: HomeScreen(onSimulateFall: _onFallDetected),
     );
   }
