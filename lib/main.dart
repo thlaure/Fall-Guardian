@@ -6,9 +6,9 @@ import 'screens/fall_alert_screen.dart';
 import 'services/watch_communication_service.dart';
 import 'services/notification_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  NotificationService().initialize(); // fire-and-forget — don't block runApp
+  await NotificationService().initialize();
   runApp(const FallGuardianApp());
 }
 
