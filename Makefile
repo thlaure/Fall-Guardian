@@ -49,7 +49,7 @@ run-watchos:
 run-wear:
 	cd $(WEAR_APP_DIR) && ./gradlew assembleDebug
 	$(ADB) -s $(WEAR_DEVICE) install -r $(WEAR_APP_DIR)/app/build/outputs/apk/debug/app-debug.apk
-	$(ADB) -s $(WEAR_DEVICE) shell am start -n com.fallguardian.wear/.MainActivity
+	$(ADB) -s $(WEAR_DEVICE) shell am start -n com.fallguardian/.MainActivity
 
 install:
 	cd $(FLUTTER_APP_DIR) && flutter pub get
