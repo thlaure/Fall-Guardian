@@ -68,16 +68,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
-        title: Text(l10n.historyTitle,
-            style: const TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(l10n.historyTitle),
         actions: [
           if (_events.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.delete_sweep, color: Colors.white70),
+              icon: const Icon(Icons.delete_sweep),
               onPressed: _clearHistory,
             ),
         ],
@@ -89,11 +85,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.history, size: 72, color: Colors.white24),
+                      Icon(Icons.history, size: 72,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
                       const SizedBox(height: 16),
                       Text(l10n.historyEmpty,
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 18)),
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontSize: 18)),
                     ],
                   ),
                 )
@@ -114,6 +112,7 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final fmt = DateFormat('MMM d, yyyy — h:mm a');
     final (icon, color, label) = switch (event.status) {
       FallEventStatus.alertSent =>
@@ -121,13 +120,12 @@ class _EventTile extends StatelessWidget {
       FallEventStatus.alertFailed =>
         (Icons.sms_failed, Colors.deepOrange, l10n.statusAlertFailed),
       FallEventStatus.cancelled =>
-        (Icons.cancel, Colors.greenAccent, l10n.statusCancelled),
+        (Icons.cancel, Colors.green, l10n.statusCancelled),
       FallEventStatus.timedOutNoSms =>
         (Icons.timer_off, Colors.orangeAccent, l10n.statusTimedOut),
     };
 
     return Card(
-      color: const Color(0xFF0F3460),
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: Padding(
@@ -144,15 +142,14 @@ class _EventTile extends StatelessWidget {
                         color: color, fontWeight: FontWeight.bold)),
                 const Spacer(),
                 Text(fmt.format(event.timestamp.toLocal()),
-                    style: const TextStyle(
-                        color: Colors.white60, fontSize: 12)),
+                    style: TextStyle(
+                        color: cs.onSurfaceVariant, fontSize: 12)),
               ],
             ),
             if (event.notifiedContacts.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(l10n.notifiedLabel(event.notifiedContacts.join(', ')),
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 13)),
+                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
             ],
             if (event.latitude != null && event.longitude != null) ...[
               const SizedBox(height: 4),
@@ -160,8 +157,7 @@ class _EventTile extends StatelessWidget {
                 l10n.locationLabel(
                     '${event.latitude!.toStringAsFixed(5)}, '
                     '${event.longitude!.toStringAsFixed(5)}'),
-                style:
-                    const TextStyle(color: Colors.white38, fontSize: 12),
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
               ),
             ],
           ],

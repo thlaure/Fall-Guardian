@@ -54,19 +54,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
-        title: Text(l10n.settingsTitle,
-            style: const TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(l10n.settingsTitle),
         actions: [
           TextButton(
             onPressed: _save,
-            child: Text(l10n.save,
-                style: const TextStyle(color: Colors.white)),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -75,9 +71,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                _sectionHeader(l10n.thresholdsSection),
+                _sectionHeader(l10n.thresholdsSection, cs),
                 const SizedBox(height: 8),
-                _infoCard(l10n.thresholdsInfo),
+                _infoCard(l10n.thresholdsInfo, cs),
                 const SizedBox(height: 24),
                 _sliderTile(
                   label: l10n.freeFallLabel,
@@ -88,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   divisions: 18,
                   description: l10n.freeFallDesc,
                   onChanged: (v) => setState(() => _freeFallThreshold = v),
+                  cs: cs,
                 ),
                 _sliderTile(
                   label: l10n.impactLabel,
@@ -98,6 +95,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   divisions: 35,
                   description: l10n.impactDesc,
                   onChanged: (v) => setState(() => _impactThreshold = v),
+                  cs: cs,
                 ),
                 _sliderTile(
                   label: l10n.tiltLabel,
@@ -108,6 +106,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   divisions: 70,
                   description: l10n.tiltDesc,
                   onChanged: (v) => setState(() => _tiltThreshold = v),
+                  cs: cs,
                 ),
                 _sliderTile(
                   label: l10n.freeFallDurationLabel,
@@ -119,6 +118,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   description: l10n.freeFallDurationDesc,
                   onChanged: (v) =>
                       setState(() => _freeFallMinMs = v.round()),
+                  cs: cs,
                 ),
                 const SizedBox(height: 32),
                 OutlinedButton.icon(
@@ -131,31 +131,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     });
                     await _save();
                   },
-                  icon: const Icon(Icons.restore, color: Colors.white70),
-                  label: Text(l10n.resetDefaults,
-                      style: const TextStyle(color: Colors.white70)),
-                  style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.white24)),
+                  icon: const Icon(Icons.restore),
+                  label: Text(l10n.resetDefaults),
                 ),
               ],
             ),
     );
   }
 
-  Widget _sectionHeader(String title) => Text(
+  Widget _sectionHeader(String title, ColorScheme cs) => Text(
         title,
-        style: const TextStyle(
-            color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+        style: TextStyle(
+            color: cs.onSurface, fontSize: 18, fontWeight: FontWeight.bold),
       );
 
-  Widget _infoCard(String text) => Container(
+  Widget _infoCard(String text, ColorScheme cs) => Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F3460),
+          color: cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(text,
-            style: const TextStyle(color: Colors.white60, fontSize: 13)),
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
       );
 
   Widget _sliderTile({
@@ -167,6 +164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required int divisions,
     required String description,
     required ValueChanged<double> onChanged,
+    required ColorScheme cs,
   }) {
     final displayVal = unit == AppLocalizations.of(context).unitMs
         ? '${value.round()}$unit'
@@ -181,24 +179,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Expanded(
                 child: Text(label,
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w600)),
+                    style: TextStyle(
+                        color: cs.onSurface, fontWeight: FontWeight.w600)),
               ),
               Text(displayVal,
-                  style: const TextStyle(
-                      color: Colors.orangeAccent,
-                      fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      color: cs.primary, fontWeight: FontWeight.bold)),
             ],
           ),
           Text(description,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12)),
           Slider(
             value: value,
             min: min,
             max: max,
             divisions: divisions,
-            activeColor: const Color(0xFF533483),
-            inactiveColor: Colors.white12,
             onChanged: onChanged,
           ),
         ],

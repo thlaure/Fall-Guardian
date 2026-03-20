@@ -14,16 +14,11 @@ class HomeScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
-        title: Text(
-          l10n.appTitle,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        title: Text(l10n.appTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white70),
+            icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -43,7 +38,6 @@ class HomeScreen extends StatelessWidget {
               icon: Icons.people,
               label: l10n.homeContactsTitle,
               subtitle: l10n.homeContactsSubtitle,
-              color: const Color(0xFF0F3460),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const ContactsScreen()),
@@ -54,7 +48,6 @@ class HomeScreen extends StatelessWidget {
               icon: Icons.history,
               label: l10n.homeHistoryTitle,
               subtitle: l10n.homeHistorySubtitle,
-              color: const Color(0xFF0F3460),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HistoryScreen()),
@@ -80,7 +73,10 @@ class HomeScreen extends StatelessWidget {
             Text(
               l10n.homeFootnote,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white38, fontSize: 13),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 13,
+              ),
             ),
             const SizedBox(height: 16),
           ],
@@ -107,7 +103,7 @@ class _StatusCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
+            color: Colors.black.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -149,21 +145,20 @@ class _NavButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final String subtitle;
-  final Color color;
   final VoidCallback onTap;
 
   const _NavButton({
     required this.icon,
     required this.label,
     required this.subtitle,
-    required this.color,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Material(
-      color: color,
+      color: cs.secondaryContainer,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -172,24 +167,25 @@ class _NavButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
           child: Row(
             children: [
-              Icon(icon, color: Colors.white, size: 28),
+              Icon(icon, color: cs.onSecondaryContainer, size: 28),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(label,
-                        style: const TextStyle(
-                            color: Colors.white,
+                        style: TextStyle(
+                            color: cs.onSecondaryContainer,
                             fontSize: 16,
                             fontWeight: FontWeight.w600)),
                     Text(subtitle,
-                        style:
-                            const TextStyle(color: Colors.white60, fontSize: 13)),
+                        style: TextStyle(
+                            color: cs.onSecondaryContainer.withValues(alpha: 0.7),
+                            fontSize: 13)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.white54),
+              Icon(Icons.chevron_right, color: cs.onSecondaryContainer.withValues(alpha: 0.6)),
             ],
           ),
         ),

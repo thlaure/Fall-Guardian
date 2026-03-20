@@ -90,17 +90,12 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF16213E),
-        title: Text(l10n.contactsScreenTitle,
-            style: const TextStyle(color: Colors.white)),
-        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(l10n.contactsScreenTitle),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addContact,
-        backgroundColor: const Color(0xFF533483),
-        child: const Icon(Icons.add, color: Colors.white),
+        child: const Icon(Icons.add),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -126,25 +121,24 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.people_outline, size: 72, color: Colors.white24),
+          Icon(Icons.people_outline, size: 72, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
           const SizedBox(height: 16),
           Text(l10n.contactsEmpty,
-              style: const TextStyle(color: Colors.white54, fontSize: 18)),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 18)),
           const SizedBox(height: 8),
           Text(l10n.contactsEmptyHint,
-              style: const TextStyle(color: Colors.white38, fontSize: 14),
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
               textAlign: TextAlign.center),
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
             label: Text(l10n.addContact),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF533483)),
           ),
         ],
       ),
@@ -165,25 +159,24 @@ class _ContactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Card(
-      color: const Color(0xFF0F3460),
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: const Color(0xFF533483),
+          backgroundColor: cs.primaryContainer,
           child: Text(contact.name[0].toUpperCase(),
-              style: const TextStyle(color: Colors.white)),
+              style: TextStyle(color: cs.onPrimaryContainer)),
         ),
-        title: Text(contact.name,
-            style: const TextStyle(color: Colors.white)),
+        title: Text(contact.name),
         subtitle: Text(contact.phone,
-            style: const TextStyle(color: Colors.white60)),
+            style: TextStyle(color: cs.onSurfaceVariant)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-                icon: const Icon(Icons.edit, color: Colors.white54),
+                icon: Icon(Icons.edit, color: cs.onSurfaceVariant),
                 onPressed: onEdit),
             IconButton(
                 icon: const Icon(Icons.delete, color: Colors.redAccent),
