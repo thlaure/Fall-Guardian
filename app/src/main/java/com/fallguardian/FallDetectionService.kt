@@ -126,7 +126,7 @@ class FallDetectionService : Service(), SensorEventListener {
             CHANNEL_ID,
             "Fall Detection",
             NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "PSP fall monitoring is active" }
+        ).apply { description = "Fall monitoring is active" }
 
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
@@ -135,7 +135,7 @@ class FallDetectionService : Service(), SensorEventListener {
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Fall Guardian Active")
-            .setContentText("PSP fall detection is running")
+            .setContentText("Fall detection is running")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)
             .build()
