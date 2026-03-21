@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_sms/flutter_sms.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/contact.dart';
 
 class SmsService {
   static DateTime? _lastSentAt;
+  static const _kLastSentAtMs = 'sms_last_sent_at_ms';
 
-  /// Resets the rate-limiting state. Only for use in tests.
+  /// Resets the in-memory rate-limiting state. Only for use in tests.
   @visibleForTesting
   static void resetLastSentAt() => _lastSentAt = null;
 
@@ -27,6 +29,14 @@ class SmsService {
     if (contacts.isEmpty) return [];
 
     final now = DateTime.now();
+
+    // Load persisted timestamp on first call after app restart
+    if (_lastSentAt == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final ms = prefs.getInt(_kLastSentAtMs);
+      if (ms != null) _lastSentAt = DateTime.fromMillisecondsSinceEpoch(ms);
+    }
+
     if (_lastSentAt != null && now.difference(_lastSentAt!).inSeconds < 60) {
       return [];
     }
@@ -37,6 +47,8 @@ class SmsService {
       final result = await sendSMS(message: message, recipients: phones);
       if (result == 'sent') {
         _lastSentAt = DateTime.now();
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(_kLastSentAtMs, _lastSentAt!.millisecondsSinceEpoch);
         return contacts.map((c) => c.name).toList();
       }
       return [];

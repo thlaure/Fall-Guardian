@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/models/contact.dart';
 import 'package:fall_guardian/services/sms_service.dart';
 
@@ -12,6 +13,7 @@ void main() {
 
   setUp(() {
     // Reset the static rate-limit state so every test starts clean.
+    SharedPreferences.setMockInitialValues({});
     SmsService.resetLastSentAt();
   });
 
