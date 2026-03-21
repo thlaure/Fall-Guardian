@@ -45,9 +45,10 @@ No server, no subscription, no internet required — just SMS.
 │  FallDetectionService           │
 │  50 Hz accelerometer            │
 │  PSP fall algorithm             │
-└────────────┬────────────────────┘
-             │ Wearable Data Layer API
-┌────────────▼────────────────────┐
+└──────┬──────────────────▲───────┘
+       │ fall / cancel     │ thresholds
+       │ Wearable Data     │ Layer API
+┌──────▼──────────────────┴───────┐
 │  Android Phone App (Flutter)    │
 │  WearDataListenerService        │
 │  30s countdown · SMS · GPS      │
@@ -59,9 +60,10 @@ No server, no subscription, no internet required — just SMS.
 │  FallDetectionManager           │
 │  CMMotionManager 50 Hz          │
 │  PSP fall algorithm             │
-└────────────┬────────────────────┘
-             │ WatchConnectivity (WCSession)
-┌────────────▼────────────────────┐
+└──────┬──────────────────▲───────┘
+       │ fall / cancel     │ thresholds
+       │ WatchConnectivity │ (WCSession)
+┌──────▼──────────────────┴───────┐
 │  iOS Phone App (Flutter)        │
 │  WatchSessionManager            │
 │  (identical to Android app)     │
@@ -106,20 +108,23 @@ fall_guardian/
 │           └── WatchSessionManager.swift     # WCSession receiver
 │
 ├── wear_os_app/                        # Native Kotlin Wear OS app
-│   └── app/src/main/java/com/fallguardian/wear/
-│       ├── FallDetectionService.kt     # Foreground service, sensor loop
-│       ├── FallAlgorithm.kt            # 3-phase PSP detection algorithm
-│       ├── WearDataSender.kt           # Data Layer → phone
-│       ├── MainActivity.kt             # Compose status screen
-│       └── BootReceiver.kt             # Auto-restart on reboot
+│   └── app/src/main/java/com/fallguardian/
+│       ├── FallDetectionService.kt         # Foreground service, sensor loop
+│       ├── FallAlgorithm.kt                # PSP detection algorithm
+│       ├── WearDataSender.kt               # Data Layer → phone (fall / cancel)
+│       ├── PhoneMessageListenerService.kt  # Data Layer ← phone (thresholds)
+│       ├── MainActivity.kt                 # Compose status / alert screen
+│       └── BootReceiver.kt                 # Auto-restart on reboot
 │
 └── watchos_app/                        # Native Swift watchOS app
-    └── FallGuardian WatchKit Extension/
-        ├── FallDetectionManager.swift  # CMMotionManager sensor loop
-        ├── FallAlgorithm.swift         # 3-phase PSP detection algorithm
-        ├── WatchSessionManager.swift   # WCSession → phone
-        ├── ContentView.swift           # SwiftUI status screen
-        └── FallGuardianApp.swift       # App entry point
+    ├── FallGuardian/FallGuardian Watch App/
+    │   ├── FallDetectionManager.swift  # CMMotionManager sensor loop
+    │   ├── FallAlgorithm.swift         # PSP detection algorithm
+    │   ├── WatchSessionManager.swift   # WCSession ↔ phone
+    │   ├── ContentView.swift           # SwiftUI status / alert screen
+    │   └── FallGuardianApp.swift       # App entry point
+    └── FallGuardianTests/
+        └── FallAlgorithmTests.swift    # XCTest unit tests for the algorithm
 ```
 
 ---
@@ -141,10 +146,14 @@ Standard fall detection waits for the person to stay on the ground. PSP patients
 **Trigger rule:**
 
 ```
-Fall detected = (FreeFall AND Impact) OR (Impact AND Tilt)
+Fall detected = FreeFallLatch AND ImpactActive
 ```
 
-The OR branch (`Impact AND Tilt`) is the key PSP addition: a slow topple has no free-fall phase, but it does produce an impact spike and a large orientation change. No immobility check is performed — the alert fires immediately.
+- `FreeFallLatch` latches to `true` once a qualified free-fall phase has occurred and stays set until `reset()` — so the impact can arrive slightly after the free-fall ends
+- `ImpactActive` is `true` within a 2-second window after the impact spike
+- Tilt is tracked but not part of the trigger — it serves as a future signal for slow PSP topples
+
+No immobility check is performed — the alert fires on the fall event itself.
 
 A **5-second cooldown** prevents duplicate events from the same fall.
 
@@ -222,7 +231,7 @@ The phone app requests these at runtime:
 
 ## Sensitivity tuning
 
-Open **Settings** in the phone app to adjust thresholds. Changes are read by the watch service on next start.
+Open **Settings** in the phone app to adjust thresholds. Changes are pushed live to the connected watch — the detection service reloads the algorithm immediately without a restart.
 
 | Setting | Lower value | Higher value |
 |---------|------------|--------------|
@@ -243,15 +252,11 @@ If you get false positives from normal activity (hand gestures, sitting down har
 
 ## Unit tests
 
-The Flutter app has unit and widget tests covering models, repositories, and the fall alert screen.
-
 ```bash
-cd flutter_app
-flutter test              # run all tests
-flutter test --coverage   # with coverage report
+make check   # format + all tests + static analysis (recommended before every commit)
 ```
 
-Test files are under `flutter_app/test/`:
+**Flutter** — unit and widget tests covering models, repositories, and the fall alert screen:
 
 | File | What it covers |
 |------|---------------|
@@ -259,7 +264,10 @@ Test files are under `flutter_app/test/`:
 | `models/fall_event_test.dart` | JSON serialization, all status values |
 | `repositories/contacts_repository_test.dart` | add / remove / update / save |
 | `repositories/fall_events_repository_test.dart` | add, newest-first sort, clear |
-| `screens/fall_alert_screen_test.dart` | countdown render, cancel flow |
+| `screens/fall_alert_screen_test.dart` | countdown render, cancel flow, rate-limit |
+| `services/sms_service_test.dart` | rate-limit window, failed-send behaviour |
+
+**watchOS** — `watchos_app/FallGuardianTests/FallAlgorithmTests.swift` covers the core detection algorithm (no false positive at rest, free-fall alone, impact alone, full fall sequence, `reset()`, impact window expiry). To run: add a Unit Testing Bundle target in Xcode targeting the Watch App scheme.
 
 ---
 
@@ -316,14 +324,14 @@ Restart the Galaxy Watch. Open the Fall Guardian app — it should be running wi
 
 - **SMS delivery is not guaranteed** in areas with no cellular coverage. The app logs the attempt regardless.
 - **iOS background location** requires the user to grant "Always" location permission — "While Using" is not sufficient when the app is in the background.
-- **watchOS background sensor access** uses the `workout-processing` background mode. If the watch suspends the app, detection pauses until the user opens it again. A future improvement would use `WKExtendedRuntimeSession`.
+- **watchOS background sensor access** uses the `workout-processing` background mode. `WKExtendedRuntimeSession` is partially wired but not fully activated — if the watch suspends the app, detection may pause. See roadmap.
 - The algorithm has not been validated in a clinical setting. Thresholds should be tuned for the individual.
 
 ---
 
 ## Roadmap
 
-- [ ] `WKExtendedRuntimeSession` for continuous watchOS background monitoring
+- [ ] Fully activate `WKExtendedRuntimeSession` for continuous watchOS background monitoring (partially wired)
 - [ ] Gyroscope integration for rotation-based fall confirmation
 - [ ] Configurable countdown duration (10 / 20 / 30 / 60 seconds)
 - [ ] WhatsApp / iMessage fallback when SMS fails
