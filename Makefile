@@ -1,5 +1,5 @@
 FLUTTER_APP_DIR := flutter_app
-IOS_DEVICE      := EDE46410-BD1D-4BE5-9036-55233A8C8029
+IOS_DEVICE      := 6FC4E816-335D-4DA6-B169-283100CFA0B0
 WATCH_DEVICE    := A43EFB00-5FBD-45DC-85EA-DF910AEEF014
 ANDROID_DEVICE  := emulator-5554
 WEAR_DEVICE     := emulator-5556
@@ -18,7 +18,7 @@ help:
 	@echo "  check         Format + test + analyze (run before every commit)"
 	@echo "  sim-boot      Boot iOS and watchOS simulators"
 	@echo "  install       Install Flutter dependencies"
-	@echo "  run-ios       Run on iOS simulator"
+	@echo "  run-ios       Boot pair, build watchOS, run Flutter on iPhone 16e"
 	@echo "  run-watchos   Build and run watchOS app on simulator"
 	@echo "  run-android   Run on Android emulator"
 	@echo "  run-wear      Build and install Wear OS app on emulator"
@@ -55,7 +55,7 @@ run-wear:
 install:
 	cd $(FLUTTER_APP_DIR) && flutter pub get
 
-run-ios:
+run-ios: sim-boot run-watchos
 	cd $(FLUTTER_APP_DIR) && flutter run -d $(IOS_DEVICE)
 
 run-android:
