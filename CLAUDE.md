@@ -68,9 +68,11 @@ Widget tests mock the `flutter_local_notifications` MethodChannel (`dexterous.co
 
 ```bash
 make check   # dart format + flutter test + flutter analyze
+/review      # full code review on changed files
 ```
 
 - [ ] `make check` passes
+- [ ] `/review` run — all 🔴 Critical findings fixed, 🟡 Warnings addressed
 - [ ] Tests updated for any changed logic
 - [ ] All 4 platforms checked for required mirror changes (Flutter ↔ Android / iOS / watchOS / Wear OS)
 - [ ] No `setState` / `invokeMethod` after an `await` without a `mounted` / `[weak self]` guard
