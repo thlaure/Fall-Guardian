@@ -10,11 +10,12 @@ WATCHOS_BUNDLE_ID  := com.fallguardian.FallGuardian.watchkitapp
 WATCHOS_BUILD_DIR  := /tmp/fall_guardian_watch_build
 WEAR_APP_DIR    := wear_os_app
 
-.PHONY: help install run run-ios run-android run-watchos run-wear sim-boot test analyze format clean
+.PHONY: help install run run-ios run-android run-watchos run-wear sim-boot check test analyze format clean
 
 help:
 	@echo "Usage: make <target>"
 	@echo ""
+	@echo "  check         Format + test + analyze (run before every commit)"
 	@echo "  sim-boot      Boot iOS and watchOS simulators"
 	@echo "  install       Install Flutter dependencies"
 	@echo "  run-ios       Run on iOS simulator"
@@ -25,6 +26,9 @@ help:
 	@echo "  analyze       Run static analysis"
 	@echo "  format        Auto-format Dart code"
 	@echo "  clean         Clean build artifacts"
+
+check:
+	cd $(FLUTTER_APP_DIR) && dart format lib/ test/ && flutter test && flutter analyze
 
 sim-boot:
 	xcrun simctl boot $(IOS_DEVICE) 2>/dev/null || true

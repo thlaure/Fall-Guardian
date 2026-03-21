@@ -64,6 +64,26 @@ test/
 Repository tests use `SharedPreferences.setMockInitialValues({})`.
 Widget tests mock the `flutter_local_notifications` MethodChannel (`dexterous.com/flutter/local_notifications`).
 
+## Done checklist (run before every commit)
+
+```bash
+make check   # dart format + flutter test + flutter analyze
+```
+
+- [ ] `make check` passes
+- [ ] Tests updated for any changed logic
+- [ ] All 4 platforms checked for required mirror changes (Flutter ↔ Android / iOS / watchOS / Wear OS)
+- [ ] No `setState` / `invokeMethod` after an `await` without a `mounted` / `[weak self]` guard
+
+## Cross-platform invariants
+
+- **Threshold keys** must stay identical across Flutter `SharedPreferences`, Wear OS `SharedPreferences`, and watchOS `UserDefaults`: `thresh_freefall`, `thresh_impact`, `thresh_tilt`, `thresh_freefall_ms`
+- **Watch MethodChannel**: `fall_guardian/watch`
+  - Native → Flutter: `onFallDetected` (with `timestamp`), `onAlertCancelled`
+  - Flutter → Native: `sendThresholds` (map of threshold keys above)
+- **Phone → watch threshold sync pattern**: Flutter `MethodChannel.invokeMethod` → native sends via Wearable `MessageClient` (`/thresholds`) or WCSession → native prefs/UserDefaults → listener reloads algorithm without restart. `transferUserInfo` is the offline fallback on iOS/watchOS.
+- **Permission handling standard**: request at launch (`ActivityResultContracts`), expose a Compose/SwiftUI state flag, show a dedicated error screen with a settings deep-link — never silently stop the service.
+
 ## Known issues / watch-outs
 
 - **`flutter_sms`** and **`flutter_local_notifications`** do not yet support Swift Package Manager — this produces a warning but is not an error.
