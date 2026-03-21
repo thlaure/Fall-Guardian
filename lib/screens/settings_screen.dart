@@ -126,8 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   max: 200,
                   divisions: 32,
                   description: l10n.freeFallDurationDesc,
-                  onChanged: (v) =>
-                      setState(() => _freeFallMinMs = v.round()),
+                  onChanged: (v) => setState(() => _freeFallMinMs = v.round()),
                   cs: cs,
                 ),
                 const SizedBox(height: 32),

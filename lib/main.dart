@@ -50,7 +50,8 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
     if (!isInForeground) {
       await NotificationService().showFallDetectedNotification(
         title: l10n?.notifTitle ?? '⚠️ Fall Detected',
-        body: l10n?.notifBody ?? 'Open app to cancel or send alert in 30 seconds',
+        body:
+            l10n?.notifBody ?? 'Open app to cancel or send alert in 30 seconds',
       );
     }
 
