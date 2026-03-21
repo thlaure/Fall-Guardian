@@ -65,6 +65,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
   Future<void> _sendAlert() async {
     if (_dismissed || _sending) return;
+    if (!mounted) return;
     final l10n = AppLocalizations.of(context);
 
     setState(() {
@@ -73,6 +74,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     });
 
     final Position? position = await LocationService().getCurrentPosition();
+    if (_dismissed || !mounted) return;
 
     setState(() => _statusMessage = l10n.sendingSms);
 
@@ -87,6 +89,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
       contacts: contacts,
       message: smsBody,
     );
+    if (_dismissed || !mounted) return;
 
     final smsFailed = contacts.isNotEmpty && notified.isEmpty;
     final event = FallEvent(
@@ -99,6 +102,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     );
     await FallEventsRepository().add(event);
     await NotificationService().cancelAll();
+    if (!mounted) return;
 
     setState(() => _statusMessage = smsFailed
         ? l10n.smsFailed

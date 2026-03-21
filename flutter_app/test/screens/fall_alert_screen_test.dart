@@ -68,6 +68,62 @@ void main() {
       expect(find.text('28'), findsOneWidget);
     });
 
+    testWidgets('countdown reaches 0 and transitions to sending state',
+        (tester) async {
+      await tester.pumpWidget(_app(
+        const FallAlertScreen(fallTimestamp: 0),
+      ));
+      await tester.pump();
+      expect(find.text('30'), findsOneWidget);
+
+      // Advance to 0
+      for (int i = 0; i < 30; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      // After countdown completes _sendAlert fires; it will be in _sending=true
+      // state (showing spinner) before async location/SMS complete.
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('cancel during countdown prevents sendAlert from running',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const FallAlertScreen(fallTimestamp: 0),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump();
+
+      // Advance a few seconds then cancel
+      await tester.pump(const Duration(seconds: 5));
+      await tester.tap(find.byIcon(Icons.check_circle));
+      // Let async cancel chain complete (FallEventsRepository + NotificationService + pop)
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+
+      // Screen should be gone — no setState-after-dispose crash
+      expect(find.byType(FallAlertScreen), findsNothing);
+    });
+
     testWidgets('tapping cancel pops the screen', (tester) async {
       // Push FallAlertScreen on top of a home screen so we can verify the pop.
       await tester.pumpWidget(MaterialApp(

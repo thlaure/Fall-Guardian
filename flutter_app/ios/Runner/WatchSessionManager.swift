@@ -66,8 +66,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     private func forwardToFlutter(_ method: String, arguments: Any?) {
-        DispatchQueue.main.async {
-            self.channel.invokeMethod(method, arguments: arguments)
+        DispatchQueue.main.async { [weak self] in
+            self?.channel.invokeMethod(method, arguments: arguments)
         }
     }
 }
