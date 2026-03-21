@@ -75,8 +75,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
               child: Text(l10n.cancel)),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: Text(l10n.remove,
-                  style: const TextStyle(color: Colors.red))),
+              child:
+                  Text(l10n.remove, style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -127,7 +127,8 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.people_outline, size: 72, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(Icons.people_outline,
+              size: 72, color: cs.onSurfaceVariant.withValues(alpha: 0.4)),
           const SizedBox(height: 16),
           Text(l10n.contactsEmpty,
               style: TextStyle(color: cs.onSurfaceVariant, fontSize: 18)),
@@ -171,8 +172,8 @@ class _ContactTile extends StatelessWidget {
               style: TextStyle(color: cs.onPrimaryContainer)),
         ),
         title: Text(contact.name),
-        subtitle: Text(contact.phone,
-            style: TextStyle(color: cs.onSurfaceVariant)),
+        subtitle:
+            Text(contact.phone, style: TextStyle(color: cs.onSurfaceVariant)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -256,8 +257,7 @@ class _ContactDialogState extends State<_ContactDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.cancel)),
+            onPressed: () => Navigator.pop(context), child: Text(l10n.cancel)),
         ElevatedButton(
           onPressed: () {
             if (_formKey.currentState!.validate()) {

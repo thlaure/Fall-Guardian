@@ -15,7 +15,8 @@ class FallAlertScreen extends StatefulWidget {
   final int fallTimestamp;
   final Stream<void>? cancelStream;
 
-  const FallAlertScreen({super.key, required this.fallTimestamp, this.cancelStream});
+  const FallAlertScreen(
+      {super.key, required this.fallTimestamp, this.cancelStream});
 
   @override
   State<FallAlertScreen> createState() => _FallAlertScreenState();
@@ -95,7 +96,8 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     final event = FallEvent(
       id: const Uuid().v4(),
       timestamp: DateTime.fromMillisecondsSinceEpoch(widget.fallTimestamp),
-      status: smsFailed ? FallEventStatus.alertFailed : FallEventStatus.alertSent,
+      status:
+          smsFailed ? FallEventStatus.alertFailed : FallEventStatus.alertSent,
       latitude: position?.latitude,
       longitude: position?.longitude,
       notifiedContacts: notified,
@@ -104,9 +106,8 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     await NotificationService().cancelAll();
     if (!mounted) return;
 
-    setState(() => _statusMessage = smsFailed
-        ? l10n.smsFailed
-        : l10n.alertSentCount(notified.length));
+    setState(() => _statusMessage =
+        smsFailed ? l10n.smsFailed : l10n.alertSentCount(notified.length));
 
     await Future.delayed(Duration(seconds: smsFailed ? 5 : 2));
     if (mounted) Navigator.of(context).pop();
@@ -220,16 +221,14 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                             height: 60,
                             child: ElevatedButton.icon(
                               onPressed: _cancel,
-                              icon:
-                                  const Icon(Icons.check_circle, size: 28),
+                              icon: const Icon(Icons.check_circle, size: 28),
                               label: Text(l10n.cancelAlert,
                                   style: const TextStyle(fontSize: 18)),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(16)),
+                                    borderRadius: BorderRadius.circular(16)),
                               ),
                             ),
                           ),

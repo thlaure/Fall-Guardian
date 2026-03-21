@@ -15,7 +15,8 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.appTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(l10n.appTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -60,7 +61,8 @@ class HomeScreen extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: () =>
                       onSimulateFall!(DateTime.now().millisecondsSinceEpoch),
-                  icon: const Icon(Icons.bug_report, color: Colors.orangeAccent),
+                  icon:
+                      const Icon(Icons.bug_report, color: Colors.orangeAccent),
                   label: const Text(
                     'Simulate Fall (debug)',
                     style: TextStyle(color: Colors.orangeAccent),
@@ -180,12 +182,14 @@ class _NavButton extends StatelessWidget {
                             fontWeight: FontWeight.w600)),
                     Text(subtitle,
                         style: TextStyle(
-                            color: cs.onSecondaryContainer.withValues(alpha: 0.7),
+                            color:
+                                cs.onSecondaryContainer.withValues(alpha: 0.7),
                             fontSize: 13)),
                   ],
                 ),
               ),
-              Icon(Icons.chevron_right, color: cs.onSecondaryContainer.withValues(alpha: 0.6)),
+              Icon(Icons.chevron_right,
+                  color: cs.onSecondaryContainer.withValues(alpha: 0.6)),
             ],
           ),
         ),

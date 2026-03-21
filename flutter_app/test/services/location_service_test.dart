@@ -6,8 +6,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // The geolocator platform-interface package uses this channel name.
-  const geolocatorChannel =
-      MethodChannel('flutter.baseflow.com/geolocator');
+  const geolocatorChannel = MethodChannel('flutter.baseflow.com/geolocator');
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

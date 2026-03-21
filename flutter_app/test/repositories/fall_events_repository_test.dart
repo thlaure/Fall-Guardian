@@ -90,8 +90,7 @@ void main() {
       repo = FallEventsRepository();
 
       final all = await repo.getAll();
-      expect(all.length, 1,
-          reason: 'Corrupted entry must be silently skipped');
+      expect(all.length, 1, reason: 'Corrupted entry must be silently skipped');
       expect(all.first.id, 'valid-1');
     });
 

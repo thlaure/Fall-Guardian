@@ -48,7 +48,8 @@ void main() {
 
     test('update replaces contact with matching id', () async {
       await repo.add(const Contact(id: '1', name: 'Alice', phone: '+1'));
-      await repo.update(const Contact(id: '1', name: 'Alice Updated', phone: '+2'));
+      await repo
+          .update(const Contact(id: '1', name: 'Alice Updated', phone: '+2'));
       final all = await repo.getAll();
       expect(all.first.name, 'Alice Updated');
       expect(all.first.phone, '+2');
@@ -80,8 +81,7 @@ void main() {
       repo = ContactsRepository();
 
       final all = await repo.getAll();
-      expect(all.length, 1,
-          reason: 'Corrupted entry must be silently skipped');
+      expect(all.length, 1, reason: 'Corrupted entry must be silently skipped');
       expect(all.first.id, '42');
     });
   });
