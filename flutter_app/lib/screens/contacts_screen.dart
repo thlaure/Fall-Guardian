@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/contact.dart';
@@ -232,6 +233,7 @@ class _ContactDialogState extends State<_ContactDialog> {
               decoration: InputDecoration(
                   labelText: l10n.contactNameLabel,
                   prefixIcon: const Icon(Icons.person)),
+              inputFormatters: [LengthLimitingTextInputFormatter(50)],
               validator: (v) =>
                   v == null || v.trim().isEmpty ? l10n.required_ : null,
             ),
