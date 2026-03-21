@@ -34,6 +34,11 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         WCSession.default.activate() // re-activate on Apple Watch switch
     }
 
+    /// Called when watchOS app sends via transferUserInfo() (phone was not reachable)
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        self.session(session, didReceiveMessage: userInfo)
+    }
+
     /// Called when watchOS app sends a message via sendMessage()
     func session(
         _ session: WCSession,
