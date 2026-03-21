@@ -17,8 +17,6 @@ struct ContentView: View {
         .onTapGesture {
             if viewModel.isAlertActive {
                 viewModel.cancelAlert()
-            } else {
-                viewModel.toggle()
             }
         }
         .onAppear {
@@ -59,17 +57,30 @@ struct ContentView: View {
 
     private var idleView: some View {
         VStack(spacing: 8) {
-            Image(systemName: "shield.fill")
-                .font(.system(size: 36))
-                .foregroundColor(.green)
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.137, green: 0.145, blue: 0.290))
+                    .frame(width: 52, height: 52)
+                Image(systemName: "shield.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(Color(red: 0.365, green: 0.922, blue: 0.722))
+            }
 
             Text("Fall Guardian")
                 .font(.headline)
                 .foregroundColor(.white)
 
-            Text(viewModel.isMonitoring ? "Monitoring active" : "Tap to start")
+            Text("Monitoring active")
                 .font(.caption)
-                .foregroundColor(viewModel.isMonitoring ? .green : .gray)
+                .foregroundColor(Color(red: 0.365, green: 0.922, blue: 0.722))
+
+            #if DEBUG
+            Button("Simulate Fall (debug)") {
+                viewModel.simulateFall()
+            }
+            .font(.system(size: 11))
+            .foregroundColor(Color(red: 1.0, green: 0.67, blue: 0.25))
+            #endif
         }
         .containerBackground(.black, for: .navigation)
     }
@@ -77,7 +88,6 @@ struct ContentView: View {
 
 @Observable
 class ContentViewModel {
-    var isMonitoring: Bool = false
     var isAlertActive: Bool = false
     var remainingSeconds: Int = 30
 
@@ -87,19 +97,14 @@ class ContentViewModel {
         if !FallDetectionManager.shared.isRunning {
             FallDetectionManager.shared.start()
         }
-        isMonitoring = FallDetectionManager.shared.isRunning
         FallDetectionManager.shared.onFallDetected = { [weak self] in
             DispatchQueue.main.async { self?.alertDidFire() }
         }
     }
 
-    func toggle() {
-        if FallDetectionManager.shared.isRunning {
-            FallDetectionManager.shared.stop()
-        } else {
-            FallDetectionManager.shared.start()
-        }
-        isMonitoring = FallDetectionManager.shared.isRunning
+    func simulateFall() {
+        alertDidFire()
+        WatchSessionManager.shared.sendFallEvent()
     }
 
     func cancelAlert() {

@@ -3,20 +3,23 @@ import CoreMotion
 
 /// PSP-optimized fall detection algorithm — Swift port of the Kotlin version.
 ///
-/// Trigger: (FreeFall AND Impact) OR (Impact AND Tilt)
+/// Trigger: FreeFall qualified (latched) AND Impact active
+/// Free-fall is a required precondition; tilt is tracked but not part of the trigger.
 class FallAlgorithm {
 
     // MARK: - Configurable thresholds
 
     var freeFallThresholdG: Double = 0.5   // ||accel|| must drop below this (g)
     var impactThresholdG: Double = 2.5     // ||accel|| spike must exceed this (g)
-    var tiltThresholdDeg: Double = 45.0    // angle from upright
+    var tiltThresholdDeg: Double = 45.0    // angle from upright (tracked, not used in trigger)
     var freeFallMinMs: Double = 80.0       // minimum free-fall duration (ms)
 
     // MARK: - State
 
     private var freeFallStartMs: Double = 0
     private var freeFallActive = false
+    /// Latches true once free-fall qualifies; cleared only by reset().
+    private var freeFallQualifiedLatch = false
     private var impactDetected = false
     private var impactTimeMs: Double = 0
 
@@ -31,6 +34,7 @@ class FallAlgorithm {
     func reset() {
         freeFallActive = false
         freeFallStartMs = 0
+        freeFallQualifiedLatch = false
         impactDetected = false
         impactTimeMs = 0
         gravityX = 0; gravityY = 0; gravityZ = 0
@@ -60,6 +64,7 @@ class FallAlgorithm {
             freeFallActive = false
         }
         let freeFallQualified = freeFallActive && (nowMs - freeFallStartMs >= freeFallMinMs)
+        if freeFallQualified { freeFallQualifiedLatch = true }
 
         // Phase 2: Impact
         if normG > impactThresholdG {
@@ -68,12 +73,11 @@ class FallAlgorithm {
         }
         let impactActive = impactDetected && (nowMs - impactTimeMs < 2000)
 
-        // Phase 3: Tilt
-        let tilt = tiltAngleDeg()
-        let tiltActive = tilt > tiltThresholdDeg
+        // Phase 3: Tilt (tracked; requires free-fall latch to trigger)
+        _ = tiltAngleDeg()
 
-        // Trigger
-        return (freeFallQualified && impactActive) || (impactActive && tiltActive)
+        // Trigger: free-fall must have been qualified (latch) AND impact is active
+        return freeFallQualifiedLatch && impactActive
     }
 
     // MARK: - Helpers
