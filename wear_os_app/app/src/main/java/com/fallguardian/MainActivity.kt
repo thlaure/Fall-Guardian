@@ -14,6 +14,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -129,10 +131,15 @@ private fun IdleScreen(context: Context) {
             Box(
                 modifier = Modifier
                     .size(52.dp)
-                    .background(Color(0x334CAF50), CircleShape),
+                    .background(Color(0xFF23254A), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "🛡", fontSize = 26.sp)
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = Color(0xFF5DEBB8),
+                    modifier = Modifier.size(30.dp)
+                )
             }
             Text(
                 text = "Fall Guardian",

@@ -4,9 +4,10 @@ WATCH_DEVICE    := A43EFB00-5FBD-45DC-85EA-DF910AEEF014
 ANDROID_DEVICE  := emulator-5554
 WEAR_DEVICE     := emulator-5556
 ADB             := $(HOME)/Library/Android/sdk/platform-tools/adb
-WATCHOS_PROJECT := watchos_app/FallGuardian/FallGuardian.xcodeproj
+WATCHOS_PROJECT    := watchos_app/FallGuardian/FallGuardian.xcodeproj
 WATCHOS_SCHEME     := FallGuardian Watch App
 WATCHOS_BUNDLE_ID  := com.fallguardian.FallGuardian.watchkitapp
+WATCHOS_BUILD_DIR  := /tmp/fall_guardian_watch_build
 WEAR_APP_DIR    := wear_os_app
 
 .PHONY: help install run run-ios run-android run-watchos run-wear sim-boot test analyze format clean
@@ -36,14 +37,10 @@ run-watchos:
 	  -scheme "$(WATCHOS_SCHEME)" \
 	  -destination "platform=watchOS Simulator,id=$(WATCH_DEVICE)" \
 	  -configuration Debug \
+	  -derivedDataPath "$(WATCHOS_BUILD_DIR)" \
 	  build
-	APP_DIR=$$(xcodebuild \
-	  -project "$(WATCHOS_PROJECT)" \
-	  -scheme "$(WATCHOS_SCHEME)" \
-	  -destination "platform=watchOS Simulator,id=$(WATCH_DEVICE)" \
-	  -configuration Debug \
-	  -showBuildSettings 2>/dev/null | awk '/^\s+BUILT_PRODUCTS_DIR /{print $$3; exit}') && \
-	xcrun simctl install $(WATCH_DEVICE) "$$APP_DIR/$(WATCHOS_SCHEME).app"
+	xcrun simctl install $(WATCH_DEVICE) \
+	  "$(WATCHOS_BUILD_DIR)/Build/Products/Debug-watchsimulator/$(WATCHOS_SCHEME).app"
 	xcrun simctl launch $(WATCH_DEVICE) $(WATCHOS_BUNDLE_ID)
 
 run-wear:
