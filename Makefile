@@ -56,8 +56,10 @@ install:
 	cd $(FLUTTER_APP_DIR) && flutter pub get
 
 run-ios: sim-boot run-watchos
+	xcrun simctl terminate $(WATCH_DEVICE) $(WATCHOS_BUNDLE_ID) 2>/dev/null || true
 	xcrun simctl terminate $(IOS_DEVICE) com.fallguardian.app 2>/dev/null || true
 	xcrun simctl uninstall $(IOS_DEVICE) com.fallguardian.app 2>/dev/null || true
+	sleep 2
 	cd $(FLUTTER_APP_DIR) && flutter run -d $(IOS_DEVICE)
 
 run-android:
