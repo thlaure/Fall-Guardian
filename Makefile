@@ -6,7 +6,7 @@ WEAR_DEVICE     := emulator-5556
 ADB             := $(HOME)/Library/Android/sdk/platform-tools/adb
 WATCHOS_PROJECT    := watchos_app/FallGuardian/FallGuardian.xcodeproj
 WATCHOS_SCHEME     := FallGuardian Watch App
-WATCHOS_BUNDLE_ID  := com.fallguardian.FallGuardian.watchkitapp
+WATCHOS_BUNDLE_ID  := com.fallguardian.app.watchkitapp
 WATCHOS_BUILD_DIR  := /tmp/fall_guardian_watch_build
 WEAR_APP_DIR    := wear_os_app
 
