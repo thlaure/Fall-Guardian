@@ -16,46 +16,96 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
+    // MARK: - Outbound (watch → phone)
+
     /// Send a cancel alert message to the iPhone.
     func sendCancelAlert() {
-        guard WCSession.default.activationState == .activated else { return }
+        guard WCSession.default.activationState == .activated else {
+            NSLog("[WCSession] sendCancelAlert: not activated")
+            return
+        }
         let message: [String: Any] = ["event": "alert_cancelled"]
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(message, replyHandler: nil) { _ in
-                // Phone became unreachable mid-send — fall back to guaranteed delivery
-                WCSession.default.transferUserInfo(message)
-            }
-        } else {
+        NSLog("[WCSession] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
+        WCSession.default.sendMessage(message, replyHandler: nil) { _ in
+            NSLog("[WCSession] sendCancelAlert: sendMessage failed, falling back to transferUserInfo")
             WCSession.default.transferUserInfo(message)
         }
     }
 
     /// Send a fall event to the iPhone.
     func sendFallEvent() {
-        guard WCSession.default.activationState == .activated else { return }
+        guard WCSession.default.activationState == .activated else {
+            NSLog("[WCSession] sendFallEvent: not activated (state=\(WCSession.default.activationState.rawValue))")
+            return
+        }
 
         let timestamp = Int(Date().timeIntervalSince1970 * 1000)
-        let message: [String: Any] = [
-            "event": "fall_detected",
-            "timestamp": timestamp
-        ]
+        let message: [String: Any] = ["event": "fall_detected", "timestamp": timestamp]
 
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(message, replyHandler: nil) { _ in
-                WCSession.default.transferUserInfo(message)
-            }
-        } else {
+        NSLog("[WCSession] sendFallEvent: isReachable=\(WCSession.default.isReachable)")
+        WCSession.default.sendMessage(message, replyHandler: nil) { _ in
+            NSLog("[WCSession] sendFallEvent: sendMessage failed, falling back to transferUserInfo")
             WCSession.default.transferUserInfo(message)
         }
     }
 
-    // MARK: - WCSessionDelegate
+    // MARK: - Cancel-status polling
+    //
+    // Phone→watch sendMessage/replyHandler is broken in the iOS simulator (WCSession
+    // reports the watch app as "not installed" when deployed via xcrun simctl).
+    // We use two complementary mechanisms that work without an active connection:
+    //
+    // 1. session(_:didReceiveApplicationContext:) — fires immediately when the phone
+    //    calls updateApplicationContext(["alertCancelled": true]).
+    // 2. A lightweight poll that reads receivedApplicationContext directly — catches
+    //    any context that arrived before the delegate was registered or was missed.
 
-    func session(
-        _ session: WCSession,
-        activationDidCompleteWith activationState: WCSessionActivationState,
-        error: Error?
-    ) {}
+    var onAlertCancelled: (() -> Void)?
+    private var pollTask: Task<Void, Never>?
+
+    func startPollingForCancel() {
+        stopPolling()
+        pollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                guard WCSession.default.activationState == .activated else { continue }
+                let cancelled = await checkCancelledOnPhone()
+                NSLog("[WCSession] poll: cancelled=\(cancelled)")
+                if cancelled {
+                    DispatchQueue.main.async { [weak self] in self?.onAlertCancelled?() }
+                    return
+                }
+            }
+        }
+    }
+
+    /// Returns true if the phone has recorded a cancel.
+    ///
+    /// In the simulator, all phone→watch WCSession paths are broken and isReachable is
+    /// false (phone sees the watch app as "not installed" when deployed via xcrun
+    /// simctl). Instead we read a flag file that the phone writes to /tmp — both
+    /// simulator processes are macOS apps sharing the same filesystem.
+    ///
+    /// On real devices we read receivedApplicationContext, which the phone updates via
+    /// updateApplicationContext whenever it cancels the alert.
+    private func checkCancelledOnPhone() async -> Bool {
+        #if targetEnvironment(simulator)
+        let path = "/tmp/com.fallguardian.cancelAlert"
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        try? FileManager.default.removeItem(atPath: path)
+        return true
+        #else
+        return WCSession.default.receivedApplicationContext["alertCancelled"] as? Bool ?? false
+        #endif
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    // MARK: - Inbound (phone → watch)
 
     /// Called when the phone sends a real-time message.
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
@@ -76,11 +126,27 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         handleMessage(userInfo)
     }
 
+    // MARK: - WCSessionDelegate (required)
+
+    func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {}
+
+    /// Called immediately when the phone calls updateApplicationContext.
+    /// This fires even when the phone is not reachable (no active BT connection needed).
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        NSLog("[WCSession] didReceiveApplicationContext: alertCancelled=\(applicationContext["alertCancelled"] as? Bool ?? false)")
+        if applicationContext["alertCancelled"] as? Bool == true {
+            DispatchQueue.main.async { self.onAlertCancelled?() }
+        }
+    }
+
     // MARK: - Private
 
-    var onAlertCancelled: (() -> Void)?
-
     private func handleMessage(_ message: [String: Any]) {
+        NSLog("[WCSession] handleMessage: event=\(message["event"] as? String ?? "nil")")
         switch message["event"] as? String {
         case "set_thresholds":
             guard let thresholds = message["thresholds"] as? [String: Any] else { return }
