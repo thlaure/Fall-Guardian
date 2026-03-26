@@ -116,8 +116,8 @@ class _StatusCard extends StatelessWidget {
           Container(
             width: 72,
             height: 72,
-            decoration: BoxDecoration(
-              color: const Color(0xFF23254A),
+            decoration: const BoxDecoration(
+              color: Color(0xFF23254A),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.shield, color: Color(0xFF5DEBB8), size: 40),
