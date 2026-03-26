@@ -91,11 +91,17 @@ class MainActivity : FlutterActivity() {
         val payload = """{"event":"alert_cancelled"}""".toByteArray(Charsets.UTF_8)
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
+                Log.d("MainActivity", "sendCancelAlertToWatch: ${nodes.size} node(s) found")
                 nodes.forEach { node ->
+                    Log.d("MainActivity", "sendCancelAlertToWatch: sending to ${node.displayName}")
                     Wearable.getMessageClient(this)
                         .sendMessage(node.id, "/cancel_alert", payload)
+                        .addOnSuccessListener { Log.d("MainActivity", "sendCancelAlertToWatch: sent OK") }
+                        .addOnFailureListener { e -> Log.e("MainActivity", "sendCancelAlertToWatch: failed", e) }
                 }
+                if (nodes.isEmpty()) Log.w("MainActivity", "sendCancelAlertToWatch: no connected nodes")
             }
+            .addOnFailureListener { e -> Log.e("MainActivity", "sendCancelAlertToWatch: getNodeClient failed", e) }
     }
 
     private fun sendThresholdsToWatch(thresholds: Map<String, Any>) {
