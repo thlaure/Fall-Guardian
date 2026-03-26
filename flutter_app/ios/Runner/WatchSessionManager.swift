@@ -8,6 +8,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     private let channel: FlutterMethodChannel
 
+    /// Set to true when the phone alert is cancelled so the watch poll gets the right answer.
+    private var alertCancelledFlag = false
+
     init(channel: FlutterMethodChannel) {
         self.channel = channel
         super.init()
@@ -39,13 +42,14 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         self.session(session, didReceiveMessage: userInfo)
     }
 
-    /// Called when watchOS app sends a message via sendMessage()
+    /// Called when watchOS app sends a message via sendMessage() without a reply handler.
     func session(
         _ session: WCSession,
         didReceiveMessage message: [String: Any]
     ) {
         switch message["event"] as? String {
         case "fall_detected":
+            resetCancelContext()  // new fall resets cancel state + applicationContext
             let timestamp = message["timestamp"] as? Int ??
                 Int(Date().timeIntervalSince1970 * 1000)
             forwardToFlutter("onFallDetected", arguments: ["timestamp": timestamp])
@@ -56,24 +60,59 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    /// Called when watchOS app sends a message via sendMessage() WITH a reply handler.
+    /// The watch uses this for the cancel-status poll.
     func session(
         _ session: WCSession,
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
-        self.session(session, didReceiveMessage: message)
-        replyHandler(["status": "received"])
+        switch message["event"] as? String {
+        case "query_cancel_status":
+            NSLog("[WCSession][Phone] query_cancel_status → cancelled=\(alertCancelledFlag)")
+            replyHandler(["cancelled": alertCancelledFlag])
+        default:
+            self.session(session, didReceiveMessage: message)
+            replyHandler(["status": "received"])
+        }
     }
 
     /// Send a cancel-alert signal to the paired Apple Watch.
+    /// Also marks the flag so watch polls get the right answer immediately.
     func sendCancelAlert() {
-        guard WCSession.default.activationState == .activated else { return }
-        let message: [String: Any] = ["event": "alert_cancelled"]
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
-        } else {
-            WCSession.default.transferUserInfo(message)
+        alertCancelledFlag = true
+        // Simulator IPC: write a flag file that the watchOS sim process can poll.
+        // Both sims are macOS processes sharing /tmp, so this is guaranteed to work
+        // regardless of WCSession state (isReachable is often false in the sim).
+        #if targetEnvironment(simulator)
+        try? "cancelled".write(
+            toFile: "/tmp/com.fallguardian.cancelAlert",
+            atomically: true, encoding: .utf8
+        )
+        #endif
+        guard WCSession.default.activationState == .activated else {
+            NSLog("[WCSession][Phone] sendCancelAlert: not activated")
+            return
         }
+        NSLog("[WCSession][Phone] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
+        let message: [String: Any] = ["event": "alert_cancelled"]
+        // Three delivery paths for real devices, most→least real-time:
+        // 1. sendMessage — immediate when reachable
+        WCSession.default.sendMessage(message, replyHandler: nil, errorHandler: nil)
+        // 2. transferUserInfo — background queue
+        WCSession.default.transferUserInfo(message)
+        // 3. applicationContext — persistent state
+        try? WCSession.default.updateApplicationContext(["alertCancelled": true])
+    }
+
+    /// Reset the cancel context when a new fall begins so the watch does not
+    /// immediately re-cancel a subsequent alert.
+    func resetCancelContext() {
+        alertCancelledFlag = false
+        try? WCSession.default.updateApplicationContext(["alertCancelled": false])
+        #if targetEnvironment(simulator)
+        try? FileManager.default.removeItem(atPath: "/tmp/com.fallguardian.cancelAlert")
+        #endif
     }
 
     /// Send threshold values to the paired Apple Watch via WCSession.

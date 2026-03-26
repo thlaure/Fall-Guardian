@@ -105,7 +105,7 @@ class ContentViewModel {
             DispatchQueue.main.async { self?.alertDidFire() }
         }
         WatchSessionManager.shared.onAlertCancelled = { [weak self] in
-            self?.cancelAlert()
+            self?.cancelAlert(notifyPhone: false)
         }
     }
 
@@ -114,24 +114,32 @@ class ContentViewModel {
         WatchSessionManager.shared.sendFallEvent()
     }
 
-    func cancelAlert() {
+    /// Cancel the alert. Pass `notifyPhone: false` when the cancel originated from the phone.
+    func cancelAlert(notifyPhone: Bool = true) {
         alertExpireTask?.cancel()
+        WatchSessionManager.shared.stopPolling()
         isAlertActive = false
         remainingSeconds = 30
-        WatchSessionManager.shared.sendCancelAlert()
+        if notifyPhone {
+            WatchSessionManager.shared.sendCancelAlert()
+        }
     }
 
     private func alertDidFire() {
         isAlertActive = true
         remainingSeconds = 30
         alertExpireTask?.cancel()
+        WatchSessionManager.shared.startPollingForCancel()
         alertExpireTask = Task {
             for i in stride(from: 29, through: 0, by: -1) {
                 try? await Task.sleep(for: .seconds(1))
                 if Task.isCancelled { return }
                 await MainActor.run { remainingSeconds = i }
             }
-            await MainActor.run { isAlertActive = false }
+            await MainActor.run {
+                WatchSessionManager.shared.stopPolling()
+                isAlertActive = false
+            }
         }
     }
 }
