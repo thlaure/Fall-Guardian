@@ -4,3 +4,7 @@
 # Xcode user data
 *.xcuserstate
 xcuserdata/
+
+# Xcode build outputs
+**/build/
+*.xcresult

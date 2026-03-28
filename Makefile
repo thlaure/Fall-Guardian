@@ -1,6 +1,6 @@
 FLUTTER_APP_DIR := flutter_app
-IOS_DEVICE      := 6FC4E816-335D-4DA6-B169-283100CFA0B0
-WATCH_DEVICE    := A43EFB00-5FBD-45DC-85EA-DF910AEEF014
+IOS_DEVICE      := 5A2143B9-4E6E-43F6-A6DA-7A74734C9E69
+WATCH_DEVICE    := 4167470A-88C3-489C-A4FB-7AA9F695E2CB
 ANDROID_DEVICE  := emulator-5554
 WEAR_DEVICE     := emulator-5556
 ADB             := $(HOME)/Library/Android/sdk/platform-tools/adb
@@ -18,7 +18,7 @@ help:
 	@echo "  check         Format + test + analyze (run before every commit)"
 	@echo "  sim-boot      Boot iOS and watchOS simulators"
 	@echo "  install       Install Flutter dependencies"
-	@echo "  run-ios       Boot pair, build watchOS, run Flutter on iPhone 16e"
+	@echo "  run-ios       Boot pair, build watchOS, run Flutter on iPhone 17"
 	@echo "  run-watchos   Build and run watchOS app on simulator"
 	@echo "  run-android   Run on Android emulator"
 	@echo "  run-wear      Build and install Wear OS app on emulator"
@@ -38,13 +38,14 @@ sim-boot:
 run-watchos:
 	xcodebuild \
 	  -project "$(WATCHOS_PROJECT)" \
-	  -scheme "$(WATCHOS_SCHEME)" \
-	  -destination "platform=watchOS Simulator,id=$(WATCH_DEVICE)" \
+	  -target "$(WATCHOS_SCHEME)" \
+	  -sdk watchsimulator26.4 \
+	  -arch arm64 \
 	  -configuration Debug \
-	  -derivedDataPath "$(WATCHOS_BUILD_DIR)" \
+	  CONFIGURATION_BUILD_DIR="$(WATCHOS_BUILD_DIR)" \
 	  build
 	xcrun simctl install $(WATCH_DEVICE) \
-	  "$(WATCHOS_BUILD_DIR)/Build/Products/Debug-watchsimulator/$(WATCHOS_SCHEME).app"
+	  "$(WATCHOS_BUILD_DIR)/$(WATCHOS_SCHEME).app"
 	xcrun simctl launch $(WATCH_DEVICE) $(WATCHOS_BUNDLE_ID)
 
 run-wear:
