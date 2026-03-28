@@ -55,15 +55,19 @@ void main() {
         contacts: contacts,
         message: 'Duplicate alert',
       );
-      expect(result, isEmpty,
-          reason: 'Call within 60s of last send must be rate-limited');
+      expect(
+        result,
+        isEmpty,
+        reason: 'Call within 60s of last send must be rate-limited',
+      );
     });
 
     // --- Rate limit does NOT fire when previous send was more than 60s ago ---
     test('sendFallAlert_afterRateWindow_attemptsNewSend', () async {
       // Simulate a send that happened 61 seconds ago → window has expired.
       SmsService.setLastSentAtForTesting(
-          DateTime.now().subtract(const Duration(seconds: 61)));
+        DateTime.now().subtract(const Duration(seconds: 61)),
+      );
 
       final service = SmsService();
       // The send itself will fail (no platform impl), but it must NOT return
@@ -90,8 +94,10 @@ void main() {
       // Manually verify _lastSentAt was not set by checking that the second
       // call also goes through (not rate-limited). Both will return [] due to
       // platform unavailability, but neither should throw.
-      final second =
-          await service.sendFallAlert(contacts: contacts, message: 'Second');
+      final second = await service.sendFallAlert(
+        contacts: contacts,
+        message: 'Second',
+      );
       expect(second, isEmpty);
       // If rate-limiting had been incorrectly triggered, the second call would
       // return [] for a different reason — this is detectable only if we check

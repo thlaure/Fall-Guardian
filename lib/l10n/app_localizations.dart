@@ -9,10 +9,7 @@ abstract class AppLocalizations {
 
   static const delegate = _AppLocalizationsDelegate();
 
-  static const supportedLocales = [
-    Locale('en'),
-    Locale('fr'),
-  ];
+  static const supportedLocales = [Locale('en'), Locale('fr')];
 
   // ── Generic ──────────────────────────────────────────────────────────────
   String get appTitle;
@@ -95,8 +92,9 @@ class _AppLocalizationsDelegate
   const _AppLocalizationsDelegate();
 
   @override
-  bool isSupported(Locale locale) => AppLocalizations.supportedLocales
-      .any((l) => l.languageCode == locale.languageCode);
+  bool isSupported(Locale locale) => AppLocalizations.supportedLocales.any(
+        (l) => l.languageCode == locale.languageCode,
+      );
 
   @override
   Future<AppLocalizations> load(Locale locale) async {

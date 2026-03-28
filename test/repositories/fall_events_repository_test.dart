@@ -49,11 +49,13 @@ void main() {
     });
 
     test('clear removes all events', () async {
-      await repo.add(FallEvent(
-        id: '1',
-        timestamp: DateTime(2024, 1, 1),
-        status: FallEventStatus.cancelled,
-      ));
+      await repo.add(
+        FallEvent(
+          id: '1',
+          timestamp: DateTime(2024, 1, 1),
+          status: FallEventStatus.cancelled,
+        ),
+      );
       await repo.clear();
       expect(await repo.getAll(), isEmpty);
     });
@@ -95,11 +97,13 @@ void main() {
     });
 
     test('clear_isIdempotent', () async {
-      await repo.add(FallEvent(
-        id: '1',
-        timestamp: DateTime(2024, 1, 1),
-        status: FallEventStatus.cancelled,
-      ));
+      await repo.add(
+        FallEvent(
+          id: '1',
+          timestamp: DateTime(2024, 1, 1),
+          status: FallEventStatus.cancelled,
+        ),
+      );
       await repo.clear();
       // Second clear on an already-empty repository must not throw.
       await repo.clear();
