@@ -10,7 +10,7 @@ WATCHOS_BUNDLE_ID  := com.fallguardian.app.watchkitapp
 WATCHOS_BUILD_DIR  := /tmp/fall_guardian_watch_build
 WEAR_APP_DIR    := wear_os_app
 
-.PHONY: help install run run-ios run-android run-watchos run-wear sim-boot check test analyze format clean
+.PHONY: help install run run-ios run-android run-watchos run-wear sim-boot check test test-e2e analyze format clean
 
 help:
 	@echo "Usage: make <target>"
@@ -21,6 +21,7 @@ help:
 	@echo "  run-ios       Boot pair, build watchOS, run Flutter on iPhone 17"
 	@echo "  run-watchos   Build and run watchOS app on simulator"
 	@echo "  run-android   Run on Android emulator"
+	@echo "  test-e2e      Run iOS/watchOS end-to-end tests (simulators must be running)"
 	@echo "  run-wear      Build and install Wear OS app on emulator"
 	@echo "  test          Run all unit and widget tests"
 	@echo "  analyze       Run static analysis"
@@ -61,7 +62,9 @@ run-ios: sim-boot run-watchos
 	xcrun simctl terminate $(IOS_DEVICE) com.fallguardian.app 2>/dev/null || true
 	xcrun simctl uninstall $(IOS_DEVICE) com.fallguardian.app 2>/dev/null || true
 	sleep 2
-	cd $(FLUTTER_APP_DIR) && flutter run -d $(IOS_DEVICE)
+	cd $(FLUTTER_APP_DIR) && flutter build ios --simulator --debug -d $(IOS_DEVICE)
+	xcrun simctl install $(IOS_DEVICE) $(FLUTTER_APP_DIR)/build/ios/iphonesimulator/Runner.app
+	xcrun simctl launch $(IOS_DEVICE) com.fallguardian.app
 
 run-android:
 	cd $(FLUTTER_APP_DIR) && flutter run -d $(ANDROID_DEVICE)
@@ -74,6 +77,9 @@ analyze:
 
 format:
 	cd $(FLUTTER_APP_DIR) && dart format lib/ test/
+
+test-e2e:
+	./scripts/test_e2e_ios.sh
 
 clean:
 	cd $(FLUTTER_APP_DIR) && flutter clean
