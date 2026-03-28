@@ -49,25 +49,33 @@ void main() {
 
       final service = LocationService();
       final position = await service.getCurrentPosition();
-      expect(position, isNull,
-          reason: 'Should return null when location service is disabled');
+      expect(
+        position,
+        isNull,
+        reason: 'Should return null when location service is disabled',
+      );
     });
 
-    test('getCurrentPosition_returnsNull_whenPermissionDeniedForever',
-        () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'isLocationServiceEnabled') return true;
-        // LocationPermission.deniedForever has index 3 in geolocator v10.
-        if (call.method == 'checkPermission') return 3;
-        return null;
-      });
+    test(
+      'getCurrentPosition_returnsNull_whenPermissionDeniedForever',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(geolocatorChannel, (call) async {
+          if (call.method == 'isLocationServiceEnabled') return true;
+          // LocationPermission.deniedForever has index 3 in geolocator v10.
+          if (call.method == 'checkPermission') return 3;
+          return null;
+        });
 
-      final service = LocationService();
-      final position = await service.getCurrentPosition();
-      expect(position, isNull,
-          reason: 'Should return null when permission is denied forever');
-    });
+        final service = LocationService();
+        final position = await service.getCurrentPosition();
+        expect(
+          position,
+          isNull,
+          reason: 'Should return null when permission is denied forever',
+        );
+      },
+    );
 
     test('getCurrentPosition_returnsNull_whenGetPositionThrows', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -77,13 +85,18 @@ void main() {
         if (call.method == 'checkPermission') return 2;
         // Simulate getCurrentPosition throwing (e.g. timeout).
         throw PlatformException(
-            code: 'TIMEOUT', message: 'Position request timed out.');
+          code: 'TIMEOUT',
+          message: 'Position request timed out.',
+        );
       });
 
       final service = LocationService();
       final position = await service.getCurrentPosition();
-      expect(position, isNull,
-          reason: 'Should return null when getCurrentPosition throws');
+      expect(
+        position,
+        isNull,
+        reason: 'Should return null when getCurrentPosition throws',
+      );
     });
   });
 }

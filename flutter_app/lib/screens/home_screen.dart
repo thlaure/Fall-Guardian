@@ -63,10 +63,7 @@ class HomeScreen extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: () =>
                       onSimulateFall!(DateTime.now().millisecondsSinceEpoch),
-                  icon: const Icon(
-                    Icons.bug_report,
-                    color: Color(0xFFE5694A),
-                  ),
+                  icon: const Icon(Icons.bug_report, color: Color(0xFFE5694A)),
                   label: const Text(
                     'Simulate Fall (debug)',
                     style: TextStyle(color: Color(0xFFE5694A)),
