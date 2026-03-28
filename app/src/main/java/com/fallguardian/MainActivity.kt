@@ -102,7 +102,7 @@ private fun PermissionDeniedScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1A2E)),
+            .background(Color(0xFF001A18)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -125,7 +125,7 @@ private fun PermissionDeniedScreen(context: Context) {
                     context.startActivity(intent)
                 },
                 label = { Text("Open Settings", fontSize = 11.sp) },
-                colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF23254A))
+                colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF003F3C))
             )
         }
     }
@@ -197,7 +197,7 @@ private fun IdleScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1A2E)),
+            .background(Color(0xFF001A18)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -207,13 +207,13 @@ private fun IdleScreen(context: Context) {
             Box(
                 modifier = Modifier
                     .size(52.dp)
-                    .background(Color(0xFF23254A), CircleShape),
+                    .background(Color(0xFF003F3C), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null,
-                    tint = Color(0xFF5DEBB8),
+                    tint = Color(0xFFE5694A),
                     modifier = Modifier.size(30.dp)
                 )
             }
@@ -226,7 +226,7 @@ private fun IdleScreen(context: Context) {
             )
             Text(
                 text = "Monitoring active",
-                color = Color(0xFF4CAF50),
+                color = Color(0xFFD1E0D7),
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center
             )
@@ -238,13 +238,13 @@ private fun IdleScreen(context: Context) {
                         Text(
                             text = "Simulate Fall (debug)",
                             fontSize = 11.sp,
-                            color = Color(0xFFFFAB40)
+                            color = Color(0xFFE5694A)
                         )
                     },
-                    colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF1A1A2E)),
+                    colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF001A18)),
                     modifier = Modifier.border(
                         width = 1.dp,
-                        color = Color(0xFFFFAB40),
+                        color = Color(0xFFE5694A),
                         shape = RoundedCornerShape(50)
                     )
                 )
