@@ -59,11 +59,11 @@ struct ContentView: View {
         VStack(spacing: 8) {
             ZStack {
                 Circle()
-                    .fill(Color(red: 0.137, green: 0.145, blue: 0.290))
+                    .fill(Color(red: 0.0, green: 0.247, blue: 0.235))
                     .frame(width: 52, height: 52)
                 Image(systemName: "shield.fill")
                     .font(.system(size: 28))
-                    .foregroundColor(Color(red: 0.365, green: 0.922, blue: 0.722))
+                    .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
             }
 
             Text("Fall Guardian")
@@ -72,14 +72,14 @@ struct ContentView: View {
 
             Text("Monitoring active")
                 .font(.caption)
-                .foregroundColor(Color(red: 0.365, green: 0.922, blue: 0.722))
+                .foregroundColor(Color(red: 0.820, green: 0.878, blue: 0.843))
 
             #if DEBUG
             Button("Simulate Fall (debug)") {
                 viewModel.simulateFall()
             }
             .font(.system(size: 11))
-            .foregroundColor(Color(red: 1.0, green: 0.67, blue: 0.25))
+            .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
             #endif
         }
         .containerBackground(.black, for: .navigation)
