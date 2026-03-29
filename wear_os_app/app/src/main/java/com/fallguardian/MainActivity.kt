@@ -42,11 +42,42 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.*
 
+/**
+ * Entry point of the Wear OS application.
+ *
+ * --- What is Jetpack Compose? ---
+ * Jetpack Compose is Google's modern UI toolkit for Android (and Wear OS).
+ * Instead of describing the UI in XML layout files, you write @Composable
+ * functions in Kotlin. Each function is a "component" that returns UI — similar
+ * to React components or SwiftUI views. When the data they read changes (e.g.
+ * WearDataSender.alertActive flips to true), Compose automatically re-runs the
+ * affected functions and redraws only the changed parts of the screen.
+ *
+ * --- Three screen states ---
+ * The entire watch UI is controlled by two boolean flags inside WearDataSender:
+ *   1. permissionDenied == true  → PermissionDeniedScreen  (BODY_SENSORS not granted)
+ *   2. alertActive      == true  → AlertScreen             (fall detected, countdown running)
+ *   3. both false               → IdleScreen               (normal monitoring state)
+ *
+ * --- How this file connects to the others ---
+ * • Starts FallDetectionService so sensor monitoring begins immediately.
+ * • Registers a MessageClient listener to receive "/cancel_alert" from the phone
+ *   while the Activity is foregrounded (belt-and-suspenders alongside
+ *   PhoneMessageListenerService which handles the backgrounded case).
+ * • Reads WearDataSender state (alertActive, permissionDenied) to decide which
+ *   screen to show — no other state is needed.
+ */
 class MainActivity : ComponentActivity() {
 
-    // Receives /cancel_alert messages while the Activity is in the foreground.
-    // WearableListenerService is unreliable in the emulator for phone→watch direction;
-    // MessageClient.addListener works as long as the Activity is alive.
+    // --- Belt-and-suspenders cancel listener ---
+    // PhoneMessageListenerService handles "/cancel_alert" when the app is
+    // backgrounded. However, WearableListenerService is unreliable in the
+    // Wear OS emulator for phone→watch messages. This second listener is
+    // registered directly on MessageClient and is active while this Activity is
+    // alive — providing a reliable path during both emulator testing and real
+    // device use when the Activity is in the foreground.
+    // It calls the same WearDataSender.cancelAlertFromPhone() so behavior is
+    // identical regardless of which listener fires.
     private val cancelAlertListener = MessageClient.OnMessageReceivedListener { messageEvent ->
         if (messageEvent.path == "/cancel_alert") {
             Log.d("MainActivity", "cancelAlertListener: received /cancel_alert")
@@ -54,55 +85,107 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // --- Permission request launcher ---
+    // ActivityResultContracts.RequestPermission() is the modern (non-deprecated)
+    // way to ask for a runtime permission. The lambda below runs after the user
+    // taps Allow or Deny on the system permission dialog.
+    // We register this launcher as a field (not inside onCreate) because Android
+    // requires it to be created before the Activity's onCreate() completes.
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
+            // Permission granted — clear any error state and start the sensor service.
             WearDataSender.permissionDenied = false
             startForegroundService(Intent(this, FallDetectionService::class.java))
         } else {
+            // Permission denied — surface the error screen so the user can open settings.
             WearDataSender.permissionDenied = true
         }
     }
 
+    // onCreate() is called by the Android OS when the Activity is first created
+    // (e.g. app launch or after a process restart). This is where we wire
+    // everything together: permissions, the foreground service, and the UI.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Register the foreground cancel listener while this Activity is alive.
         Wearable.getMessageClient(this).addListener(cancelAlertListener)
+
+        // --- Permission check at launch ---
+        // BODY_SENSORS is required to access the accelerometer on Wear OS
+        // (it is classified as a sensitive "body" sensor). We check whether it
+        // was already granted (e.g. on a previous launch) before requesting it.
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS)
                 == PackageManager.PERMISSION_GRANTED) {
+            // Already granted — start fall detection immediately.
             startForegroundService(Intent(this, FallDetectionService::class.java))
         } else {
+            // Not yet granted — show the system permission dialog.
+            // Result is delivered to requestPermissionLauncher above.
             requestPermissionLauncher.launch(Manifest.permission.BODY_SENSORS)
         }
+
+        // setContent replaces the Activity's view with a Compose UI tree.
+        // WearApp() is the root composable that decides which screen to show.
         setContent { WearApp() }
     }
 
+    // onDestroy() is called when the Activity is permanently going away.
+    // We must unregister the MessageClient listener here to prevent a memory leak
+    // (the listener holds a reference to this Activity instance).
     override fun onDestroy() {
         Wearable.getMessageClient(this).removeListener(cancelAlertListener)
         super.onDestroy()
     }
 }
 
+/**
+ * Root composable — the top-level UI function that reads WearDataSender state
+ * and delegates to the correct screen composable.
+ *
+ * --- How Compose state drives navigation here ---
+ * There is no explicit navigation stack or router. The `when` expression is
+ * re-evaluated every time alertActive or permissionDenied changes (because they
+ * are `mutableStateOf` values that Compose observes). When the value changes,
+ * Compose discards the old screen tree and mounts the new one automatically.
+ *
+ * MaterialTheme wraps everything to provide default typography, colours, and
+ * shape tokens to child composables (similar to a CSS theme provider).
+ */
 @Composable
 fun WearApp() {
     val context = LocalContext.current
+    // Reading these two state values here subscribes this composable to them.
+    // Any change in either value will cause WearApp (and its children) to recompose.
     val alertActive = WearDataSender.alertActive
     val permissionDenied = WearDataSender.permissionDenied
     MaterialTheme {
         when {
-            permissionDenied -> PermissionDeniedScreen(context)
-            alertActive -> AlertScreen(context)
-            else -> IdleScreen(context)
+            permissionDenied -> PermissionDeniedScreen(context) // Screen state 1: no sensor permission.
+            alertActive      -> AlertScreen(context)            // Screen state 2: fall countdown active.
+            else             -> IdleScreen(context)             // Screen state 3: normal monitoring.
         }
     }
 }
 
+/**
+ * Screen shown when BODY_SENSORS permission was denied.
+ *
+ * Because fall detection requires the accelerometer, we cannot operate without
+ * this permission. We explain the problem to the user and provide a direct link
+ * to the app's system settings page where they can grant it manually.
+ *
+ * This follows the project's permission handling standard: never silently fail —
+ * always show a dedicated error screen with a settings deep-link.
+ */
 @Composable
 private fun PermissionDeniedScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF001A18)),
+            .background(Color(0xFF001A18)), // Dark teal background matching the app theme.
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -116,11 +199,15 @@ private fun PermissionDeniedScreen(context: Context) {
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
+            // Chip is a Wear OS UI component — a compact, tappable button sized
+            // for small round watch screens.
             Chip(
                 onClick = {
+                    // Build a deep-link Intent that opens this app's entry in the
+                    // system Settings app, where the user can grant the permission.
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = Uri.fromParts("package", context.packageName, null)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Required when starting from a non-Activity context.
                     }
                     context.startActivity(intent)
                 },
@@ -131,22 +218,42 @@ private fun PermissionDeniedScreen(context: Context) {
     }
 }
 
+/**
+ * Screen shown during an active fall alert (alertActive == true).
+ *
+ * Displays the 30-second countdown in large text, haptic-vibrates the watch
+ * every second (more intensely under 10 s), and flashes red as time runs out.
+ * Tapping anywhere on the screen cancels the alert on both watch and phone.
+ *
+ * --- Why vibrate here instead of in FallDetectionService? ---
+ * Haptic feedback is a UI concern — it signals urgency to the user. Keeping it
+ * in the composable makes it easy to tie the pattern to the remaining time
+ * and to stop it automatically when the screen is dismissed.
+ *
+ * --- LaunchedEffect ---
+ * LaunchedEffect(key) is a Compose side-effect that launches a coroutine scoped
+ * to the composable's lifetime. The coroutine re-runs whenever `key` changes.
+ * Here, key = `remaining`, so the vibration fires once per countdown second.
+ */
 @Composable
 private fun AlertScreen(context: Context) {
-    val remaining = WearDataSender.remainingSeconds
+    val remaining = WearDataSender.remainingSeconds  // Read the countdown from shared state.
     val vibrator = context.getSystemService(Vibrator::class.java)
 
-    // Haptic every second — stronger under 10 s
+    // Haptic every second — stronger under 10 s to convey increasing urgency.
     LaunchedEffect(remaining) {
         if (remaining in 1..29) {
             val effect = if (remaining <= 10)
-                VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE)
+                VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE) // Long, full-strength buzz.
             else
-                VibrationEffect.createOneShot(40, 80)
+                VibrationEffect.createOneShot(40, 80) // Short, moderate buzz.
             vibrator?.vibrate(effect)
         }
     }
 
+    // Flash overlay: under 10 s, a red overlay pulses between transparent and
+    // semi-opaque. rememberInfiniteTransition + animateFloat produce the animation.
+    // Above 10 s, flashAlpha is always 0 (fully transparent — no flash).
     // Flash overlay pulses between 0 and 0.4 opacity under 10 s
     val flashAlpha by if (remaining <= 10) {
         rememberInfiniteTransition(label = "flash").animateFloat(
@@ -158,6 +265,7 @@ private fun AlertScreen(context: Context) {
             label = "alpha"
         )
     } else {
+        // No animation needed above 10 s — use a static 0 value.
         androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableFloatStateOf(0f)
         }
@@ -166,15 +274,16 @@ private fun AlertScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A0000))
-            .background(Color.Red.copy(alpha = flashAlpha))
-            .clickable { WearDataSender.sendCancelAlert(context) },
+            .background(Color(0xFF1A0000))               // Deep red base background.
+            .background(Color.Red.copy(alpha = flashAlpha)) // Pulsing red flash overlay on top.
+            .clickable { WearDataSender.sendCancelAlert(context) }, // Tap anywhere = cancel.
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Large countdown number — the focal point of the screen.
             Text(
                 text = "$remaining",
                 color = Color.White,
@@ -192,18 +301,31 @@ private fun AlertScreen(context: Context) {
     }
 }
 
+/**
+ * Screen shown during normal operation (no alert, permission granted).
+ *
+ * Displays the app name and a "Monitoring active" status label to reassure
+ * the user that fall detection is running in the background.
+ *
+ * In debug builds (BuildConfig.DEBUG == true), a "Simulate Fall (debug)" button
+ * is rendered. Tapping it directly calls WearDataSender.sendFallEvent() with the
+ * current timestamp — exactly as FallDetectionService would on a real fall. This
+ * lets developers test the full alert flow on a real watch or emulator without
+ * having to physically fall. The button is compiled out of release builds entirely.
+ */
 @Composable
 private fun IdleScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF001A18)),
+            .background(Color(0xFF001A18)), // Dark teal — calm, non-alarming idle state.
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Circular shield icon badge — a visual indicator of active protection.
             Box(
                 modifier = Modifier
                     .size(52.dp)
@@ -212,8 +334,8 @@ private fun IdleScreen(context: Context) {
             ) {
                 Icon(
                     imageVector = Icons.Default.Shield,
-                    contentDescription = null,
-                    tint = Color(0xFFE5694A),
+                    contentDescription = null, // Decorative — screen reader can skip it.
+                    tint = Color(0xFFE5694A),  // Orange accent colour.
                     modifier = Modifier.size(30.dp)
                 )
             }
@@ -226,10 +348,11 @@ private fun IdleScreen(context: Context) {
             )
             Text(
                 text = "Monitoring active",
-                color = Color(0xFFD1E0D7),
+                color = Color(0xFFD1E0D7), // Muted green-white — calm confirmation.
                 fontSize = 11.sp,
                 textAlign = TextAlign.Center
             )
+            // Debug-only fall simulation button — stripped from release builds at compile time.
             if (BuildConfig.DEBUG) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Chip(
@@ -253,6 +376,12 @@ private fun IdleScreen(context: Context) {
     }
 }
 
+/**
+ * Triggers a fake fall event with the current wall-clock timestamp.
+ * Only reachable from the debug Simulate Fall button in IdleScreen.
+ * Exercises the identical code path as a real detected fall:
+ * WearDataSender.sendFallEvent() → phone message + local countdown UI.
+ */
 private fun simulateFall(context: Context) {
     WearDataSender.sendFallEvent(context, System.currentTimeMillis())
 }
