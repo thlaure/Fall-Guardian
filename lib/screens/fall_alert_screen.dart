@@ -14,14 +14,14 @@ import 'package:geolocator/geolocator.dart';
 import '../l10n/app_localizations.dart';
 
 // Data models and repositories
-import '../models/fall_event.dart';           // Represents one fall event (id, timestamp, status, coordinates)
-import '../repositories/contacts_repository.dart';    // Reads the list of emergency contacts from local storage
+import '../models/fall_event.dart'; // Represents one fall event (id, timestamp, status, coordinates)
+import '../repositories/contacts_repository.dart'; // Reads the list of emergency contacts from local storage
 import '../repositories/fall_events_repository.dart'; // Persists fall event history to local storage
 
 // Services
-import '../services/location_service.dart';           // Wraps the geolocator plugin
-import '../services/sms_service.dart';                // Sends SMS messages
-import '../services/notification_service.dart';       // Shows / cancels OS push notifications
+import '../services/location_service.dart'; // Wraps the geolocator plugin
+import '../services/sms_service.dart'; // Sends SMS messages
+import '../services/notification_service.dart'; // Shows / cancels OS push notifications
 import '../services/watch_communication_service.dart'; // Sends cancel signal to the watch
 
 // uuid generates universally unique IDs for each FallEvent record so that
@@ -74,12 +74,15 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   static const _countdownSeconds = 30;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
-  int _remaining = _countdownSeconds; // seconds left — drives the progress ring and number
-  Timer? _timer;                      // periodic timer that re-computes _remaining
-  StreamSubscription<void>? _cancelSub; // subscription to the external cancel stream
-  bool _dismissed = false;            // true once cancel/send has started; guards against double-execution
-  bool _sending = false;              // true while the SMS-send flow is in progress
-  String _statusMessage = '';         // shown beneath the spinner while sending
+  int _remaining =
+      _countdownSeconds; // seconds left — drives the progress ring and number
+  Timer? _timer; // periodic timer that re-computes _remaining
+  StreamSubscription<void>?
+      _cancelSub; // subscription to the external cancel stream
+  bool _dismissed =
+      false; // true once cancel/send has started; guards against double-execution
+  bool _sending = false; // true while the SMS-send flow is in progress
+  String _statusMessage = ''; // shown beneath the spinner while sending
 
   // ── Animation ─────────────────────────────────────────────────────────────
   // AnimationController drives the pulse animation on the warning icon.

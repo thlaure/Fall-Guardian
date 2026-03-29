@@ -110,7 +110,7 @@ class NotificationService {
   }) async {
     // ── Android notification details ──────────────────────────────────────
     const androidDetails = AndroidNotificationDetails(
-      _channelId,   // must match the channel registered in initialize()
+      _channelId, // must match the channel registered in initialize()
       _channelName, // displayed in Android notification settings
       // Importance.max + Priority.high together produce a "heads-up" notification
       // — the banner that slides in from the top of the screen even when the
