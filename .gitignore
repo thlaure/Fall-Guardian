@@ -1,10 +1,30 @@
 # macOS
 .DS_Store
 
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.packages
+
 # Xcode user data
 *.xcuserstate
 xcuserdata/
+DerivedData/
 
 # Xcode build outputs
 **/build/
 *.xcresult
+
+# Android / Gradle local machine files
+**/.gradle/
+**/local.properties
+captures/
+keystore.properties
+*.jks
+*.keystore
+*.p12
+
+# Flutter plugin registrants / generated symlinks
+**/ios/Flutter/ephemeral/
