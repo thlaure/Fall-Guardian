@@ -11,6 +11,8 @@ Read these first:
 - Keep responses and plans aligned with the current implementation, not outdated product assumptions.
 - When suggesting or making changes, preserve clean dependency direction and avoid increasing Flutter/native duplication.
 - Treat cross-platform drift as a primary risk.
+- Use Conventional Commits.
+- When preparing a PR, include both a concise description and a manual verification checklist.
 
 ## Claude review standard
 
@@ -28,3 +30,7 @@ Read these first:
   - review watch cancel/sync behavior
   - update tests
   - update `WORKFLOW.md` if behavior changed
+- If preparing a PR:
+  - summarize the change
+  - separate completed work from remaining platform limitations
+  - include a checklist of what should still be checked manually

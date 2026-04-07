@@ -12,6 +12,8 @@ Read these first:
 - When changing safety-critical behavior, prefer concrete code changes plus verification over speculative notes.
 - When changing cross-platform contracts, inspect Flutter, Android, iOS, Wear OS, and watchOS before concluding the work is complete.
 - Run `make check` before close-out.
+- Use Conventional Commits.
+- When opening a PR, include a summary and a manual verification checklist.
 
 ## Codex review standard
 
@@ -32,3 +34,7 @@ When reviewing or refactoring:
   - review migration path
   - review secure storage path
   - review tests
+- Opening a PR:
+  - describe what changed
+  - describe what remains limited or risky
+  - include a checklist of what should be manually checked

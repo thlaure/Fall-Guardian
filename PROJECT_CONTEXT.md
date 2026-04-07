@@ -115,6 +115,17 @@ cd flutter_app && flutter build ios --simulator --debug -d <ios-sim-id>
 
 If changing native watch/phone integration, also verify the relevant native target.
 
+## Git and PR workflow
+
+- Use Conventional Commits for all commits.
+- Prefer small, logically grouped commits over one large dump commit.
+- Every PR must include:
+  - a short summary of what changed
+  - the main architectural or product impact
+  - a checklist of what still needs to be manually checked
+  - explicit mention of any known platform limitations that remain
+- If behavior changed, update the docs in the same branch before opening the PR.
+
 ## Change impact checklists
 
 ### Alert flow changes
