@@ -1,18 +1,13 @@
 package com.fallguardian
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import androidx.compose.animation.core.RepeatMode
@@ -39,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.*
 
 /**
@@ -85,50 +79,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // --- Permission request launcher ---
-    // ActivityResultContracts.RequestPermission() is the modern (non-deprecated)
-    // way to ask for a runtime permission. The lambda below runs after the user
-    // taps Allow or Deny on the system permission dialog.
-    // We register this launcher as a field (not inside onCreate) because Android
-    // requires it to be created before the Activity's onCreate() completes.
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            // Permission granted — clear any error state and start the sensor service.
-            WearDataSender.permissionDenied = false
-            startForegroundService(Intent(this, FallDetectionService::class.java))
-        } else {
-            // Permission denied — surface the error screen so the user can open settings.
-            WearDataSender.permissionDenied = true
-        }
-    }
-
-    // onCreate() is called by the Android OS when the Activity is first created
-    // (e.g. app launch or after a process restart). This is where we wire
-    // everything together: permissions, the foreground service, and the UI.
+    // onCreate() is called by the Android OS when the Activity is first created.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Register the foreground cancel listener while this Activity is alive.
         Wearable.getMessageClient(this).addListener(cancelAlertListener)
 
-        // --- Permission check at launch ---
-        // BODY_SENSORS is required to access the accelerometer on Wear OS
-        // (it is classified as a sensitive "body" sensor). We check whether it
-        // was already granted (e.g. on a previous launch) before requesting it.
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS)
-                == PackageManager.PERMISSION_GRANTED) {
-            // Already granted — start fall detection immediately.
-            startForegroundService(Intent(this, FallDetectionService::class.java))
-        } else {
-            // Not yet granted — show the system permission dialog.
-            // Result is delivered to requestPermissionLauncher above.
-            requestPermissionLauncher.launch(Manifest.permission.BODY_SENSORS)
-        }
+        // Start fall detection immediately — no permission required for the accelerometer.
+        startForegroundService(Intent(this, FallDetectionService::class.java))
 
         // setContent replaces the Activity's view with a Compose UI tree.
-        // WearApp() is the root composable that decides which screen to show.
         setContent { WearApp() }
     }
 
@@ -142,79 +103,16 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Root composable — the top-level UI function that reads WearDataSender state
- * and delegates to the correct screen composable.
- *
- * --- How Compose state drives navigation here ---
- * There is no explicit navigation stack or router. The `when` expression is
- * re-evaluated every time alertActive or permissionDenied changes (because they
- * are `mutableStateOf` values that Compose observes). When the value changes,
- * Compose discards the old screen tree and mounts the new one automatically.
- *
- * MaterialTheme wraps everything to provide default typography, colours, and
- * shape tokens to child composables (similar to a CSS theme provider).
+ * Root composable — switches between IdleScreen and AlertScreen based on
+ * WearDataSender.alertActive state. MaterialTheme provides typography, colours,
+ * and shape tokens to all child composables.
  */
 @Composable
 fun WearApp() {
     val context = LocalContext.current
-    // Reading these two state values here subscribes this composable to them.
-    // Any change in either value will cause WearApp (and its children) to recompose.
     val alertActive = WearDataSender.alertActive
-    val permissionDenied = WearDataSender.permissionDenied
     MaterialTheme {
-        when {
-            permissionDenied -> PermissionDeniedScreen(context) // Screen state 1: no sensor permission.
-            alertActive      -> AlertScreen(context)            // Screen state 2: fall countdown active.
-            else             -> IdleScreen(context)             // Screen state 3: normal monitoring.
-        }
-    }
-}
-
-/**
- * Screen shown when BODY_SENSORS permission was denied.
- *
- * Because fall detection requires the accelerometer, we cannot operate without
- * this permission. We explain the problem to the user and provide a direct link
- * to the app's system settings page where they can grant it manually.
- *
- * This follows the project's permission handling standard: never silently fail —
- * always show a dedicated error screen with a settings deep-link.
- */
-@Composable
-private fun PermissionDeniedScreen(context: Context) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF001A18)), // Dark teal background matching the app theme.
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "Sensor access\nrequired",
-                color = Color.White,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            // Chip is a Wear OS UI component — a compact, tappable button sized
-            // for small round watch screens.
-            Chip(
-                onClick = {
-                    // Build a deep-link Intent that opens this app's entry in the
-                    // system Settings app, where the user can grant the permission.
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) // Required when starting from a non-Activity context.
-                    }
-                    context.startActivity(intent)
-                },
-                label = { Text("Open Settings", fontSize = 11.sp) },
-                colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF003F3C))
-            )
-        }
+        if (alertActive) AlertScreen(context) else IdleScreen(context)
     }
 }
 
