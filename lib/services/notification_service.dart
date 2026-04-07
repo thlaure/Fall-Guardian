@@ -5,7 +5,11 @@
 //
 // "Local" means the notification is generated on the device itself (by our app)
 // rather than sent from a server (which would be a "push" / "remote" notification).
+import 'dart:io';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import 'alert_ports.dart';
 
 // ─── Why this service exists ─────────────────────────────────────────────────
 // We need to show the user an alert even when the app is in the background
@@ -26,7 +30,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 ///      app is in the background.
 ///   3. Call [cancelAll] when the alert is resolved (cancelled or SMS sent)
 ///      to remove the notification from the notification shade.
-class NotificationService {
+class NotificationService implements AlertNotificationGateway {
   // ── Singleton plugin instance ─────────────────────────────────────────────
   // `static final` means there is exactly one plugin object for the entire
   // app lifetime, shared across all NotificationService instances.
@@ -49,48 +53,41 @@ class NotificationService {
 
   // ── Initialization ────────────────────────────────────────────────────────
 
-  /// Initialises the notification plugin for both Android and iOS.
+  /// Initialises the notification plugin.
   ///
-  /// Must be called once before any notification can be shown.
+  /// On Android: registers the notification channel and sets up the plugin.
+  /// On iOS:     intentionally skipped — see note below.
+  ///
+  /// Must be called once before any notification can be shown on Android.
   /// Subsequent calls are no-ops (guarded by [_initialized]).
   ///
-  /// On Android: registers the notification channel with the OS.
-  /// On iOS:     requests permission to show alerts, badges, and play sounds.
+  /// iOS note: flutter_local_notifications.initialize() sets itself as the
+  /// UNUserNotificationCenterDelegate and then suppresses any notification it
+  /// did not post itself (our native fall alert included).  To avoid this,
+  /// we skip plugin initialisation on iOS entirely.  Notification permission
+  /// is requested natively in AppDelegate, and fall notifications are posted
+  /// via UNUserNotificationCenter directly by WatchSessionManager.
+  /// cancelAll() still works on iOS without initialisation because it calls
+  /// removeAllDeliveredNotifications() directly on UNUserNotificationCenter.
   Future<void> initialize() async {
-    // Early-exit guard — see _initialized explanation above.
     if (_initialized) return;
 
-    // ── Android configuration ─────────────────────────────────────────────
-    // The icon name '@mipmap/ic_launcher' refers to the app launcher icon
-    // already included in the Android project (android/app/src/main/res/mipmap-*/).
-    // This icon appears in the notification shade on Android.
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
+    // Android only — skip on iOS to avoid delegate conflict (see doc above).
+    if (!Platform.isIOS) {
+      // The icon name '@mipmap/ic_launcher' refers to the app launcher icon
+      // in android/app/src/main/res/mipmap-*/. It appears in the notification shade.
+      const androidSettings =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
+      await _plugin.initialize(
+        const InitializationSettings(android: androidSettings),
+      );
 
-    // ── iOS configuration ─────────────────────────────────────────────────
-    // DarwinInitializationSettings covers both iOS and macOS ("Darwin" is the
-    // Unix base of Apple's OSes). The three `request*Permission` flags trigger
-    // the system permission prompt the first time the app launches.
-    //   requestAlertPermission: show banners and lock-screen notifications.
-    //   requestBadgePermission: show a number badge on the app icon.
-    //   requestSoundPermission: play a sound with each notification.
-    // The user can later revoke any of these in Settings → Notifications.
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+      // Android 13+ requires POST_NOTIFICATIONS at runtime.
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+    }
 
-    // Combine both configs into a single InitializationSettings object and
-    // hand it to the plugin. The plugin calls the matching native code on
-    // whichever platform the app is currently running on.
-    await _plugin.initialize(
-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
-    );
-
-    // Mark as done so future calls (e.g. from tests or hot restarts) skip
-    // the initialization and avoid double-registration side effects.
     _initialized = true;
   }
 
@@ -129,10 +126,13 @@ class NotificationService {
     const iosDetails = DarwinNotificationDetails(
       // presentAlert: show the notification banner on iOS.
       presentAlert: true,
+      // presentBanner: required on iOS 14+ to display the sliding banner even
+      // when the app is in the foreground (presentAlert alone is not enough).
+      presentBanner: true,
       // presentSound: play the default notification sound.
       presentSound: true,
-      // Note: presentBadge is not set here — we don't increment the badge
-      // count for an alert that must be acted upon immediately.
+      // presentBadge is intentionally omitted — we don't increment the app
+      // icon badge for an alert that must be acted upon immediately.
     );
 
     // Send the notification to the OS. The `1` is the notification ID —
@@ -154,6 +154,7 @@ class NotificationService {
   /// Called after the alert is resolved (either cancelled or SMS sent) so the
   /// user isn't left with a stale "Fall Detected" banner in their notification
   /// shade after the situation has already been handled.
+  @override
   Future<void> cancelAll() async {
     await _plugin.cancelAll();
   }

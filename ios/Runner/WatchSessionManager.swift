@@ -11,6 +11,8 @@ import WatchConnectivity
 // Flutter is needed here to reference FlutterMethodChannel, the named pipe
 // we use to forward watch events to the Dart side of the phone app.
 import Flutter
+import UIKit
+import UserNotifications  // For showing a native fall alert when Flutter is not yet ready
 
 // MARK: - WatchSessionManager
 //
@@ -40,13 +42,24 @@ import Flutter
 /// Receives messages from the watchOS app via WCSession
 /// and forwards fall events to Flutter via MethodChannel.
 class WatchSessionManager: NSObject, WCSessionDelegate {
+    private static let simulatorFallEventNotification = "com.fallguardian.fallEvent"
 
     // MARK: - Properties
 
     // The channel used to call methods on the Dart/Flutter side.
-    // It is injected via init() so this class does not need to know anything
-    // about how the channel was created.
-    private let channel: FlutterMethodChannel
+    // Optional because the manager is created early (before Flutter initialises)
+    // and the channel is injected later via setChannel(_:).
+    private var channel: FlutterMethodChannel?
+
+    // UserDefaults key for the fall timestamp stored during a background wakeup.
+    // When the iOS app is woken by WCSession before the Flutter engine starts,
+    // the timestamp is saved here and drained once Flutter is ready.
+    private static let pendingFallTimestampKey = "pendingFallTimestamp"
+    private static let pendingAlertCancelledKey = "pendingAlertCancelled"
+
+    // Identifier for the native wake-up notification shown when Flutter is not
+    // ready. Cancelled by drainPendingFallEvent() once Flutter takes over.
+    static let fallWakeupNotifId = "fall_guardian_wakeup"
 
     // This flag tracks whether the current alert has been cancelled by the phone.
     // The Apple Watch periodically polls the phone ("query_cancel_status") to know
@@ -138,8 +151,14 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 // A new fall clears any leftover cancel state from a previous alert.
                 resetCancelContext()
 
-                // Forward the fall event to Flutter — this is what triggers the
-                // FallAlertScreen countdown on the phone.
+                // Show the native notification immediately, before Flutter is involved.
+                // This bypasses flutter_local_notifications (which has unreliable
+                // foreground delivery on iOS 26 / UIScene lifecycle) and posts
+                // directly to UNUserNotificationCenter — the same path that works
+                // reliably for the killed-app case.
+                showFallNotificationIfNeeded(timestamp: timestamp)
+
+                // Forward the fall event to Flutter — this triggers FallAlertScreen.
                 forwardToFlutter("onFallDetected", arguments: ["timestamp": timestamp])
 
                 // Now start watching for a cancel signal from the watch,
@@ -203,16 +222,63 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     // MARK: - Initialisation
 
-    /// Designated initialiser. Inject the Flutter channel at creation time.
+    /// Early-startup initialiser — no Flutter channel yet.
     ///
-    /// Why inject instead of creating the channel here?
-    /// AppDelegate owns both the channel and the WatchSessionManager. Injecting
-    /// the channel keeps WatchSessionManager focused on watch logic and makes it
-    /// testable in isolation (you can pass a mock channel in a unit test).
-    init(channel: FlutterMethodChannel) {
-        self.channel = channel
-        // super.init() is required when subclassing NSObject.
+    /// Use this in application(_:didFinishLaunchingWithOptions:) so WCSession is
+    /// active before the Flutter engine starts. Call setChannel(_:) followed by
+    /// drainPendingFallEvent() once didInitializeImplicitFlutterEngine fires.
+    override init() {
         super.init()
+    }
+
+    /// Convenience initialiser for when Flutter is already available.
+    init(channel: FlutterMethodChannel) {
+        super.init()
+        self.channel = channel
+    }
+
+    /// Inject the Flutter MethodChannel once the engine has initialised.
+    ///
+    /// Always follow this call with drainPendingFallEvent() to forward any fall
+    /// event that arrived before Flutter was ready (background wakeup scenario).
+    func setChannel(_ channel: FlutterMethodChannel) {
+        self.channel = channel
+    }
+
+    /// Forward any fall event that arrived before Flutter was ready.
+    ///
+    /// When iOS is woken in the background by a WCSession `transferUserInfo`
+    /// delivery (e.g. from a killed state), `didInitializeImplicitFlutterEngine`
+    /// does not fire — the Flutter engine is not started for background-only
+    /// wakeups. Instead, the fall timestamp is stored in UserDefaults and a
+    /// native notification is shown. Once the user opens the app and Flutter
+    /// initialises, this method reads that timestamp, forwards it to Flutter via
+    /// the channel, and cancels the native wake-up notification so that Flutter's
+    /// FallAlertScreen takes over.
+    func drainPendingFallEvent() {
+        let key = WatchSessionManager.pendingFallTimestampKey
+        guard let timestamp = UserDefaults.standard.object(forKey: key) as? Int else { return }
+        UserDefaults.standard.removeObject(forKey: key)
+        // Cancel the native wake-up notification — FallAlertScreen takes over.
+        UNUserNotificationCenter.current()
+            .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+        NSLog("[WCSession][Phone] drainPendingFallEvent: forwarding timestamp=\(timestamp) to Flutter")
+        resetCancelContext()
+        forwardToFlutter("onFallDetected", arguments: ["timestamp": timestamp])
+        startPollingForWatchCancel()
+    }
+
+    /// Forward any watch-originated cancel that arrived before Flutter was ready.
+    ///
+    /// This prevents a stale native fall notification from lingering if the watch
+    /// user cancels while the phone app is backgrounded or killed.
+    func drainPendingAlertCancel() {
+        let key = WatchSessionManager.pendingAlertCancelledKey
+        guard UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.removeObject(forKey: key)
+        UNUserNotificationCenter.current()
+            .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+        forwardToFlutter("onAlertCancelled", arguments: nil)
     }
 
     // MARK: - Session Lifecycle
@@ -236,7 +302,70 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         // Start the simulator IPC fall-event poller. On real devices this is a no-op
         // because #if targetEnvironment(simulator) strips the body out at compile time.
         startPollingForFallEvent()
+
+        // Register a Darwin notification observer so that a backgrounded/suspended iOS
+        // app is woken immediately when the watchOS sim posts notify_post().
+        // The poll loop alone cannot fire while the process is frozen; this Darwin
+        // notification is delivered by the OS kernel even to suspended processes.
+        // Stripped from real-device builds by the compiler directive.
+        #if targetEnvironment(simulator)
+        registerDarwinFallEventObserver()
+        #endif
     }
+
+    // MARK: - Simulator: Darwin notification for backgrounded-app wakeup
+
+    #if targetEnvironment(simulator)
+    /// Register for a Darwin (kernel-level) notification posted by the watchOS simulator
+    /// when it writes the fall-event flag file.
+    ///
+    /// Darwin notifications are delivered even to suspended processes, unlike Swift
+    /// Tasks which are frozen when the app is backgrounded. This bridges the gap:
+    ///   1. watchOS sim writes /tmp/com.fallguardian.fallEvent
+    ///   2. watchOS sim calls notify_post("com.fallguardian.fallEvent")
+    ///   3. iOS sim is woken → this handler fires → reads the file → shows notification
+    ///
+    /// Complements rather than replaces the poll loop: whichever path finds the file
+    /// first deletes it, so both can coexist without double-processing.
+    private func registerDarwinFallEventObserver() {
+        let observer = UnsafeRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            observer,
+            { _, observer, name, _, _ in
+                guard let observer else { return }
+                guard let notificationName = name?.rawValue as String? else { return }
+                guard notificationName == WatchSessionManager.simulatorFallEventNotification else { return }
+
+                let manager = Unmanaged<WatchSessionManager>
+                    .fromOpaque(observer)
+                    .takeUnretainedValue()
+                manager.handleSimulatorFallEventFlag()
+            },
+            WatchSessionManager.simulatorFallEventNotification as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    private func handleSimulatorFallEventFlag() {
+        let path = "/tmp/com.fallguardian.fallEvent"
+        guard FileManager.default.fileExists(atPath: path) else { return }
+
+        let content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+        try? FileManager.default.removeItem(atPath: path)
+
+        let timestamp = Int(content.trimmingCharacters(in: .whitespacesAndNewlines))
+            ?? Int(Date().timeIntervalSince1970 * 1000)
+
+        NSLog("[WCSession][Phone] Darwin wake: fallEvent timestamp=\(timestamp)")
+
+        resetCancelContext()
+        showFallNotificationIfNeeded(timestamp: timestamp)
+        forwardToFlutter("onFallDetected", arguments: ["timestamp": timestamp])
+        startPollingForWatchCancel()
+    }
+    #endif
 
     // MARK: - WCSessionDelegate
     //
@@ -308,6 +437,11 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             let timestamp = message["timestamp"] as? Int ??
                 Int(Date().timeIntervalSince1970 * 1000)
 
+            // Show the native UNNotification immediately, before involving Flutter.
+            // This is reliable across all app states (foreground, background, killed)
+            // and sidesteps flutter_local_notifications' UIScene delegate issues on iOS 26.
+            showFallNotificationIfNeeded(timestamp: timestamp)
+
             // Tell Flutter a fall was detected. Flutter will show FallAlertScreen.
             forwardToFlutter("onFallDetected", arguments: ["timestamp": timestamp])
 
@@ -316,6 +450,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
         // The user cancelled the alert on the watch side.
         case "alert_cancelled":
+            UNUserNotificationCenter.current()
+                .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
             // Tell Flutter to dismiss the alert screen.
             forwardToFlutter("onAlertCancelled", arguments: nil)
 
@@ -479,18 +615,82 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Forward a method call to Flutter on the main thread.
     ///
-    /// Why the main thread?
-    /// Flutter's UI (and its method channel) is not thread-safe. Any call to
-    /// channel.invokeMethod must happen on the main (UI) thread. WCSessionDelegate
-    /// callbacks arrive on a private background thread provided by WCSession, so we
-    /// must dispatch to the main thread before touching Flutter.
+    /// If the Flutter channel is not yet ready (background wakeup before the
+    /// engine initialises), fall events are persisted to UserDefaults and a
+    /// native UNNotification is shown to wake the user. The channel becomes
+    /// available once AppDelegate.didInitializeImplicitFlutterEngine fires and
+    /// calls setChannel(_:) + drainPendingFallEvent().
     ///
     /// [weak self] prevents a retain cycle. If WatchSessionManager is somehow
     /// deallocated while the dispatch is queued, the closure silently does nothing
     /// instead of crashing.
     private func forwardToFlutter(_ method: String, arguments: Any?) {
-        DispatchQueue.main.async { [weak self] in
-            self?.channel.invokeMethod(method, arguments: arguments)
+        guard let channel = channel else {
+            // Flutter engine not yet ready (background wakeup before engine initialises).
+            // The notification was already shown by the caller (session/poll loop) before
+            // forwardToFlutter was invoked. Just persist the timestamp so
+            // drainPendingFallEvent() can forward it to Flutter once the engine starts.
+            if method == "onFallDetected",
+               let args = arguments as? [String: Any],
+               let timestamp = args["timestamp"] as? Int {
+                NSLog("[WCSession][Phone] forwardToFlutter: no channel — storing timestamp=\(timestamp) for drain")
+                UserDefaults.standard.set(timestamp, forKey: WatchSessionManager.pendingFallTimestampKey)
+            } else if method == "onAlertCancelled" {
+                NSLog("[WCSession][Phone] forwardToFlutter: no channel — storing pending cancel for drain")
+                UserDefaults.standard.set(true, forKey: WatchSessionManager.pendingAlertCancelledKey)
+                UNUserNotificationCenter.current()
+                    .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+            }
+            return
         }
+        DispatchQueue.main.async { [weak self] in
+            self?.channel?.invokeMethod(method, arguments: arguments)
+        }
+    }
+
+    /// Post a native UNNotification for a fall event.
+    ///
+    /// Called directly from the WCSession receive path and the simulator IPC poll
+    /// loop — before Flutter is involved — so the notification fires reliably in
+    /// every app state (foreground, background, killed) regardless of whether
+    /// flutter_local_notifications has initialised or is set as the notification
+    /// center delegate.
+    ///
+    /// The `timeSensitive` interruption level (iOS 15+) bypasses Focus modes,
+    /// which is appropriate for a safety-critical fall alert.
+    private func showFallNotification(timestamp: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = "⚠️ Fall Detected"
+        content.body = "Open app to cancel — SMS sends in 30 seconds"
+        content.sound = .default
+        if #available(iOS 15.0, *) {
+            // timeSensitive bypasses Focus modes without requiring the Critical
+            // Alerts entitlement (which needs Apple approval).
+            content.interruptionLevel = .timeSensitive
+        }
+        content.userInfo = ["fall_timestamp": timestamp]
+
+        let request = UNNotificationRequest(
+            identifier: WatchSessionManager.fallWakeupNotifId,
+            content: content,
+            trigger: nil  // nil = deliver immediately
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("[WCSession][Phone] showBackgroundFallNotification failed: \(error)")
+            }
+        }
+    }
+
+    /// Only show the native banner when the app is not already active.
+    ///
+    /// In the foreground, Flutter immediately pushes FallAlertScreen and a second
+    /// iOS banner creates noisy duplicate alert UI.
+    private func showFallNotificationIfNeeded(timestamp: Int) {
+        if UIApplication.shared.applicationState == .active {
+            NSLog("[WCSession][Phone] suppressing native fall notification while foregrounded")
+            return
+        }
+        showFallNotification(timestamp: timestamp)
     }
 }

@@ -1,13 +1,19 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/contact.dart';
+import '../services/alert_ports.dart';
+import '../services/secure_store.dart';
+import 'shared_preferences_migration.dart';
 
-class ContactsRepository {
+class ContactsRepository implements EmergencyContactsStore {
+  ContactsRepository({KeyValueStore? store})
+      : _store = store ?? SecureKeyValueStore();
+
   static const _key = 'contacts';
+  final KeyValueStore _store;
 
+  @override
   Future<List<Contact>> getAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getStringList(_key) ?? [];
+    final raw = await _readRaw();
     final contacts = <Contact>[];
     for (final s in raw) {
       try {
@@ -20,11 +26,11 @@ class ContactsRepository {
   }
 
   Future<void> save(List<Contact> contacts) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
+    await _store.write(
       _key,
-      contacts.map((c) => jsonEncode(c.toJson())).toList(),
+      jsonEncode(contacts.map((c) => jsonEncode(c.toJson())).toList()),
     );
+    await deleteLegacyKey(_key);
   }
 
   Future<void> add(Contact contact) async {
@@ -46,5 +52,24 @@ class ContactsRepository {
       contacts[idx] = updated;
       await save(contacts);
     }
+  }
+
+  Future<List<String>> _readRaw() async {
+    final secureRaw = await _store.read(_key);
+    if (secureRaw != null) {
+      try {
+        final decoded = jsonDecode(secureRaw) as List<dynamic>;
+        return List<String>.from(decoded);
+      } catch (_) {
+        await _store.delete(_key);
+      }
+    }
+
+    final legacyRaw = await readLegacyStringList(_key);
+    if (legacyRaw.isNotEmpty) {
+      await _store.write(_key, jsonEncode(legacyRaw));
+      await deleteLegacyKey(_key);
+    }
+    return legacyRaw;
   }
 }

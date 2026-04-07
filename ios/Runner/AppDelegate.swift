@@ -5,6 +5,7 @@ import UIKit
 // Flutter is the cross-platform framework we use for the phone app's UI and logic.
 // Importing it here gives us access to Flutter's engine types and plugin registration.
 import Flutter
+import Security
 
 // WatchConnectivity is Apple's framework for phone ↔ Apple Watch communication.
 // It must be imported here because AppDelegate sets up the WatchSessionManager,
@@ -48,12 +49,14 @@ import WatchConnectivity
     // Optional (?) because it is only created once the Flutter engine is ready
     // (see didInitializeImplicitFlutterEngine below).
     private var channel: FlutterMethodChannel?
+    private var secureStorageChannel: FlutterMethodChannel?
 
     // WatchSessionManager is our own class (WatchSessionManager.swift) that wraps
     // WCSession. It handles all Apple Watch ↔ phone message routing.
     // Stored here as a strong reference so it is not deallocated for the lifetime
     // of the app.
     private var watchSession: WatchSessionManager?
+    private let secureStorageService = "com.fallguardian.secure-store"
 
     // MARK: - UIApplicationDelegate
 
@@ -67,7 +70,54 @@ import WatchConnectivity
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        // Request notification permission natively.
+        // We deliberately do NOT call flutter_local_notifications.initialize() on iOS
+        // (see notification_service.dart) because the plugin sets itself as the
+        // UNUserNotificationCenterDelegate and then suppresses notifications it did
+        // not post itself — including our native fall alert.  Requesting permission
+        // here and setting AppDelegate as the permanent delegate avoids that conflict.
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .sound, .badge]
+        ) { granted, error in
+            if let error = error {
+                NSLog("[Notifications][Phone] requestAuthorization failed: \(error)")
+                return
+            }
+            NSLog("[Notifications][Phone] requestAuthorization granted=\(granted)")
+        }
+
+        // Become the notification center delegate before any plugin can take it.
+        // willPresent (below) ensures fall banners are shown even in the foreground.
+        UNUserNotificationCenter.current().delegate = self
+
+        // Start WCSession BEFORE Flutter initialises so fall events sent by the
+        // watch via transferUserInfo can be received even when the app is woken
+        // from a killed state (background delivery). The Flutter channel is not
+        // available yet; WatchSessionManager stores any arriving fall event in
+        // UserDefaults and shows a native notification until Flutter is ready.
+        watchSession = WatchSessionManager()
+        watchSession?.startSession()
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Show local notifications as a banner with sound when they are delivered
+    /// while the app is foregrounded.
+    ///
+    /// flutter_local_notifications is not initialised on iOS (so it never
+    /// overrides this delegate), meaning this method is the single authority
+    /// over foreground notification presentation for the whole app.
+    override func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound])
+        } else {
+            completionHandler([.alert, .sound])
+        }
     }
 
     // MARK: - FlutterImplicitEngineDelegate
@@ -105,16 +155,22 @@ import WatchConnectivity
             name: "fall_guardian/watch",
             binaryMessenger: engineBridge.applicationRegistrar.messenger()
         )
+        secureStorageChannel = FlutterMethodChannel(
+            name: "fall_guardian/secure_storage",
+            binaryMessenger: engineBridge.applicationRegistrar.messenger()
+        )
 
-        // Step 3 — Create the WatchSessionManager and hand it the channel.
-        // WatchSessionManager needs the channel so it can call invokeMethod on it
-        // when a message arrives from the Apple Watch (e.g. fall detected).
-        watchSession = WatchSessionManager(channel: channel!)
-
-        // Activate WCSession (the Bluetooth/Wi-Fi link to the Apple Watch).
-        // After this call, WatchSessionManager.session(_:activationDidCompleteWith:)
-        // will be called back once the watch is reachable.
-        watchSession?.startSession()
+        // Step 3 — Wire the Flutter channel into the already-running WatchSessionManager.
+        // watchSession was created early in application(_:didFinishLaunchingWithOptions:)
+        // so WCSession is active even before Flutter starts. Now that the engine is
+        // ready, inject the channel and drain any fall event that arrived during a
+        // background wakeup (e.g. app was killed, watch sent transferUserInfo, iOS
+        // woke the app in the background, WatchSessionManager stored the timestamp
+        // in UserDefaults). drainPendingFallEvent() forwards it to Flutter and cancels
+        // the native wake-up notification so FallAlertScreen can take over.
+        watchSession?.setChannel(channel!)
+        watchSession?.drainPendingFallEvent()
+        watchSession?.drainPendingAlertCancel()
 
         // Step 4 — Listen for method calls coming FROM Dart (the Flutter side).
         // [weak self] prevents a retain cycle: if AppDelegate is ever deallocated,
@@ -147,5 +203,86 @@ import WatchConnectivity
             // implemented" error on the Dart side.
             result(nil)
         }
+
+        secureStorageChannel!.setMethodCallHandler { [weak self] call, result in
+            guard let self else {
+                result(FlutterError(code: "NO_APP", message: "AppDelegate unavailable", details: nil))
+                return
+            }
+
+            let args = call.arguments as? [String: Any]
+            let key = args?["key"] as? String
+
+            switch call.method {
+            case "read":
+                guard let key else {
+                    result(FlutterError(code: "INVALID_ARGS", message: "Missing key", details: nil))
+                    return
+                }
+                result(self.readSecureValue(forKey: key))
+            case "write":
+                guard let key, let value = args?["value"] as? String else {
+                    result(FlutterError(code: "INVALID_ARGS", message: "Missing key/value", details: nil))
+                    return
+                }
+                let status = self.writeSecureValue(value, forKey: key)
+                if status == errSecSuccess {
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "SECURE_WRITE_FAILED", message: "Keychain write failed", details: status))
+                }
+            case "delete":
+                guard let key else {
+                    result(FlutterError(code: "INVALID_ARGS", message: "Missing key", details: nil))
+                    return
+                }
+                let status = self.deleteSecureValue(forKey: key)
+                if status == errSecSuccess || status == errSecItemNotFound {
+                    result(nil)
+                } else {
+                    result(FlutterError(code: "SECURE_DELETE_FAILED", message: "Keychain delete failed", details: status))
+                }
+            default:
+                result(FlutterMethodNotImplemented)
+            }
+        }
+    }
+
+    private func secureQuery(forKey key: String) -> [CFString: Any] {
+        [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: secureStorageService,
+            kSecAttrAccount: key,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+    }
+
+    private func readSecureValue(forKey key: String) -> String? {
+        var query = secureQuery(forKey: key)
+        query[kSecReturnData] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return nil }
+        guard let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func writeSecureValue(_ value: String, forKey key: String) -> OSStatus {
+        guard let data = value.data(using: .utf8) else { return errSecParam }
+
+        let deleteStatus = deleteSecureValue(forKey: key)
+        if deleteStatus != errSecSuccess && deleteStatus != errSecItemNotFound {
+            return deleteStatus
+        }
+
+        var query = secureQuery(forKey: key)
+        query[kSecValueData] = data
+        return SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func deleteSecureValue(forKey key: String) -> OSStatus {
+        SecItemDelete(secureQuery(forKey: key) as CFDictionary)
     }
 }

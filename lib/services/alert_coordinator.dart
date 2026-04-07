@@ -1,0 +1,323 @@
+import 'dart:async';
+
+import 'package:geolocator/geolocator.dart';
+
+import '../models/contact.dart';
+import '../models/fall_event.dart';
+import 'alert_ports.dart';
+import 'alert_runtime.dart';
+import 'location_service.dart';
+import 'notification_service.dart';
+import 'sms_service.dart';
+import '../repositories/contacts_repository.dart';
+import '../repositories/fall_events_repository.dart';
+
+enum AlertPhase {
+  countdown,
+  gettingLocation,
+  sendingSms,
+  alertSent,
+  alertFailed,
+  timedOutNoSms,
+  cancelled,
+}
+
+class AlertUiState {
+  final int fallTimestamp;
+  final AlertPhase phase;
+  final String? statusMessage;
+
+  const AlertUiState({
+    required this.fallTimestamp,
+    required this.phase,
+    this.statusMessage,
+  });
+
+  bool get isSending =>
+      phase == AlertPhase.gettingLocation ||
+      phase == AlertPhase.sendingSms ||
+      phase == AlertPhase.alertSent ||
+      phase == AlertPhase.alertFailed ||
+      phase == AlertPhase.timedOutNoSms;
+}
+
+class AlertCoordinator {
+  /// The alert workflow is intentionally written in terms of ports instead of
+  /// concrete repositories/plugins. That keeps this class focused on
+  /// "what should happen next?" rather than "how do we talk to storage/SMS?".
+  AlertCoordinator({
+    required EmergencyContactsStore contactsStore,
+    required FallEventRecorder eventRecorder,
+    required AlertLocationProvider locationProvider,
+    required AlertNotificationGateway notificationGateway,
+    required AlertSmsGateway smsGateway,
+    required WatchCommandGateway watchGateway,
+    required AlertLocaleResolver localeResolver,
+    required Clock clock,
+    required IdGenerator idGenerator,
+  })  : _contactsStore = contactsStore,
+        _eventRecorder = eventRecorder,
+        _locationProvider = locationProvider,
+        _notificationGateway = notificationGateway,
+        _smsGateway = smsGateway,
+        _watchGateway = watchGateway,
+        _localeResolver = localeResolver,
+        _clock = clock,
+        _idGenerator = idGenerator;
+
+  factory AlertCoordinator.live() {
+    return AlertCoordinator(
+      contactsStore: ContactsRepository(),
+      eventRecorder: FallEventsRepository(),
+      locationProvider: LocationService(),
+      notificationGateway: NotificationService(),
+      smsGateway: SmsService(),
+      watchGateway: const MethodChannelWatchGateway(),
+      localeResolver: const DeviceLocaleResolver(),
+      clock: SystemClock(),
+      idGenerator: const UuidGenerator(),
+    );
+  }
+
+  static const _countdownSeconds = 30;
+
+  final EmergencyContactsStore _contactsStore;
+  final FallEventRecorder _eventRecorder;
+  final AlertLocationProvider _locationProvider;
+  final AlertNotificationGateway _notificationGateway;
+  final AlertSmsGateway _smsGateway;
+  final WatchCommandGateway _watchGateway;
+  final AlertLocaleResolver _localeResolver;
+  final Clock _clock;
+  final IdGenerator _idGenerator;
+
+  final _stateController = StreamController<AlertUiState>.broadcast();
+  final _dismissController = StreamController<void>.broadcast();
+
+  Timer? _timeoutTimer;
+  Timer? _dismissTimer;
+  AlertUiState? _currentState;
+  int? _activeTimestamp;
+
+  Stream<AlertUiState> get stateStream => _stateController.stream;
+  Stream<void> get dismissStream => _dismissController.stream;
+  AlertUiState? get currentState => _currentState;
+
+  Future<void> startAlert(int timestamp) async {
+    if (_activeTimestamp == timestamp) return;
+
+    _cancelTimers();
+    _activeTimestamp = timestamp;
+    _transition(timestamp, AlertPhase.countdown);
+
+    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    final remainingMs = (_countdownSeconds * 1000 - elapsedMs)
+        .clamp(0, _countdownSeconds * 1000);
+
+    _timeoutTimer = Timer(
+      Duration(milliseconds: remainingMs),
+      () => unawaited(_handleTimeout(timestamp)),
+    );
+  }
+
+  Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
+
+  Future<void> cancelFromWatch() => _cancel(notifyWatch: false);
+
+  Future<void> _cancel({required bool notifyWatch}) async {
+    final timestamp = _activeTimestamp;
+    _cancelTimers();
+
+    if (timestamp == null) {
+      await _notificationGateway.cancelAll();
+      _dismissController.add(null);
+      return;
+    }
+
+    if (notifyWatch) {
+      unawaited(_watchGateway.sendCancelAlert());
+    }
+
+    _transition(timestamp, AlertPhase.cancelled);
+
+    final event = FallEvent(
+      id: _idGenerator.newId(),
+      timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp),
+      status: FallEventStatus.cancelled,
+    );
+    await _eventRecorder.add(event);
+    await _notificationGateway.cancelAll();
+    _activeTimestamp = null;
+    _currentState = null;
+    _dismissController.add(null);
+  }
+
+  Future<void> _handleTimeout(int timestamp) async {
+    if (!_isCurrentAlert(timestamp) ||
+        _currentState?.phase != AlertPhase.countdown) {
+      return;
+    }
+
+    final l10n = _localeResolver.resolve();
+    _transition(
+      timestamp,
+      AlertPhase.gettingLocation,
+      statusMessage: l10n.gettingLocation,
+    );
+
+    final Position? position = await _locationProvider.getCurrentPosition();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    _transition(
+      timestamp,
+      AlertPhase.sendingSms,
+      statusMessage: l10n.sendingSms,
+    );
+
+    final locationLine = position != null
+        ? l10n.smsLocationLine(position.latitude, position.longitude)
+        : l10n.smsLocationUnavailable;
+    final message = l10n.smsMessage(locationLine);
+
+    final contacts = await _contactsStore.getAll();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    final outcome = contacts.isEmpty
+        ? _noContactsOutcome(timestamp, position, l10n.smsFailed)
+        : await _smsEscalationOutcome(
+            timestamp: timestamp,
+            position: position,
+            contacts: contacts,
+            message: message,
+            smsFailedMessage: l10n.smsFailed,
+            alertSentMessageBuilder: l10n.alertSentCount,
+          );
+    if (outcome == null || !_isCurrentAlert(timestamp)) return;
+
+    await _eventRecorder.add(outcome.event);
+    await _notificationGateway.cancelAll();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    _transition(timestamp, outcome.phase, statusMessage: outcome.message);
+
+    _dismissTimer = Timer(outcome.dismissDelay, () {
+      if (!_isCurrentAlert(timestamp)) return;
+      _activeTimestamp = null;
+      _currentState = null;
+      _dismissController.add(null);
+    });
+  }
+
+  Future<_AlertOutcome?> _smsEscalationOutcome({
+    required int timestamp,
+    required Position? position,
+    required List<Contact> contacts,
+    required String message,
+    required String smsFailedMessage,
+    required String Function(int notifiedCount) alertSentMessageBuilder,
+  }) async {
+    final notified = await _smsGateway.sendFallAlert(
+      contacts: contacts,
+      message: message,
+    );
+    if (!_isCurrentAlert(timestamp)) return null;
+
+    return _smsOutcome(
+      timestamp: timestamp,
+      position: position,
+      notifiedContacts: notified,
+      smsFailedMessage: smsFailedMessage,
+      smsSuccessMessage: alertSentMessageBuilder(notified.length),
+    );
+  }
+
+  _AlertOutcome _noContactsOutcome(
+    int timestamp,
+    Position? position,
+    String message,
+  ) {
+    return _AlertOutcome(
+      event: FallEvent(
+        id: _idGenerator.newId(),
+        timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp),
+        status: FallEventStatus.timedOutNoSms,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+      ),
+      phase: AlertPhase.timedOutNoSms,
+      message: message,
+      dismissDelay: const Duration(seconds: 3),
+    );
+  }
+
+  _AlertOutcome _smsOutcome({
+    required int timestamp,
+    required Position? position,
+    required List<String> notifiedContacts,
+    required String smsFailedMessage,
+    required String smsSuccessMessage,
+  }) {
+    final smsFailed = notifiedContacts.isEmpty;
+    return _AlertOutcome(
+      event: FallEvent(
+        id: _idGenerator.newId(),
+        timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp),
+        status:
+            smsFailed ? FallEventStatus.alertFailed : FallEventStatus.alertSent,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        notifiedContacts: notifiedContacts,
+      ),
+      phase: smsFailed ? AlertPhase.alertFailed : AlertPhase.alertSent,
+      message: smsFailed ? smsFailedMessage : smsSuccessMessage,
+      dismissDelay: Duration(seconds: smsFailed ? 5 : 2),
+    );
+  }
+
+  void _cancelTimers() {
+    _timeoutTimer?.cancel();
+    _dismissTimer?.cancel();
+  }
+
+  bool _isCurrentAlert(int timestamp) => _activeTimestamp == timestamp;
+
+  void _transition(
+    int timestamp,
+    AlertPhase phase, {
+    String? statusMessage,
+  }) {
+    _emit(
+      AlertUiState(
+        fallTimestamp: timestamp,
+        phase: phase,
+        statusMessage: statusMessage,
+      ),
+    );
+  }
+
+  void _emit(AlertUiState state) {
+    _currentState = state;
+    _stateController.add(state);
+  }
+
+  void dispose() {
+    _timeoutTimer?.cancel();
+    _dismissTimer?.cancel();
+    _stateController.close();
+    _dismissController.close();
+  }
+}
+
+class _AlertOutcome {
+  const _AlertOutcome({
+    required this.event,
+    required this.phase,
+    required this.message,
+    required this.dismissDelay,
+  });
+
+  final FallEvent event;
+  final AlertPhase phase;
+  final String message;
+  final Duration dismissDelay;
+}

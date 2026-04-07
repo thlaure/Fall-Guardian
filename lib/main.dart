@@ -22,8 +22,7 @@ import 'screens/fall_alert_screen.dart';
 
 // The service that talks to the native watch layer (Wear OS / watchOS).
 import 'services/watch_communication_service.dart';
-
-// The service that shows OS-level push notifications.
+import 'services/alert_coordinator.dart';
 import 'services/notification_service.dart';
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
@@ -73,6 +72,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   // live for the entire lifetime of the app — fall events can arrive at any
   // time, including while the user is on a different screen.
   final _watchService = WatchCommunicationService();
+  final _alertCoordinator = AlertCoordinator.live();
 
   // GlobalKey gives us a stable reference to the Navigator (the stack of
   // screens). We need it in _onFallDetected because that callback fires from
@@ -80,13 +80,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   // would give us `Navigator.of(context)`.
   final _navigatorKey = GlobalKey<NavigatorState>();
 
-  // StreamController.broadcast() creates a stream that can have multiple
-  // listeners at the same time. We use it to relay "cancel alert" events from
-  // the watch to the FallAlertScreen without those two pieces of code needing
-  // a direct reference to each other.
-  // The alternative (a direct method call) would require the root widget to
-  // hold a reference to the screen — messy and fragile.
-  final _cancelAlertController = StreamController<void>.broadcast();
+  bool _isAlertScreenShowing = false;
 
   @override
   void initState() {
@@ -103,7 +97,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   // We push `null` into the broadcast stream — the value itself doesn't matter,
   // the event ("something was cancelled") is what listeners care about.
   void _onAlertCancelled() {
-    _cancelAlertController.add(null);
+    unawaited(_alertCoordinator.cancelFromWatch());
   }
 
   // Called by WatchCommunicationService when the watch detects a fall.
@@ -114,29 +108,12 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
     // notification strings. We use the navigator's context rather than the
     // widget's own context because this method can be called at any time,
     // including after the widget has been rebuilt.
-    final context = _navigatorKey.currentContext;
-    final l10n = context != null ? AppLocalizations.of(context) : null;
+    await _alertCoordinator.startAlert(timestamp);
 
-    // Only show the notification when the app is backgrounded (e.g. screen locked).
-    // When the app is in the foreground FallAlertScreen is pushed directly, so
-    // showing a heads-up banner would require a second tap to dismiss it before
-    // the user can interact with the cancel button.
-    //
-    // AppLifecycleState.resumed = the app is visible and in the foreground.
-    // Any other state (paused, inactive, detached) means the screen is off or
-    // the app is hidden, so we show the OS notification to wake the user.
-    final isInForeground =
-        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (!isInForeground) {
-      await NotificationService().showFallDetectedNotification(
-        // Fall back to hard-coded English strings if localisation is not yet
-        // available (e.g. the app is starting up and context isn't ready).
-        title: l10n?.notifTitle ?? '⚠️ Fall Detected',
-        body:
-            l10n?.notifBody ?? 'Open app to cancel or send alert in 30 seconds',
-      );
-    }
-
+    // Android background alerts are owned by WearDataListenerService's native
+    // full-screen notification. iOS background alerts are owned by
+    // WatchSessionManager's native notification. Flutter only presents the
+    // full-screen in-app alert when the phone UI is actually visible.
     // Push FallAlertScreen on top of the current screen.
     // MaterialPageRoute describes the transition animation and the widget to show.
     // fullscreenDialog: true gives it a slide-up-from-bottom animation (modal
@@ -144,19 +121,24 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
     //
     // The `?.` null-safe call means: do nothing if the navigator hasn't been
     // created yet (should never happen in practice, but safe to guard).
-    _navigatorKey.currentState?.push(
+    if (_isAlertScreenShowing) return;
+
+    _isAlertScreenShowing = true;
+    _navigatorKey.currentState
+        ?.push(
       MaterialPageRoute(
         builder: (_) => FallAlertScreen(
           // Pass the original fall timestamp so FallAlertScreen can compute
           // its remaining seconds relative to the same clock origin as the watch.
           fallTimestamp: timestamp,
-          // Pass the cancel stream so FallAlertScreen can dismiss itself when
-          // the watch (or another phone) cancels the alert remotely.
-          cancelStream: _cancelAlertController.stream,
+          alertCoordinator: _alertCoordinator,
         ),
         fullscreenDialog: true,
       ),
-    );
+    )
+        .whenComplete(() {
+      _isAlertScreenShowing = false;
+    });
   }
 
   // dispose() is called when the widget is permanently removed from the tree
@@ -165,7 +147,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   // - Disposing the watch service clears the MethodChannel handler.
   @override
   void dispose() {
-    _cancelAlertController.close();
+    _alertCoordinator.dispose();
     _watchService.dispose();
     super.dispose();
   }

@@ -3,13 +3,33 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/models/fall_event.dart';
 import 'package:fall_guardian/repositories/fall_events_repository.dart';
+import 'package:fall_guardian/services/secure_store.dart';
+
+class _FakeStore implements KeyValueStore {
+  final Map<String, String> data = {};
+
+  @override
+  Future<void> delete(String key) async {
+    data.remove(key);
+  }
+
+  @override
+  Future<String?> read(String key) async => data[key];
+
+  @override
+  Future<void> write(String key, String value) async {
+    data[key] = value;
+  }
+}
 
 void main() {
   late FallEventsRepository repo;
+  late _FakeStore store;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    repo = FallEventsRepository();
+    store = _FakeStore();
+    repo = FallEventsRepository(store: store);
   });
 
   group('FallEventsRepository', () {
@@ -89,7 +109,7 @@ void main() {
       SharedPreferences.setMockInitialValues({
         'fall_events': ['invalid json{{{', validJson],
       });
-      repo = FallEventsRepository();
+      repo = FallEventsRepository(store: store);
 
       final all = await repo.getAll();
       expect(all.length, 1, reason: 'Corrupted entry must be silently skipped');
@@ -108,6 +128,27 @@ void main() {
       // Second clear on an already-empty repository must not throw.
       await repo.clear();
       expect(await repo.getAll(), isEmpty);
+    });
+
+    test('getAll migrates legacy shared preferences into secure storage',
+        () async {
+      final validEvent = FallEvent(
+        id: 'valid-1',
+        timestamp: DateTime(2024, 3, 1),
+        status: FallEventStatus.cancelled,
+      );
+      final validJson = jsonEncode(validEvent.toJson());
+      SharedPreferences.setMockInitialValues({
+        'fall_events': [validJson],
+      });
+      repo = FallEventsRepository(store: store);
+
+      final all = await repo.getAll();
+
+      expect(all.single.id, 'valid-1');
+      expect(store.data['fall_events'], contains('valid-1'));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('fall_events'), isNull);
     });
   });
 }
