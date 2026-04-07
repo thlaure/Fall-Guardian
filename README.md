@@ -1,340 +1,169 @@
 # Fall Guardian
 
-A PSP-aware fall detection system for smartwatches that alerts family members by SMS when a fall is detected.
+Fall Guardian is a cross-platform fall detection system built for people who need a faster, more reliable response than standard “immobility-based” fall alerts.
 
-Built for people with **Progressive Supranuclear Palsy (PSP)** — a neurological condition causing frequent, atypical falls. Samsung's built-in fall detection requires prolonged immobility after a fall, which misses PSP falls entirely. Fall Guardian detects the fall event itself.
+The watch detects the fall. The watch and phone start a synchronized 30-second alert. If the alert is not cancelled, the phone escalates to emergency contacts.
 
----
+## Why this project exists
 
-## How it works
+Many built-in fall detection systems wait for the person to remain motionless after a fall. That is a poor fit for conditions such as **Progressive Supranuclear Palsy (PSP)**, where falls can be abrupt, atypical, and not followed by long immobility.
 
-1. The watch runs a continuous fall detection algorithm at 50 Hz
-2. When a fall is detected, the phone displays a **30-second countdown**
-3. The person can press **"I'm OK"** to cancel if it was a false alarm
-4. If the countdown expires, the phone fetches GPS and **sends an SMS** to all saved emergency contacts with a Google Maps link
+Fall Guardian is designed to react to the **fall event itself**.
 
-No server, no subscription, no internet required — just SMS.
+## What it does
 
----
+- Runs fall detection continuously on the watch
+- Starts a 30-second alert on the watch immediately after detection
+- Turns the phone into an alert surface too
+- Lets the alert be cancelled from either watch or phone
+- Escalates to emergency contacts if the countdown expires
+- Includes location in the message when available
+- Keeps alert history and sensitivity settings on the phone
 
-## Features
+## Supported platforms
 
-### Watch app (Wear OS & Apple Watch)
-- Continuous background fall monitoring at 50 Hz
-- PSP-optimized algorithm: triggers on impact + orientation change, not immobility
-- Configurable detection thresholds
-- Persists across reboots (Wear OS auto-restarts on boot)
-- "Monitoring active" status screen
+- iPhone + Apple Watch
+- Android phone + Wear OS watch
 
-### Phone app (Android & iOS)
-- **Full-screen fall alert** with 30-second countdown and pulsing warning
-- **One-tap cancel** ("I'm OK") for false alarms
-- **Emergency contacts** — add, edit, remove family members with name + phone number
-- **SMS alerts** — sends to all contacts simultaneously with GPS location link
-- **Fall history** — log of every event with status (Alert Sent / Cancelled), location, and notified contacts
-- **Sensitivity settings** — adjust all four detection thresholds with sliders
-- Dark UI designed for quick, stressed interaction
+Implementation split:
+- phone app: Flutter
+- Apple Watch app: native Swift/watchOS
+- Wear OS app: native Kotlin
 
----
+## How the system works
 
-## Architecture
-
-```
-┌─────────────────────────────────┐
-│  Wear OS App (Kotlin)           │  Galaxy Watch
-│  FallDetectionService           │
-│  50 Hz accelerometer            │
-│  PSP fall algorithm             │
-└──────┬──────────────────▲───────┘
-       │ fall / cancel     │ thresholds
-       │ Wearable Data     │ Layer API
-┌──────▼──────────────────┴───────┐
-│  Android Phone App (Flutter)    │
-│  WearDataListenerService        │
-│  30s countdown · SMS · GPS      │
-│  Contacts · History · Settings  │
-└─────────────────────────────────┘
-
-┌─────────────────────────────────┐
-│  watchOS App (Swift)            │  Apple Watch
-│  FallDetectionManager           │
-│  CMMotionManager 50 Hz          │
-│  PSP fall algorithm             │
-└──────┬──────────────────▲───────┘
-       │ fall / cancel     │ thresholds
-       │ WatchConnectivity │ (WCSession)
-┌──────▼──────────────────┴───────┐
-│  iOS Phone App (Flutter)        │
-│  WatchSessionManager            │
-│  (identical to Android app)     │
-└─────────────────────────────────┘
+```text
+Watch detects fall
+        ↓
+Watch starts 30-second countdown
+        ↓
+Phone receives shared fall timestamp
+        ↓
+Phone shows alert UI if foregrounded
+or system notification if backgrounded
+        ↓
+Cancel from either device stops both sides
+        ↓
+If timeout expires, phone starts escalation
 ```
 
-> Flutter does not support watchOS or Wear OS. The watch apps are fully native (Kotlin / Swift). The phone app is shared Flutter code for both platforms.
+## Project architecture
 
----
-
-## Repository structure
-
-```
+```text
 fall_guardian/
-├── flutter_app/                        # Shared Flutter phone app
-│   ├── lib/
-│   │   ├── main.dart                   # App entry point, watch event routing
-│   │   ├── screens/
-│   │   │   ├── home_screen.dart        # Status + navigation
-│   │   │   ├── fall_alert_screen.dart  # 30s countdown + cancel
-│   │   │   ├── contacts_screen.dart    # Emergency contacts CRUD
-│   │   │   ├── history_screen.dart     # Fall event log
-│   │   │   └── settings_screen.dart    # Detection threshold sliders
-│   │   ├── services/
-│   │   │   ├── watch_communication_service.dart  # MethodChannel bridge
-│   │   │   ├── sms_service.dart                  # Send SMS to contacts
-│   │   │   ├── location_service.dart             # GPS location
-│   │   │   └── notification_service.dart         # Full-screen alert notification
-│   │   ├── models/
-│   │   │   ├── contact.dart            # Contact model + JSON serialization
-│   │   │   └── fall_event.dart         # Fall event model + status enum
-│   │   └── repositories/
-│   │       ├── contacts_repository.dart      # SharedPreferences persistence
-│   │       └── fall_events_repository.dart   # SharedPreferences persistence
-│   ├── android/
-│   │   └── app/src/main/java/com/fallguardian/
-│   │       ├── MainActivity.kt               # Flutter + MethodChannel host
-│   │       └── WearDataListenerService.kt    # Wear OS Data Layer receiver
-│   └── ios/
-│       └── Runner/
-│           ├── AppDelegate.swift             # Flutter + channel setup
-│           └── WatchSessionManager.swift     # WCSession receiver
-│
-├── wear_os_app/                        # Native Kotlin Wear OS app
-│   └── app/src/main/java/com/fallguardian/
-│       ├── FallDetectionService.kt         # Foreground service, sensor loop
-│       ├── FallAlgorithm.kt                # PSP detection algorithm
-│       ├── WearDataSender.kt               # Data Layer → phone (fall / cancel)
-│       ├── PhoneMessageListenerService.kt  # Data Layer ← phone (thresholds)
-│       ├── MainActivity.kt                 # Compose status / alert screen
-│       └── BootReceiver.kt                 # Auto-restart on reboot
-│
-└── watchos_app/                        # Native Swift watchOS app
-    ├── FallGuardian/FallGuardian Watch App/
-    │   ├── FallDetectionManager.swift  # CMMotionManager sensor loop
-    │   ├── FallAlgorithm.swift         # PSP detection algorithm
-    │   ├── WatchSessionManager.swift   # WCSession ↔ phone
-    │   ├── ContentView.swift           # SwiftUI status / alert screen
-    │   └── FallGuardianApp.swift       # App entry point
-    └── FallGuardianTests/
-        └── FallAlgorithmTests.swift    # XCTest unit tests for the algorithm
+├── flutter_app/    # Shared phone app (iOS + Android)
+├── wear_os_app/    # Native Wear OS app
+└── watchos_app/    # Native watchOS app
 ```
 
----
+Phone-side architecture is intentionally split into:
+- workflow orchestration
+- UI
+- persistence adapters
+- platform/service adapters
 
-## PSP fall detection algorithm
+The alert workflow is centered on `AlertCoordinator`, which owns alert state transitions and keeps safety-critical behavior out of widget lifecycles.
 
-Standard fall detection waits for the person to stay on the ground. PSP patients often get back up immediately, or fall in a slow sideways topple with no clear free-fall phase. This algorithm fires on the fall event itself.
+For full architecture and invariants:
+- [`PROJECT_CONTEXT.md`](/Users/thomaslaure/Documents/projects/fall_guardian/PROJECT_CONTEXT.md)
+- [`WORKFLOW.md`](/Users/thomaslaure/Documents/projects/fall_guardian/WORKFLOW.md)
 
-**Inputs:** Accelerometer at 50 Hz (+ gravity isolation via low-pass filter)
-
-**Three phases:**
-
-| Phase | Condition | Default threshold |
-|-------|-----------|------------------|
-| Free-fall | `‖accel‖ < 0.5g` sustained for ≥ 80ms | Configurable |
-| Impact | `‖accel‖ > 2.5g` spike | Configurable |
-| Tilt | Angle from upright > 45° (via gravity vector) | Configurable |
-
-**Trigger rule:**
-
-```
-Fall detected = FreeFallLatch AND ImpactActive
-```
-
-- `FreeFallLatch` latches to `true` once a qualified free-fall phase has occurred and stays set until `reset()` — so the impact can arrive slightly after the free-fall ends
-- `ImpactActive` is `true` within a 2-second window after the impact spike
-- Tilt is tracked but not part of the trigger — it serves as a future signal for slow PSP topples
-
-No immobility check is performed — the alert fires on the fall event itself.
-
-A **5-second cooldown** prevents duplicate events from the same fall.
-
-The algorithm is implemented identically in Kotlin (`wear_os_app`) and Swift (`watchos_app`).
-
----
-
-## Setup
+## Quick start
 
 ### Prerequisites
 
-| Tool | Purpose |
-|------|---------|
-| Flutter SDK ≥ 3.43 (beta channel) | Phone app |
-| Android Studio | Wear OS app + Android phone |
-| Xcode ≥ 26 | watchOS app + iPhone |
-| Galaxy Watch (or emulator) | Wear OS testing |
-| Apple Watch (or simulator) | watchOS testing |
+- Flutter `>= 3.43` on the beta channel
+- Android Studio
+- Xcode `>= 26`
+- Android emulator and/or Wear OS emulator
+- iPhone simulator and/or Apple Watch simulator
 
-> Flutter beta channel is required for iOS 26 simulator compatibility. Switch with `flutter channel beta && flutter upgrade`.
+### Main commands
 
----
+From the repo root:
 
-### 1. Flutter phone app
+```bash
+make check
+make run-ios
+make run-android
+make run-wear
+```
+
+Useful commands:
+
+```bash
+make test-e2e-ios
+make test-e2e-android
+make test-e2e-all
+```
+
+### Build phone targets directly
 
 ```bash
 cd flutter_app
-flutter pub get
-flutter run                   # picks the connected device
-flutter run -d emulator-5554  # explicit Android emulator
-flutter run -d <ios-udid>     # explicit iOS simulator
+flutter build apk --debug
+flutter build ios --simulator --debug -d <ios-sim-id>
 ```
 
-**Android** — the `WearDataListenerService` is automatically registered in `AndroidManifest.xml`. No extra configuration needed; it receives Data Layer events when the phone and watch share the same Google account.
+## Development notes
 
-**iOS** — the `ios/` directory must exist (it is generated and committed). If it is missing, regenerate it with:
+### Android release signing
+
+Release builds fail closed unless signing is configured.
+
+Provide either:
+- a local `keystore.properties` file at the repo root
+- or these environment variables:
+  - `ANDROID_KEYSTORE_PATH`
+  - `ANDROID_KEYSTORE_PASSWORD`
+  - `ANDROID_KEY_ALIAS`
+  - `ANDROID_KEY_PASSWORD`
+
+### iOS/watchOS
+
+The iOS project uses the UIScene lifecycle required by modern iOS simulator targets. If the iOS project is ever missing, regenerate it with:
+
 ```bash
+cd flutter_app
 flutter create --platforms=ios --org com.fallguardian .
 ```
-Then open `flutter_app/ios/Runner.xcworkspace` in Xcode to set your Team under *Signing & Capabilities* before running on a physical device.
 
----
+### Simulator caveat
 
-### 2. Wear OS app
+Simulator communication between iPhone and Apple Watch is less reliable than real hardware. Treat simulator validation as useful, but not final, for safety-critical flows.
 
-1. Open `wear_os_app/` in Android Studio
-2. Connect a Galaxy Watch (USB or WiFi ADB) or start a Wear OS emulator
-3. Run the `app` configuration
-4. The fall detection service starts automatically and survives reboots
+## Testing
 
----
-
-### 3. watchOS app
-
-1. Open `watchos_app/` in Xcode
-2. Set your Apple Developer Team under *Signing & Capabilities* for both the Watch Extension target and the companion iOS target
-3. Update the Bundle Identifiers to match your iOS app (e.g. `com.yourname.fallguardian.watch`)
-4. Run on Apple Watch simulator or a real device paired to the iPhone running the Flutter app
-
----
-
-### Permissions
-
-The phone app requests these at runtime:
-
-| Permission | Platform | Used for |
-|-----------|----------|----------|
-| `SEND_SMS` | Android | Sending fall alerts |
-| `ACCESS_FINE_LOCATION` | Android | GPS in alert SMS |
-| Location (Always) | iOS | GPS in alert SMS |
-| `POST_NOTIFICATIONS` | Android 13+ | Full-screen fall alert |
-| `BODY_SENSORS` | Wear OS | Accelerometer access |
-
----
-
-## Sensitivity tuning
-
-Open **Settings** in the phone app to adjust thresholds. Changes are pushed live to the connected watch — the detection service reloads the algorithm immediately without a restart.
-
-| Setting | Lower value | Higher value |
-|---------|------------|--------------|
-| Free-fall threshold | More sensitive to small dips | Only very sharp drops trigger it |
-| Impact threshold | Triggers on lighter impacts | Only hard hits trigger it |
-| Tilt threshold | Triggers on small tilts | Only near-horizontal triggers it |
-| Min free-fall duration | Triggers faster | Filters out very brief dips |
-
-**Recommended starting point for PSP:**
-- Free-fall: `0.5g` (or disable mentally — the tilt branch covers slow topples)
-- Impact: `2.0g` (PSP falls aren't always violent)
-- Tilt: `45°`
-- Free-fall duration: `80ms`
-
-If you get false positives from normal activity (hand gestures, sitting down hard), raise the impact threshold incrementally by `0.2g` until they stop.
-
----
-
-## Unit tests
+Baseline verification:
 
 ```bash
-make check   # format + all tests + static analysis (recommended before every commit)
+make check
 ```
 
-**Flutter** — unit and widget tests covering models, repositories, and the fall alert screen:
+This runs:
+- formatting
+- Flutter unit and widget tests
+- Flutter static analysis
 
-| File | What it covers |
-|------|---------------|
-| `models/contact_test.dart` | JSON serialization, `copyWith` |
-| `models/fall_event_test.dart` | JSON serialization, all status values |
-| `repositories/contacts_repository_test.dart` | add / remove / update / save |
-| `repositories/fall_events_repository_test.dart` | add, newest-first sort, clear |
-| `screens/fall_alert_screen_test.dart` | countdown render, cancel flow, rate-limit |
-| `services/sms_service_test.dart` | rate-limit window, failed-send behaviour |
+The repo also includes end-to-end automation for:
+- iOS + watchOS
+- Android + Wear OS
 
-**watchOS** — `watchos_app/FallGuardianTests/FallAlgorithmTests.swift` covers the core detection algorithm (no false positive at rest, free-fall alone, impact alone, full fall sequence, `reset()`, impact window expiry). To run: add a Unit Testing Bundle target in Xcode targeting the Watch App scheme.
+## Current limitations
 
----
+- iOS cannot perform silent SMS sending in the same way Android can
+- Apple Watch/iPhone simulator communication is not equivalent to real-device behavior
+- Some Flutter plugins still warn about missing Swift Package Manager support
 
-## Manual testing
+For temporary status and current caveats:
+- [`CURRENT_STATUS.md`](/Users/thomaslaure/Documents/projects/fall_guardian/CURRENT_STATUS.md)
 
-### Verify detection
-Hold the watch on your wrist, stand up straight, then quickly flick your arm downward and tilt your wrist to horizontal. This mimics the impact + tilt signature of a fall. The 30-second countdown should appear on the phone within 1–2 seconds.
+## Documentation
 
-### Verify false positive rejection
-Shake the watch side-to-side rapidly (like waving goodbye). This produces acceleration spikes but no sustained tilt change. The alert should **not** trigger.
+- [`PROJECT_CONTEXT.md`](/Users/thomaslaure/Documents/projects/fall_guardian/PROJECT_CONTEXT.md): shared architecture and invariants
+- [`WORKFLOW.md`](/Users/thomaslaure/Documents/projects/fall_guardian/WORKFLOW.md): detailed runtime behavior
+- [`CURRENT_STATUS.md`](/Users/thomaslaure/Documents/projects/fall_guardian/CURRENT_STATUS.md): current limitations and temporary warnings
 
-### Verify cancel flow
-Let the countdown appear and press **"I'm OK"**. No SMS is sent. The event is logged in History as "Cancelled".
+## Status
 
-### Verify SMS flow
-Add yourself as a test contact. Let the countdown expire. Verify you receive the SMS with a Google Maps link to your current location.
-
-### Verify reboot persistence (Wear OS)
-Restart the Galaxy Watch. Open the Fall Guardian app — it should be running without any extra taps (the `BootReceiver` starts it automatically).
-
----
-
-## Dependencies
-
-### Flutter (`flutter_app/pubspec.yaml`)
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `geolocator` | ^10.1.0 | GPS location |
-| `flutter_sms` | ^3.0.1 | SMS sending |
-| `shared_preferences` | ^2.2.2 | Contacts + settings persistence |
-| `flutter_local_notifications` | ^17.0.0 | Full-screen fall alert notification |
-| `uuid` | ^4.3.3 | Unique IDs for events and contacts |
-| `intl` | ^0.20.2 | Date formatting in History screen |
-
-### Wear OS (`wear_os_app/app/build.gradle`)
-
-| Library | Purpose |
-|---------|---------|
-| `play-services-wearable` | Wearable Data Layer (send events to phone) |
-| `androidx.wear.compose` | Watch UI |
-
-### watchOS
-
-| Framework | Purpose |
-|-----------|---------|
-| `CoreMotion` | Accelerometer at 50 Hz |
-| `WatchConnectivity` | Send events to paired iPhone |
-| `SwiftUI` | Watch status screen |
-
----
-
-## Known limitations
-
-- **SMS delivery is not guaranteed** in areas with no cellular coverage. The app logs the attempt regardless.
-- **iOS background location** requires the user to grant "Always" location permission — "While Using" is not sufficient when the app is in the background.
-- **watchOS background sensor access** uses the `workout-processing` background mode. `WKExtendedRuntimeSession` is partially wired but not fully activated — if the watch suspends the app, detection may pause. See roadmap.
-- The algorithm has not been validated in a clinical setting. Thresholds should be tuned for the individual.
-
----
-
-## Roadmap
-
-- [ ] Fully activate `WKExtendedRuntimeSession` for continuous watchOS background monitoring (partially wired)
-- [ ] Gyroscope integration for rotation-based fall confirmation
-- [ ] Configurable countdown duration (10 / 20 / 30 / 60 seconds)
-- [ ] WhatsApp / iMessage fallback when SMS fails
-- [ ] Caregiver check-in: daily "I'm OK" confirmation with alert if not received
-- [ ] Threshold auto-calibration based on the user's normal movement patterns
-- [ ] Android companion app (non-Flutter) for deeper Wear OS integration
+This project is architecturally solid and actively being hardened, but it should still be treated as a safety-critical system under validation rather than a finished consumer product.
