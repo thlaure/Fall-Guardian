@@ -1,7 +1,12 @@
+import 'dart:developer' as developer;
+
 import 'package:geolocator/geolocator.dart';
 
-class LocationService {
+import 'alert_ports.dart';
+
+class LocationService implements AlertLocationProvider {
   /// Returns the current position, or null if unavailable.
+  @override
   Future<Position?> getCurrentPosition() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return null;
@@ -18,7 +23,13 @@ class LocationService {
         desiredAccuracy: LocationAccuracy.high,
         timeLimit: const Duration(seconds: 10),
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'getCurrentPosition failed',
+        name: 'LocationService',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

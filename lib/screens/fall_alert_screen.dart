@@ -5,28 +5,12 @@ import 'dart:async';
 // Flutter's Material UI toolkit — widgets, animations, navigation, etc.
 import 'package:flutter/material.dart';
 
-// geolocator gives us the device's GPS coordinates when the alert fires.
-// Position is the data class returned by the location query.
-import 'package:geolocator/geolocator.dart';
-
 // Our translated strings — all user-visible text comes from here so the app
 // can display in English, French, etc. based on device language.
 import '../l10n/app_localizations.dart';
 
-// Data models and repositories
-import '../models/fall_event.dart'; // Represents one fall event (id, timestamp, status, coordinates)
-import '../repositories/contacts_repository.dart'; // Reads the list of emergency contacts from local storage
-import '../repositories/fall_events_repository.dart'; // Persists fall event history to local storage
-
 // Services
-import '../services/location_service.dart'; // Wraps the geolocator plugin
-import '../services/sms_service.dart'; // Sends SMS messages
-import '../services/notification_service.dart'; // Shows / cancels OS push notifications
-import '../services/watch_communication_service.dart'; // Sends cancel signal to the watch
-
-// uuid generates universally unique IDs for each FallEvent record so that
-// the history list can identify individual events unambiguously.
-import 'package:uuid/uuid.dart';
+import '../services/alert_coordinator.dart';
 
 // ─── Why a StatefulWidget? ───────────────────────────────────────────────────
 // The screen owns a live countdown (_remaining), a pulsing animation, and a
@@ -37,9 +21,8 @@ import 'package:uuid/uuid.dart';
 /// Full-screen alert shown when the watch detects a fall.
 ///
 /// The screen displays a 30-second countdown. The user has until zero to tap
-/// "Cancel". If the countdown reaches zero, an SMS is sent to every emergency
-/// contact. The screen can also be dismissed by a cancel signal arriving from
-/// the watch via [cancelStream].
+/// "Cancel". Timeout, cancellation, and escalation are owned by [AlertCoordinator];
+/// this widget only renders the alert state and forwards the local cancel action.
 class FallAlertScreen extends StatefulWidget {
   /// The Unix epoch timestamp (milliseconds) at the exact moment the fall was
   /// detected on the watch. Both the watch and the phone derive their remaining
@@ -47,16 +30,12 @@ class FallAlertScreen extends StatefulWidget {
   /// the event message was delayed in transit.
   final int fallTimestamp;
 
-  /// A stream that emits a void event when the alert is cancelled from
-  /// another device (e.g. the user taps cancel on the watch). The screen
-  /// subscribes to this stream and pops itself when an event arrives.
-  /// Nullable because the screen can also be used in tests without a stream.
-  final Stream<void>? cancelStream;
+  final AlertCoordinator alertCoordinator;
 
   const FallAlertScreen({
     super.key,
     required this.fallTimestamp,
-    this.cancelStream,
+    required this.alertCoordinator,
   });
 
   @override
@@ -77,12 +56,13 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   int _remaining =
       _countdownSeconds; // seconds left — drives the progress ring and number
   Timer? _timer; // periodic timer that re-computes _remaining
+  StreamSubscription<AlertUiState>?
+      _alertStateSub; // state updates from the coordinator
   StreamSubscription<void>?
-      _cancelSub; // subscription to the external cancel stream
-  bool _dismissed =
-      false; // true once cancel/send has started; guards against double-execution
+      _dismissSub; // dismissal events from the coordinator
   bool _sending = false; // true while the SMS-send flow is in progress
   String _statusMessage = ''; // shown beneath the spinner while sending
+  AlertPhase _phase = AlertPhase.countdown;
 
   // ── Animation ─────────────────────────────────────────────────────────────
   // AnimationController drives the pulse animation on the warning icon.
@@ -97,10 +77,17 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     // subscribe to external cancel events.
     _setupPulse();
     _startCountdown();
-    // Listen to the external cancel stream. Every time any event arrives
-    // (the value is `void` — we don't care about the payload, only the event
-    // itself), call _cancel() to dismiss the screen and stop the countdown.
-    _cancelSub = widget.cancelStream?.listen((_) => _cancel());
+    final currentState = widget.alertCoordinator.currentState;
+    if (currentState != null &&
+        currentState.fallTimestamp == widget.fallTimestamp) {
+      _applyAlertUiState(currentState);
+    }
+    _alertStateSub = widget.alertCoordinator.stateStream.listen(
+      _applyAlertUiState,
+    );
+    _dismissSub = widget.alertCoordinator.dismissStream.listen((_) {
+      if (mounted) Navigator.of(context).pop();
+    });
   }
 
   // ── Pulse animation setup ─────────────────────────────────────────────────
@@ -154,103 +141,18 @@ class _FallAlertScreenState extends State<FallAlertScreen>
       setState(() => _remaining = remaining);
 
       if (_remaining <= 0) {
-        // Cancel the timer first to prevent _sendAlert from being called twice
-        // if the 500 ms tick fires again before the async send completes.
         timer.cancel();
-        _sendAlert();
       }
     });
   }
 
-  // ── Alert send flow (countdown reached zero) ──────────────────────────────
-  //
-  // Step 1: Get GPS coordinates (best-effort — may be null).
-  // Step 2: Build the localised SMS message body.
-  // Step 3: Load emergency contacts from SharedPreferences.
-  // Step 4: Send the SMS to every contact.
-  // Step 5: Persist a FallEvent record to the history log.
-  // Step 6: Dismiss the OS notification (it was shown when the app was backgrounded).
-  // Step 7: Show a brief confirmation message, then pop the screen.
-  Future<void> _sendAlert() async {
-    // Double-execution guard: if the user managed to tap Cancel at the exact
-    // same moment the timer fired, _dismissed may already be true. Likewise,
-    // if _sendAlert is somehow called twice, _sending prevents a second run.
-    if (_dismissed || _sending) return;
-
-    // `mounted` check after every `await` is a Flutter best practice. Between
-    // any two `await` points, the user could navigate away, causing the widget
-    // to be removed from the tree. Using `context` or calling `setState` on an
-    // unmounted widget throws a "setState after dispose" error.
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context);
-
-    // Switch the UI to "sending" mode: hide the countdown, show the spinner.
+  void _applyAlertUiState(AlertUiState state) {
+    if (!mounted || state.fallTimestamp != widget.fallTimestamp) return;
     setState(() {
-      _sending = true;
-      _statusMessage = l10n.gettingLocation; // "Getting location…"
+      _phase = state.phase;
+      _sending = state.isSending;
+      _statusMessage = state.statusMessage ?? '';
     });
-
-    // Step 1 — GPS coordinates (async; may take a few seconds or return null
-    // if the user denied location permission or GPS is unavailable).
-    final Position? position = await LocationService().getCurrentPosition();
-
-    // Mounted + dismissed checks after every await — see note above.
-    if (_dismissed || !mounted) return;
-
-    setState(() => _statusMessage = l10n.sendingSms); // "Sending SMS…"
-
-    // Step 2 — Build the localised SMS body here (inside the widget) because
-    // AppLocalizations requires a BuildContext, which only exists inside a widget.
-    // SmsService is a plain service class with no BuildContext, so we must
-    // assemble the message string before handing it off.
-    final locationLine = (position != null)
-        ? l10n.smsLocationLine(position.latitude, position.longitude)
-        : l10n.smsLocationUnavailable;
-    final smsBody = l10n.smsMessage(locationLine);
-
-    // Step 3 — Load contacts from SharedPreferences (local device storage).
-    final contacts = await ContactsRepository().getAll();
-
-    // Step 4 — Send the SMS. Returns the list of contact names that were
-    // successfully notified. An empty list means the send failed or was
-    // rate-limited (to prevent accidental SMS floods on a false positive).
-    final notified = await SmsService().sendFallAlert(
-      contacts: contacts,
-      message: smsBody,
-    );
-    if (_dismissed || !mounted) return;
-
-    // Step 5 — Persist to history so the HomeScreen can show a log of events.
-    // smsFailed = we had contacts but none received the SMS.
-    final smsFailed = contacts.isNotEmpty && notified.isEmpty;
-    final event = FallEvent(
-      id: const Uuid().v4(), // universally unique ID
-      timestamp: DateTime.fromMillisecondsSinceEpoch(widget.fallTimestamp),
-      status:
-          smsFailed ? FallEventStatus.alertFailed : FallEventStatus.alertSent,
-      latitude: position?.latitude,
-      longitude: position?.longitude,
-      notifiedContacts: notified,
-    );
-    await FallEventsRepository().add(event);
-
-    // Step 6 — Dismiss the OS-level heads-up notification that was shown when
-    // the app was backgrounded. The alert has now been handled; we no longer
-    // want it cluttering the notification shade.
-    await NotificationService().cancelAll();
-    if (!mounted) return;
-
-    // Step 7 — Show a brief result message, then pop the screen.
-    setState(
-      () => _statusMessage =
-          smsFailed ? l10n.smsFailed : l10n.alertSentCount(notified.length),
-    );
-
-    // Hold the result on screen briefly so the user can read it.
-    // Show the failure message for 5 s (there is more to read) and the
-    // success message for 2 s (a quick confirmation is enough).
-    await Future.delayed(Duration(seconds: smsFailed ? 5 : 2));
-    if (mounted) Navigator.of(context).pop();
   }
 
   // ── Cancel flow (user tapped Cancel OR remote cancel from watch) ──────────
@@ -263,37 +165,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   //   5. Dismiss any lingering OS notification.
   //   6. Pop this screen.
   Future<void> _cancel() async {
-    // Step 1 — Immediately stop the periodic timer so no further ticks fire.
-    _timer?.cancel();
-
-    // Step 2 — Set the guard flag so _sendAlert (if it somehow fires) will exit.
-    // We call setState here so the UI reflects the cancellation (the countdown
-    // disappears and the button becomes inactive).
-    setState(() => _dismissed = true);
-
-    // Step 3 — Forward the cancel to the watch.
-    // `unawaited` explicitly marks that we are not waiting for the result.
-    // The cancel signal to the watch is best-effort: if the watch is out of
-    // range, the alert will simply time out on the watch side, which is
-    // acceptable. We must not block the UI while waiting for a network round-trip.
-    unawaited(WatchCommunicationService.sendCancelAlert());
-
-    // Step 4 — Log a "cancelled" event to the history.
-    final event = FallEvent(
-      id: const Uuid().v4(),
-      timestamp: DateTime.fromMillisecondsSinceEpoch(widget.fallTimestamp),
-      status: FallEventStatus.cancelled,
-      // No location or notifiedContacts — the alert was cancelled before sending.
-    );
-    await FallEventsRepository().add(event);
-
-    // Step 5 — Remove any OS notification that was shown when the app was backgrounded.
-    await NotificationService().cancelAll();
-
-    // Step 6 — Return to the previous screen (HomeScreen).
-    // `mounted` guard because FallEventsRepository().add is async — the widget
-    // might have been removed from the tree in the meantime.
-    if (mounted) Navigator.of(context).pop();
+    await widget.alertCoordinator.cancelFromPhone();
   }
 
   @override
@@ -301,7 +173,8 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     // Always cancel timers and subscriptions in dispose() to prevent them from
     // firing after the widget is gone, which would cause runtime errors.
     _timer?.cancel();
-    _cancelSub?.cancel();
+    _alertStateSub?.cancel();
+    _dismissSub?.cancel();
     // AnimationControllers must also be disposed to release the vsync ticker.
     _pulseController.dispose();
     super.dispose();
@@ -371,7 +244,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                 // interactive countdown with a progress spinner and status text.
                 // The user can no longer cancel at this point — the SMS is already
                 // on its way.
-                _sending
+                _phase != AlertPhase.countdown
                     ? Column(
                         children: [
                           const CircularProgressIndicator(
@@ -433,7 +306,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                           SizedBox(
                             height: 60,
                             child: ElevatedButton.icon(
-                              onPressed: _cancel,
+                              onPressed: _sending ? null : _cancel,
                               icon: const Icon(Icons.check_circle, size: 28),
                               label: Text(
                                 l10n.cancelAlert, // "I'm OK – Cancel"

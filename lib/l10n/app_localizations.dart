@@ -7,6 +7,13 @@ abstract class AppLocalizations {
   static AppLocalizations of(BuildContext context) =>
       Localizations.of<AppLocalizations>(context, AppLocalizations)!;
 
+  static AppLocalizations forLocale(Locale locale) {
+    return switch (locale.languageCode) {
+      'fr' => AppLocalizationsFr(),
+      _ => AppLocalizationsEn(),
+    };
+  }
+
   static const delegate = _AppLocalizationsDelegate();
 
   static const supportedLocales = [Locale('en'), Locale('fr')];
@@ -98,10 +105,7 @@ class _AppLocalizationsDelegate
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
-    return switch (locale.languageCode) {
-      'fr' => AppLocalizationsFr(),
-      _ => AppLocalizationsEn(),
-    };
+    return AppLocalizations.forLocale(locale);
   }
 
   @override
