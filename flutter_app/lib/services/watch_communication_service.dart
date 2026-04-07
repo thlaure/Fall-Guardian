@@ -1,5 +1,7 @@
 // flutter/services.dart provides MethodChannel, the standard Flutter mechanism
 // for calling native (Kotlin/Swift) code and receiving calls back from it.
+import 'dart:developer' as developer;
+
 import 'package:flutter/services.dart';
 
 // ─── Type aliases (typedefs) ──────────────────────────────────────────────────
@@ -90,18 +92,24 @@ class WatchCommunicationService {
       // Native code calls 'onFallDetected' with a map containing 'timestamp'.
       // Example payload from Kotlin: {"timestamp": 1710000000000}
       case 'onFallDetected':
+        final args = call.arguments as Map<Object?, Object?>?;
         // Safely extract the timestamp. If the native side forgot to include
         // it (shouldn't happen, but defensive coding), fall back to now.
-        final ts = (call.arguments as Map)['timestamp'] as int? ??
-            DateTime.now().millisecondsSinceEpoch;
+        final ts =
+            args?['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
         // The `?.call(ts)` syntax means: invoke the function only if the
         // callback has been registered; otherwise do nothing silently.
         _onFallDetected?.call(ts);
+        return null;
 
       // Native code calls 'onAlertCancelled' with no payload when the user
       // cancels the alert on the watch.
       case 'onAlertCancelled':
         _onCancelAlert?.call();
+        return null;
+
+      default:
+        return null;
     }
   }
 
@@ -135,9 +143,13 @@ class WatchCommunicationService {
   static Future<void> sendCancelAlert() async {
     try {
       await _channel.invokeMethod('sendCancelAlert');
-    } catch (_) {
-      // Swallow all errors. The watch might be out of range, powered off, or
-      // the simulator IPC file is used instead (see CLAUDE.md for details).
+    } catch (error, stackTrace) {
+      developer.log(
+        'sendCancelAlert failed',
+        name: 'WatchCommunicationService',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -169,8 +181,13 @@ class WatchCommunicationService {
         'thresh_tilt': tilt,
         'thresh_freefall_ms': freeFallMs,
       });
-    } catch (_) {
-      // Same reasoning as sendCancelAlert — swallow silently.
+    } catch (error, stackTrace) {
+      developer.log(
+        'pushThresholds failed',
+        name: 'WatchCommunicationService',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 }

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.BODY_SENSORS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH"/>
@@ -61,6 +60,11 @@
                     android:pathPrefix="/cancel_alert"/>
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".DebugAutomationReceiver"
+            android:enabled="${debugAutomationEnabled}"
+            android:exported="true"/>
 
     </application>
 </manifest>

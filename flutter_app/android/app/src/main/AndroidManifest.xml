@@ -7,11 +7,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
 
     <application
         android:label="Fall Guardian"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
         android:usesCleartextTraffic="false">
 
         <activity
@@ -52,6 +54,11 @@
                     android:pathPrefix="/cancel_alert"/>
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".DebugAutomationReceiver"
+            android:enabled="${debugAutomationEnabled}"
+            android:exported="true"/>
 
         <meta-data
             android:name="flutterEmbedding"

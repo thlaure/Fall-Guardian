@@ -57,10 +57,8 @@ object WearDataSender {
     var remainingSeconds by mutableStateOf(30)
         private set
 
-    // Set to true if BODY_SENSORS permission is missing. MainActivity reads this
-    // to decide whether to show PermissionDeniedScreen instead of IdleScreen.
-    var permissionDenied by mutableStateOf(false)
-        internal set // `internal` = settable within this Gradle module (the wear_os_app module).
+    // Shared countdown origin used to keep the watch UI aligned with the phone.
+    private var fallTimestampMs: Long = 0L
 
     // --- Countdown timer ---
     // Handler + Looper.getMainLooper() creates a timer that runs on the main
@@ -68,18 +66,21 @@ object WearDataSender {
     // so this is the correct choice over a background Thread or coroutine here.
     private val handler = Handler(Looper.getMainLooper())
 
-    // tickRunnable is a self-rescheduling task: it decrements remainingSeconds
-    // by 1, then re-posts itself 1 second later — until the count reaches 0.
+    // tickRunnable re-computes the remaining time from the original fall timestamp.
+    // This avoids drift and keeps the watch aligned with the phone countdown even
+    // if there was a delivery delay before either screen became visible.
     // Using `object : Runnable` creates an anonymous class implementing Runnable
     // so the Runnable can reference itself via `this` to reschedule.
     private val tickRunnable = object : Runnable {
         override fun run() {
-            if (remainingSeconds > 1) {
-                remainingSeconds--                      // Decrement the displayed countdown.
-                handler.postDelayed(this, 1_000L)       // Schedule the next tick in 1 second.
+            val elapsedSeconds = ((System.currentTimeMillis() - fallTimestampMs) / 1000L).toInt()
+            val remaining = (30 - elapsedSeconds).coerceIn(0, 30)
+            remainingSeconds = remaining
+
+            if (remaining > 0) {
+                handler.postDelayed(this, 500L)
             } else {
                 // Countdown expired without cancellation — time is up.
-                remainingSeconds = 0
                 alertActive = false                     // Dismiss AlertScreen; return to IdleScreen.
                 // Note: the phone is responsible for sending the SMS to emergency
                 // contacts when its own 30-second countdown expires.
@@ -110,9 +111,10 @@ object WearDataSender {
 
         // Reset any previous countdown before starting a new one.
         handler.removeCallbacks(tickRunnable)
+        fallTimestampMs = timestamp
         alertActive = true        // Tell Compose to switch to AlertScreen.
-        remainingSeconds = 30     // Start from the top.
-        handler.postDelayed(tickRunnable, 1_000L) // First tick fires in 1 second.
+        remainingSeconds = (30 - ((System.currentTimeMillis() - timestamp) / 1000L).toInt()).coerceIn(0, 30)
+        handler.post(tickRunnable)
     }
 
     /**
@@ -128,6 +130,7 @@ object WearDataSender {
     fun sendCancelAlert(context: Context) {
         handler.removeCallbacks(tickRunnable)  // Stop the countdown timer.
         alertActive = false                    // Return to IdleScreen immediately.
+        fallTimestampMs = 0L
         remainingSeconds = 30                  // Reset for the next alert.
         // Empty payload — the phone only needs to know that cancel happened, not any data.
         sendToPhone(context, "/cancel_alert", ByteArray(0), "cancel alert")
@@ -148,6 +151,7 @@ object WearDataSender {
         handler.post {
             handler.removeCallbacks(tickRunnable) // Stop the countdown timer.
             alertActive = false                   // Return to IdleScreen.
+            fallTimestampMs = 0L
             remainingSeconds = 30                 // Reset for the next alert.
         }
     }

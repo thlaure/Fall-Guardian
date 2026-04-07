@@ -1,8 +1,12 @@
+import 'dart:developer' as developer;
+
 // flutter/foundation.dart gives us @visibleForTesting — an annotation that
 // documents that a method/field should only be called from test code.
 // It does NOT enforce this at runtime, but Dart's linter will warn if
 // production code accidentally uses a test-only helper.
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, visibleForTesting, TargetPlatform;
+import 'package:flutter/services.dart';
 
 // flutter_sms is a Flutter plugin that wraps the native SMS APIs.
 //   Android: uses SmsManager to fire an intent-based SMS send.
@@ -19,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // Our Contact model — a plain Dart class with `name` and `phone` fields.
 import '../models/contact.dart';
+import 'alert_ports.dart';
 
 // ─── Why a service class? ────────────────────────────────────────────────────
 // Isolating SMS logic in its own class means:
@@ -32,7 +37,10 @@ import '../models/contact.dart';
 ///
 /// Includes a 60-second rate limit to prevent accidental repeated sends
 /// (e.g. if the watch fires multiple fall events in quick succession).
-class SmsService {
+class SmsService implements AlertSmsGateway {
+  // Reuses the existing watch MethodChannel — no need for a separate channel.
+  static const _smsChannel = MethodChannel('fall_guardian/watch');
+
   // ── Rate-limiting state ───────────────────────────────────────────────────
   // `static` means this field belongs to the *class*, not to any individual
   // instance. All `SmsService()` instances share the same `_lastSentAt`.
@@ -76,12 +84,17 @@ class SmsService {
   ///   4. Extract phone numbers from the Contact objects.
   ///   5. Call the flutter_sms plugin to send the message.
   ///   6. On success, persist the new timestamp and return the notified names.
+  @override
   Future<List<String>> sendFallAlert({
     required List<Contact> contacts,
     required String message,
   }) async {
     // Step 1 — Nothing to do if there are no contacts saved yet.
-    if (contacts.isEmpty) return [];
+    if (contacts.isEmpty) {
+      developer.log('No contacts configured; skipping send',
+          name: 'SmsService');
+      return [];
+    }
 
     final now = DateTime.now();
 
@@ -103,6 +116,8 @@ class SmsService {
     //   b) The user repeatedly force-opening the alert in quick succession.
     // The check survives app restarts because the timestamp is persisted above.
     if (_lastSentAt != null && now.difference(_lastSentAt!).inSeconds < 60) {
+      developer.log('Rate limited; skipping duplicate send',
+          name: 'SmsService');
       return []; // silently skip — the caller treats an empty list as "not sent"
     }
 
@@ -110,13 +125,37 @@ class SmsService {
     // flutter_sms expects a plain List<String> of phone numbers.
     final phones = contacts.map((c) => c.phone).toList();
 
-    // Step 5 — Call the native SMS API via the flutter_sms plugin.
-    // On Android this uses SmsManager (sends silently in the background).
-    // On iOS this opens the native Messages compose sheet for user confirmation.
-    // The function returns a string result; 'sent' means success.
+    // Step 5 — Send the SMS.
+    //
+    // We use two different paths depending on the platform:
+    //
+    //   Android → native SmsManager via MethodChannel ('fall_guardian/watch').
+    //     SmsManager.sendMultipartTextMessage() sends silently in the background
+    //     with no UI required. This requires SEND_SMS permission in
+    //     AndroidManifest.xml (already declared). The flutter_sms plugin cannot
+    //     do this — it always opens the SMS app in v3.0.1.
+    //
+    //   iOS → flutter_sms opens the Messages compose sheet.
+    //     Apple does not allow apps to send SMS silently; the user must confirm.
     try {
-      final result = await sendSMS(message: message, recipients: phones);
+      final String result;
+      developer.log(
+        'Attempting send to ${phones.length} recipient(s)',
+        name: 'SmsService',
+      );
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        // Invoke the native sendSms handler registered in MainActivity.kt.
+        // Returns 'sent' on success, throws on failure.
+        await _smsChannel.invokeMethod<void>('sendSms', {
+          'message': message,
+          'recipients': phones,
+        });
+        result = 'sent';
+      } else {
+        result = await sendSMS(message: message, recipients: phones);
+      }
       if (result == 'sent') {
+        developer.log('Send reported success', name: 'SmsService');
         // Step 6 — Record the send time in memory AND in SharedPreferences so
         // the rate limit persists across restarts.
         _lastSentAt = DateTime.now();
@@ -129,8 +168,11 @@ class SmsService {
         return contacts.map((c) => c.name).toList();
       }
       // The plugin returned something other than 'sent' — treat as failure.
+      developer.log('Plugin returned non-sent result: $result',
+          name: 'SmsService');
       return [];
     } catch (_) {
+      developer.log('Send failed with exception', name: 'SmsService');
       // Any exception (plugin not available in the simulator, permission denied,
       // network error) results in a graceful empty-list return rather than a crash.
       // The caller checks `notified.isEmpty` to decide whether to show an error.
