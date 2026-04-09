@@ -17,6 +17,11 @@ final class TwilioSmsGateway implements SmsGateway
     ) {
     }
 
+    public function getProviderName(): string
+    {
+        return 'twilio';
+    }
+
     public function send(string $to, string $body): array
     {
         if ('' === $this->accountSid || '' === $this->authToken || '' === $this->from) {

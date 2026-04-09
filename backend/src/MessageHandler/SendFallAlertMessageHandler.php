@@ -51,8 +51,9 @@ final class SendFallAlertMessageHandler
         }
 
         $sentCount = 0;
+        $provider = $this->smsGateway->getProviderName();
         foreach ($contacts as $contact) {
-            $attempt = new SmsAttempt($alert, $contact, 'twilio');
+            $attempt = new SmsAttempt($alert, $contact, $provider);
             $alert->addSmsAttempt($attempt);
             $this->entityManager->persist($attempt);
 
