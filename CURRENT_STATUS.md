@@ -4,7 +4,7 @@ This file tracks temporary or fast-changing project status that should not live 
 
 ## Active limitations
 
-- iOS timeout escalation is still constrained by platform SMS behavior.
+- The Flutter app now submits timeout alerts to the backend, but real-device validation is still needed with a reachable backend URL instead of simulator localhost defaults.
 - Simulator iPhone/Apple Watch communication should not be treated as final product validation.
 - Flutter iOS simulator builds can fail due to stale generated `.packages` symlink content under `flutter_app/ios/Flutter/ephemeral/Packages/`.
 

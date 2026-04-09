@@ -33,8 +33,8 @@ Le comportement idéal de Fall Guardian est le suivant :
 6. L'annulation depuis n'importe quel appareil doit arrêter immédiatement l'alerte sur tous les autres appareils.
 7. Une annulation reçue d'un autre appareil ne doit jamais être renvoyée en boucle au périphérique source.
 8. Si les 30 secondes expirent sans annulation, l'alerte est escaladée exactement une fois.
-9. L'escalade envoie un SMS à tous les contacts d'urgence configurés, avec position GPS si disponible.
-10. Si le SMS automatique n'est pas possible, l'application doit l'indiquer clairement et enregistrer l'échec au lieu de signaler un faux succès.
+9. L'escalade soumet l'alerte au backend, qui devient l'unique propriétaire de l'envoi SMS aux contacts d'urgence configurés, avec position GPS si disponible.
+10. Si le backend n'est pas joignable ou refuse l'alerte, l'application doit l'indiquer clairement et enregistrer l'échec au lieu de signaler un faux succès.
 11. Les réglages de sensibilité modifiés sur le téléphone sont appliqués immédiatement sur la montre, ou mis en file d'attente si la montre est hors ligne.
 12. Les permissions critiques ne doivent jamais échouer silencieusement.
 13. L'historique doit refléter fidèlement ce qu'il s'est passé : annulation, alerte envoyée, échec d'envoi, absence de contacts, etc.
@@ -348,7 +348,7 @@ Côté Dart (`main.dart._onAlertCancelled`) :
 
 ---
 
-## 8. Alerte active — 30 secondes écoulées (envoi SMS)
+## 8. Alerte active — 30 secondes écoulées (escalade backend + SMS)
 
 Le tick de `FallAlertScreen._timer` se déclenche quand `remaining == 0` :
 
@@ -366,33 +366,24 @@ Le tick de `FallAlertScreen._timer` se déclenche quand `remaining == 0` :
 3. `Geolocator.getCurrentPosition(desiredAccuracy: high, timeLimit: 10s)`
 4. Retourne `Position?` (lat/lng) ou null en cas d'échec
 
-### Étape B : Construire le corps du SMS
-
-Utilise `AppLocalizations` (a accès au `BuildContext`) :
-- Si position != null : `"... Localisation : https://maps.google.com/?q=48.8569,2.2906"`
-- Si null : `"... Localisation : indisponible"`
-- Le message complet est localisé (français ou anglais selon la langue de l'appareil)
-
 ### Étape C : Charger les contacts
 
-`ContactsRepository().getAll()` lit `SharedPreferences["contacts"]` et désérialise le JSON. Si la clé n'existe pas ou est malformée, retourne une liste vide.
+`ContactsRepository().getAll()` lit le stockage sécurisé du téléphone et désérialise le JSON. Si la clé n'existe pas ou est malformée, retourne une liste vide.
 
-### Étape D : Envoyer le SMS
+### Étape D : Soumettre l'alerte au backend
 
-`SmsService().sendFallAlert(contacts, message)` :
+`BackendApiService().submitFallAlert(...)` :
 
 1. **Garde contacts vides** : si aucun contact → retourne `[]` immédiatement
-2. **Vérification du délai de recharge** (cooldown de 60 secondes) :
-   - Premier appel après redémarrage : charge `SharedPreferences["sms_last_sent_at_ms"]`
-   - Si le dernier envoi était il y a < 60s → retourne `[]`
-3. Extrait les numéros de téléphone
-4. **Chemin Android** : `channel.invokeMethod("sendSms", {message, recipients})`
-   - `MainActivity` le reçoit → `SmsManager.sendMultipartTextMessage()` par destinataire
-   - Les messages de plus de 160 caractères sont automatiquement découpés en parties
-   - Envoi silencieux en arrière-plan, aucune interface affichée
-5. **Chemin iOS** : `sendSMS(message, recipients)` du plugin `flutter_sms`
-   - Ouvre la **feuille de composition Messages** native — l'utilisateur doit appuyer sur Envoyer une fois
-6. En cas de succès : persiste `sms_last_sent_at_ms = maintenant`, retourne la liste des noms de contacts
+2. S'assure que le téléphone possède une identité backend (`device_id` + `device_token`) et l'enregistre si nécessaire
+3. Resynchronise les contacts d'urgence vers `PUT /api/v1/emergency-contacts`
+4. Envoie `POST /api/v1/fall-alerts` avec :
+   - `clientAlertId`
+   - `fallTimestamp`
+   - `locale`
+   - `latitude` / `longitude`
+5. Le backend persiste l'événement, met en file l'envoi SMS, puis renvoie un accusé de réception
+6. Le téléphone traite cet accusé comme une escalade acceptée et journalise les noms de contacts locaux comme destinataires attendus
 
 ### Étape E : Persister dans l'historique
 
@@ -401,7 +392,7 @@ FallEvent(
   id: UUID,
   timestamp: DateTime.fromMillisecondsSinceEpoch(fallTimestamp),
   status: alertSent  (si notified.isNotEmpty)
-       OU alertFailed (si des contacts existaient mais notified.isEmpty),
+       OU alertFailed (si des contacts existaient mais le backend n'a pas accepté l'alerte),
   latitude: position?.latitude,
   longitude: position?.longitude,
   notifiedContacts: ["Alice", "Bob", ...]

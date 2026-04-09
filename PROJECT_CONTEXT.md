@@ -99,7 +99,7 @@ iOS/watchOS:
 
 ## Current platform limitations
 
-- iOS cannot silently send SMS in the same way Android can. Treat this as a platform/product gap, not just an implementation detail.
+- Backend-owned SMS escalation is now the preferred path for the phone app; local device SMS should not be treated as the main production mechanism anymore.
 - Simulator watch/phone communication is not as trustworthy as real-device behavior.
 - `flutter_sms` and `flutter_local_notifications` still warn about missing Swift Package Manager support.
 
