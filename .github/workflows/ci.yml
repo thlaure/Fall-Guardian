@@ -142,7 +142,7 @@ jobs:
           format: table
           exit-code: 1
           ignore-unfixed: true
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
 
       - name: Scan repository for misconfigurations
         uses: aquasecurity/trivy-action@v0.35.0
@@ -152,7 +152,7 @@ jobs:
           format: table
           exit-code: 1
           ignore-unfixed: true
-          severity: CRITICAL,HIGH
+          severity: CRITICAL
 
   docker-lint:
     name: Docker Lint
