@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Api;
 
+use const JSON_THROW_ON_ERROR;
+
+use function sprintf;
+
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class ReplaceContactsTest extends WebTestCase

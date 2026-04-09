@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Sms;
 
 use App\Application\SmsGateway;
+use RuntimeException;
 use Twilio\Rest\Client;
 
 final class TwilioSmsGateway implements SmsGateway
@@ -19,7 +20,7 @@ final class TwilioSmsGateway implements SmsGateway
     public function send(string $to, string $body): array
     {
         if ('' === $this->accountSid || '' === $this->authToken || '' === $this->from) {
-            throw new \RuntimeException('Twilio credentials are not configured.');
+            throw new RuntimeException('Twilio credentials are not configured.');
         }
 
         $client = new Client($this->accountSid, $this->authToken);

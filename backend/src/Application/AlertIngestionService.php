@@ -8,6 +8,7 @@ use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Message\SendFallAlertMessage;
 use App\Repository\FallAlertRepository;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Uid\Uuid;
@@ -21,7 +22,7 @@ final class AlertIngestionService
     ) {
     }
 
-    public function createAlert(Device $device, string $clientAlertId, \DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
+    public function createAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
     {
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
 

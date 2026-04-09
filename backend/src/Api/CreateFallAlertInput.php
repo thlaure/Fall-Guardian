@@ -7,6 +7,7 @@ namespace App\Api;
 use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use App\State\CreateFallAlertProcessor;
+use DateTimeImmutable;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(operations: [
@@ -24,7 +25,7 @@ final class CreateFallAlertInput
     public string $clientAlertId = '';
 
     #[Assert\NotNull]
-    public ?\DateTimeImmutable $fallTimestamp = null;
+    public ?DateTimeImmutable $fallTimestamp = null;
 
     #[Assert\NotBlank]
     #[Assert\Length(max: 8)]

@@ -12,6 +12,16 @@ use App\Dto\ContactInput;
 use App\Dto\ReplaceContactsOutput;
 use App\Security\CurrentDeviceProvider;
 
+use function assert;
+
+use InvalidArgumentException;
+
+use function is_array;
+use function is_bool;
+use function is_float;
+use function is_int;
+use function is_string;
+
 /**
  * @implements ProcessorInterface<ReplaceContactsInput, ReplaceContactsOutput>
  */
@@ -25,7 +35,7 @@ final class ReplaceContactsProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): ReplaceContactsOutput
     {
-        \assert($data instanceof ReplaceContactsInput);
+        assert($data instanceof ReplaceContactsInput);
 
         $storedContacts = $this->contactSyncService->replaceContacts(
             $this->currentDeviceProvider->requireDevice(),
@@ -54,7 +64,7 @@ final class ReplaceContactsProcessor implements ProcessorInterface
             ];
         }
 
-        throw new \InvalidArgumentException('Unsupported contact payload.');
+        throw new InvalidArgumentException('Unsupported contact payload.');
     }
 
     private function stringValue(mixed $value): string

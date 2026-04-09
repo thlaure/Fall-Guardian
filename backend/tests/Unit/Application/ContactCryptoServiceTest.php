@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 final class ContactCryptoServiceTest extends TestCase
 {
     #[Test]
-    public function it_encrypts_and_decrypts_phone_numbers(): void
+    public function itEncryptsAndDecryptsPhoneNumbers(): void
     {
         $service = new ContactCryptoService('encryption-secret', 'hash-secret');
         $phone = '+33612345678';

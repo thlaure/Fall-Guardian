@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Enum\FallAlertStatus;
 use App\Repository\FallAlertRepository;
+use DateTimeImmutable;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -28,10 +29,10 @@ final class FallAlert
     private string $clientAlertId;
 
     #[ORM\Column(name: 'fall_detected_at')]
-    private \DateTimeImmutable $fallDetectedAt;
+    private DateTimeImmutable $fallDetectedAt;
 
     #[ORM\Column(name: 'received_at')]
-    private \DateTimeImmutable $receivedAt;
+    private DateTimeImmutable $receivedAt;
 
     #[ORM\Column(enumType: FallAlertStatus::class, length: 32)]
     private FallAlertStatus $status = FallAlertStatus::Received;
@@ -46,19 +47,19 @@ final class FallAlert
     private ?float $longitude = null;
 
     #[ORM\Column(name: 'cancelled_at', nullable: true)]
-    private ?\DateTimeImmutable $cancelledAt = null;
+    private ?DateTimeImmutable $cancelledAt = null;
 
     /** @var Collection<int, SmsAttempt> */
     #[ORM\OneToMany(mappedBy: 'fallAlert', targetEntity: SmsAttempt::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $smsAttempts;
 
-    public function __construct(Device $device, string $clientAlertId, \DateTimeImmutable $fallDetectedAt, string $locale, ?float $latitude, ?float $longitude)
+    public function __construct(Device $device, string $clientAlertId, DateTimeImmutable $fallDetectedAt, string $locale, ?float $latitude, ?float $longitude)
     {
         $this->id = Uuid::v7();
         $this->device = $device;
         $this->clientAlertId = $clientAlertId;
         $this->fallDetectedAt = $fallDetectedAt;
-        $this->receivedAt = new \DateTimeImmutable();
+        $this->receivedAt = new DateTimeImmutable();
         $this->locale = $locale;
         $this->latitude = $latitude;
         $this->longitude = $longitude;
@@ -80,7 +81,7 @@ final class FallAlert
         return $this->clientAlertId;
     }
 
-    public function getFallDetectedAt(): \DateTimeImmutable
+    public function getFallDetectedAt(): DateTimeImmutable
     {
         return $this->fallDetectedAt;
     }
@@ -113,7 +114,7 @@ final class FallAlert
     public function cancel(): void
     {
         $this->status = FallAlertStatus::Cancelled;
-        $this->cancelledAt = new \DateTimeImmutable();
+        $this->cancelledAt = new DateTimeImmutable();
     }
 
     public function getLocale(): string
@@ -131,7 +132,7 @@ final class FallAlert
         return $this->longitude;
     }
 
-    public function getCancelledAt(): ?\DateTimeImmutable
+    public function getCancelledAt(): ?DateTimeImmutable
     {
         return $this->cancelledAt;
     }

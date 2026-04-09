@@ -6,6 +6,10 @@ namespace App\Application;
 
 use App\Entity\FallAlert;
 
+use const DATE_ATOM;
+
+use function sprintf;
+
 final class AlertMessageBuilder
 {
     public function build(FallAlert $alert): string

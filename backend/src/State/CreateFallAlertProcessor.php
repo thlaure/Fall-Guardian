@@ -11,6 +11,10 @@ use App\Api\FallAlertView;
 use App\Application\AlertIngestionService;
 use App\Security\CurrentDeviceProvider;
 
+use function assert;
+
+use DateTimeImmutable;
+
 /**
  * @implements ProcessorInterface<CreateFallAlertInput, FallAlertView>
  */
@@ -24,12 +28,12 @@ final class CreateFallAlertProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): FallAlertView
     {
-        \assert($data instanceof CreateFallAlertInput);
+        assert($data instanceof CreateFallAlertInput);
 
         $alert = $this->alertIngestionService->createAlert(
             $this->currentDeviceProvider->requireDevice(),
             $data->clientAlertId,
-            $data->fallTimestamp ?? new \DateTimeImmutable(),
+            $data->fallTimestamp ?? new DateTimeImmutable(),
             $data->locale,
             $data->latitude,
             $data->longitude,

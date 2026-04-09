@@ -10,6 +10,8 @@ use App\Api\DeviceRegistrationInput;
 use App\Application\DeviceRegistrationService;
 use App\Dto\DeviceRegistrationOutput;
 
+use function assert;
+
 /**
  * @implements ProcessorInterface<DeviceRegistrationInput, DeviceRegistrationOutput>
  */
@@ -21,7 +23,7 @@ final class DeviceRegistrationProcessor implements ProcessorInterface
 
     public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): DeviceRegistrationOutput
     {
-        \assert($data instanceof DeviceRegistrationInput);
+        assert($data instanceof DeviceRegistrationInput);
 
         $credentials = $this->deviceRegistrationService->register($data->platform, $data->appVersion);
 

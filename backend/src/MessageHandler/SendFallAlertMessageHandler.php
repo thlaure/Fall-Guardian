@@ -11,9 +11,13 @@ use App\Entity\FallAlert;
 use App\Entity\SmsAttempt;
 use App\Message\SendFallAlertMessage;
 use App\Repository\EmergencyContactRepository;
+
+use function count;
+
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 #[AsMessageHandler]
 final class SendFallAlertMessageHandler
@@ -59,7 +63,7 @@ final class SendFallAlertMessageHandler
                 );
                 $attempt->markSent($result['providerMessageId']);
                 ++$sentCount;
-            } catch (\Throwable $exception) {
+            } catch (Throwable $exception) {
                 $attempt->markFailed((string) $exception->getCode(), $exception->getMessage());
             }
         }

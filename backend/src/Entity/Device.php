@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Repository\DeviceRepository;
+use DateTimeImmutable;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
@@ -36,13 +37,13 @@ final class Device
     private bool $revoked = false;
 
     #[ORM\Column(name: 'created_at')]
-    private \DateTimeImmutable $createdAt;
+    private DateTimeImmutable $createdAt;
 
     #[ORM\Column(name: 'updated_at')]
-    private \DateTimeImmutable $updatedAt;
+    private DateTimeImmutable $updatedAt;
 
     #[ORM\Column(name: 'last_seen_at', nullable: true)]
-    private ?\DateTimeImmutable $lastSeenAt = null;
+    private ?DateTimeImmutable $lastSeenAt = null;
 
     /** @var Collection<int, EmergencyContact> */
     #[ORM\OneToMany(mappedBy: 'device', targetEntity: EmergencyContact::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
@@ -54,7 +55,7 @@ final class Device
 
     public function __construct(string $publicId, string $tokenHash, string $platform, string $appVersion)
     {
-        $now = new \DateTimeImmutable();
+        $now = new DateTimeImmutable();
         $this->id = Uuid::v7();
         $this->publicId = $publicId;
         $this->tokenHash = $tokenHash;
@@ -104,11 +105,11 @@ final class Device
 
     public function touchSeenAt(): void
     {
-        $this->lastSeenAt = new \DateTimeImmutable();
+        $this->lastSeenAt = new DateTimeImmutable();
         $this->touch();
     }
 
-    public function getLastSeenAt(): ?\DateTimeImmutable
+    public function getLastSeenAt(): ?DateTimeImmutable
     {
         return $this->lastSeenAt;
     }
@@ -135,6 +136,6 @@ final class Device
 
     private function touch(): void
     {
-        $this->updatedAt = new \DateTimeImmutable();
+        $this->updatedAt = new DateTimeImmutable();
     }
 }

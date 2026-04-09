@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Enum\SmsAttemptStatus;
 use App\Repository\SmsAttemptRepository;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
@@ -44,13 +45,13 @@ final class SmsAttempt
     private int $retryCount = 0;
 
     #[ORM\Column(name: 'queued_at')]
-    private \DateTimeImmutable $queuedAt;
+    private DateTimeImmutable $queuedAt;
 
     #[ORM\Column(name: 'sent_at', nullable: true)]
-    private ?\DateTimeImmutable $sentAt = null;
+    private ?DateTimeImmutable $sentAt = null;
 
     #[ORM\Column(name: 'delivered_at', nullable: true)]
-    private ?\DateTimeImmutable $deliveredAt = null;
+    private ?DateTimeImmutable $deliveredAt = null;
 
     public function __construct(FallAlert $fallAlert, EmergencyContact $contact, string $provider)
     {
@@ -58,7 +59,7 @@ final class SmsAttempt
         $this->fallAlert = $fallAlert;
         $this->contact = $contact;
         $this->provider = $provider;
-        $this->queuedAt = new \DateTimeImmutable();
+        $this->queuedAt = new DateTimeImmutable();
     }
 
     public function getId(): Uuid
@@ -85,13 +86,13 @@ final class SmsAttempt
     {
         $this->status = SmsAttemptStatus::Sent;
         $this->providerMessageId = $providerMessageId;
-        $this->sentAt = new \DateTimeImmutable();
+        $this->sentAt = new DateTimeImmutable();
     }
 
     public function markDelivered(): void
     {
         $this->status = SmsAttemptStatus::Delivered;
-        $this->deliveredAt = new \DateTimeImmutable();
+        $this->deliveredAt = new DateTimeImmutable();
     }
 
     public function markFailed(?string $errorCode, string $errorMessage): void

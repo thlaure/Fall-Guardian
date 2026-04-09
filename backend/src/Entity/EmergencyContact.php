@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Repository\EmergencyContactRepository;
+use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
@@ -37,14 +38,14 @@ final class EmergencyContact
     private int $position;
 
     #[ORM\Column(name: 'created_at')]
-    private \DateTimeImmutable $createdAt;
+    private DateTimeImmutable $createdAt;
 
     #[ORM\Column(name: 'updated_at')]
-    private \DateTimeImmutable $updatedAt;
+    private DateTimeImmutable $updatedAt;
 
     public function __construct(Device $device, string $name, string $phoneCiphertext, string $phoneHash, string $phoneLast4, int $position)
     {
-        $now = new \DateTimeImmutable();
+        $now = new DateTimeImmutable();
         $this->id = Uuid::v7();
         $this->device = $device;
         $this->name = $name;

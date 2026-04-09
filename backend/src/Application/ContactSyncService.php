@@ -7,6 +7,9 @@ namespace App\Application;
 use App\Entity\Device;
 use App\Entity\EmergencyContact;
 use App\Repository\EmergencyContactRepository;
+
+use function count;
+
 use Doctrine\ORM\EntityManagerInterface;
 
 final class ContactSyncService

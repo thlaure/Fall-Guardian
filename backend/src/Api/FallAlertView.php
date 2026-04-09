@@ -9,6 +9,8 @@ use ApiPlatform\Metadata\Get;
 use App\Entity\FallAlert;
 use App\State\FallAlertProvider;
 
+use const DATE_ATOM;
+
 #[ApiResource(operations: [
     new Get(
         uriTemplate: '/api/v1/fall-alerts/{id}',

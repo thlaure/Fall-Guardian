@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 final class PhoneNumberNormalizerTest extends TestCase
 {
     #[Test]
-    public function it_normalizes_french_numbers_to_e164(): void
+    public function itNormalizesFrenchNumbersToE164(): void
     {
         $normalizer = new PhoneNumberNormalizer('+33');
 

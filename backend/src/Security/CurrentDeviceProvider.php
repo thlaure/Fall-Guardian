@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security;
 
 use App\Entity\Device;
+use RuntimeException;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
 final class CurrentDeviceProvider
@@ -18,7 +19,7 @@ final class CurrentDeviceProvider
         $user = $this->tokenStorage->getToken()?->getUser();
 
         if (!$user instanceof DeviceApiUser) {
-            throw new \RuntimeException('Authenticated device context is missing.');
+            throw new RuntimeException('Authenticated device context is missing.');
         }
 
         return $user->getDevice();

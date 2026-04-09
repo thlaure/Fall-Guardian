@@ -4,9 +4,17 @@ declare(strict_types=1);
 
 namespace App\Application;
 
+use RuntimeException;
+
+use const SODIUM_CRYPTO_SECRETBOX_NONCEBYTES;
+
+use function sprintf;
+use function strlen;
+
 final class ContactCryptoService
 {
     private readonly string $encryptionKey;
+
     private readonly string $hashKey;
 
     public function __construct(string $encryptionSecret, string $hashSecret)
@@ -28,7 +36,7 @@ final class ContactCryptoService
         $decoded = base64_decode($ciphertext, true);
 
         if (false === $decoded || strlen($decoded) <= SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
-            throw new \RuntimeException('Invalid ciphertext payload.');
+            throw new RuntimeException('Invalid ciphertext payload.');
         }
 
         $nonce = substr($decoded, 0, SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
@@ -36,7 +44,7 @@ final class ContactCryptoService
         $plain = sodium_crypto_secretbox_open($payload, $nonce, $this->encryptionKey);
 
         if (false === $plain) {
-            throw new \RuntimeException('Unable to decrypt phone number.');
+            throw new RuntimeException('Unable to decrypt phone number.');
         }
 
         return $plain;

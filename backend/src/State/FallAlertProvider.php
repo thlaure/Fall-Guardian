@@ -9,6 +9,9 @@ use ApiPlatform\State\ProviderInterface;
 use App\Api\FallAlertView;
 use App\Application\AlertIngestionService;
 use App\Security\CurrentDeviceProvider;
+
+use function is_string;
+
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
