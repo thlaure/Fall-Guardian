@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter_app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Run static analysis
+        run: flutter analyze
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          coverage: none
+          extensions: ctype, iconv, pdo_pgsql
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/vendor
+          key: backend-composer-${{ runner.os }}-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: |
+            backend-composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        env:
+          APP_ENV: test
+          APP_SECRET: ci-app-secret
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Check coding style
+        run: vendor/bin/php-cs-fixer fix --diff --verbose --dry-run
+
+      - name: Run static analysis
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=-1
+
+      - name: Run unit tests
+        env:
+          APP_ENV: test
+          APP_SECRET: ci-app-secret
+        run: vendor/bin/phpunit --testsuite=Unit
