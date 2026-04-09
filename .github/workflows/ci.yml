@@ -58,21 +58,21 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build Docker images
-        run: docker compose build --no-cache
+        run: docker compose -f docker-compose.yml build --no-cache
 
       - name: Start services
         run: |
-          docker compose up -d
+          docker compose -f docker-compose.yml up -d
           echo "Waiting for services to be healthy..."
           sleep 10
-          docker compose ps
+          docker compose -f docker-compose.yml ps
 
       - name: Print logs on failure
         if: failure()
-        run: docker compose logs
+        run: docker compose -f docker-compose.yml logs
 
       - name: Install Composer dependencies
-        run: docker compose exec -T app composer install --no-interaction --no-progress --prefer-dist
+        run: docker compose -f docker-compose.yml exec -T app composer install --no-interaction --no-progress --prefer-dist
 
       - name: Check HTTP reachability
         run: |
@@ -87,26 +87,26 @@ jobs:
           curl -v --fail-with-body http://localhost:8002/health
 
       - name: Create test database
-        run: docker compose exec -T app php bin/console -e test doctrine:database:create --if-not-exists
+        run: docker compose -f docker-compose.yml exec -T app php bin/console -e test doctrine:database:create --if-not-exists
 
       - name: Run migrations
-        run: docker compose exec -T app php bin/console -e test doctrine:migrations:migrate --no-interaction
+        run: docker compose -f docker-compose.yml exec -T app php bin/console -e test doctrine:migrations:migrate --no-interaction
 
       - name: Run unit tests
-        run: docker compose exec -T app vendor/bin/phpunit --testsuite=Unit
+        run: docker compose -f docker-compose.yml exec -T app vendor/bin/phpunit --testsuite=Unit
 
       - name: Run CS Fixer (dry-run)
-        run: docker compose exec -T app vendor/bin/php-cs-fixer fix --dry-run --diff --sequential
+        run: docker compose -f docker-compose.yml exec -T app vendor/bin/php-cs-fixer fix --dry-run --diff --sequential
 
       - name: Run PHPStan
-        run: docker compose exec -T app vendor/bin/phpstan analyse --no-progress --memory-limit=-1
+        run: docker compose -f docker-compose.yml exec -T app vendor/bin/phpstan analyse --no-progress --memory-limit=-1
 
       - name: YAML linter
-        run: docker compose exec -T app php bin/console lint:yaml config
+        run: docker compose -f docker-compose.yml exec -T app php bin/console lint:yaml config
 
       - name: Stop services
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml down -v
 
   secret-scan:
     name: Secret Scan
