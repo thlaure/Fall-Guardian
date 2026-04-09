@@ -7,9 +7,11 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    app.share_dir: '%env(string:APP_SHARE_DIR)%'
     app.default_country_code: '%env(string:APP_DEFAULT_COUNTRY_CODE)%'
     app.contact_encryption_key: '%env(string:CONTACT_ENCRYPTION_KEY)%'
     app.contact_hash_key: '%env(string:CONTACT_HASH_KEY)%'
+    app.sms_provider: '%env(string:SMS_PROVIDER)%'
     app.twilio.account_sid: '%env(string:SMS_PROVIDER_TWILIO_ACCOUNT_SID)%'
     app.twilio.auth_token: '%env(string:SMS_PROVIDER_TWILIO_AUTH_TOKEN)%'
     app.twilio.from: '%env(string:SMS_PROVIDER_TWILIO_FROM)%'
@@ -34,10 +36,23 @@ services:
             $encryptionSecret: '%app.contact_encryption_key%'
             $hashSecret: '%app.contact_hash_key%'
 
+    App\Infrastructure\Sms\FakeSmsStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+            $shareDir: '%app.share_dir%'
+
     App\Infrastructure\Sms\TwilioSmsGateway:
         arguments:
             $accountSid: '%app.twilio.account_sid%'
             $authToken: '%app.twilio.auth_token%'
             $from: '%app.twilio.from%'
 
-    App\Application\SmsGateway: '@App\Infrastructure\Sms\TwilioSmsGateway'
+    App\Infrastructure\Sms\DelegatingSmsGateway:
+        arguments:
+            $provider: '%app.sms_provider%'
+
+    App\Controller\DebugFakeSmsController:
+        arguments:
+            $appEnv: '%kernel.environment%'
+
+    App\Application\SmsGateway: '@App\Infrastructure\Sms\DelegatingSmsGateway'

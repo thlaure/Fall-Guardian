@@ -231,6 +231,15 @@ Key local URLs:
 
 - API docs: `http://localhost:8002/docs`
 - Device/API endpoints: `http://localhost:8002/api/v1/...`
+- Fake SMS inbox in `dev`/`test`: `http://localhost:8002/debug/fake-sms`
+
+### Fake SMS in development
+
+- `SMS_PROVIDER=fake` is the default in `dev` and `test`.
+- The fake gateway writes messages to `backend/var/share/fake_sms_inbox.jsonl`.
+- You can inspect recent fake sends through `GET /debug/fake-sms`.
+- Production must override `SMS_PROVIDER=twilio` and provide real Twilio
+  credentials.
 
 ## Operational Notes
 
