@@ -19,6 +19,9 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
+ENV APP_ENV=prod
+ENV APP_DEBUG=0
+
 COPY . /app
 COPY docker/frankenphp/php.ini /usr/local/etc/php/conf.d/app.ini
 COPY docker/frankenphp/Caddyfile /etc/caddy/Caddyfile

@@ -15,7 +15,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity(repositoryClass: FallAlertRepository::class)]
 #[ORM\Table(name: 'fall_alerts')]
 #[ORM\UniqueConstraint(name: 'uniq_alerts_device_client', columns: ['device_id', 'client_alert_id'])]
-final class FallAlert
+class FallAlert
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]

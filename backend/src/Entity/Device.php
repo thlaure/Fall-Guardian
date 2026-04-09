@@ -15,7 +15,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'devices')]
 #[ORM\UniqueConstraint(name: 'uniq_devices_public_id', columns: ['public_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_devices_token_hash', columns: ['token_hash'])]
-final class Device
+class Device
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]

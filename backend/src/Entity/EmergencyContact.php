@@ -12,7 +12,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity(repositoryClass: EmergencyContactRepository::class)]
 #[ORM\Table(name: 'emergency_contacts')]
 #[ORM\UniqueConstraint(name: 'uniq_contacts_device_hash', columns: ['device_id', 'phone_hash'])]
-final class EmergencyContact
+class EmergencyContact
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]

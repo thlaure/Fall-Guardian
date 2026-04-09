@@ -12,7 +12,7 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: SmsAttemptRepository::class)]
 #[ORM\Table(name: 'sms_attempts')]
-final class SmsAttempt
+class SmsAttempt
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]

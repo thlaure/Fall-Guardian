@@ -49,7 +49,6 @@ return (new PhpCsFixer\Config())
             'allow_mixed' => true,
             'remove_inheritdoc' => true,
         ],
-        'final_class' => true,
         'self_accessor' => true,
     ])
     ->setRiskyAllowed(true)
