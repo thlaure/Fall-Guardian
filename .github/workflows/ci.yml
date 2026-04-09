@@ -125,7 +125,6 @@ jobs:
   trivy:
     name: Trivy Security Scan
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -140,6 +139,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: fall-guardian-backend:ci
+          scanners: vuln
           format: table
           exit-code: 1
           ignore-unfixed: true
@@ -150,6 +150,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          scanners: misconfig
           format: table
           exit-code: 1
           ignore-unfixed: true
