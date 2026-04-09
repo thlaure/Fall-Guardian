@@ -2,10 +2,17 @@ name: CI
 
 on:
   push:
+    branches:
+      - master
+      - main
   pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch: ~
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -17,7 +24,7 @@ jobs:
         working-directory: flutter_app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -37,46 +44,131 @@ jobs:
       - name: Run static analysis
         run: flutter analyze
 
-  backend:
-    name: Backend
+  backend-tests:
+    name: Backend Tests
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.5"
-          coverage: none
-          extensions: ctype, iconv, pdo_pgsql
-          tools: composer:v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: backend/vendor
-          key: backend-composer-${{ runner.os }}-${{ hashFiles('backend/composer.lock') }}
-          restore-keys: |
-            backend-composer-${{ runner.os }}-
+      - name: Build Docker images
+        run: docker compose build --no-cache
 
-      - name: Install dependencies
-        env:
-          APP_ENV: test
-          APP_SECRET: ci-app-secret
-        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Start services
+        run: |
+          docker compose up -d
+          echo "Waiting for services to be healthy..."
+          sleep 10
+          docker compose ps
 
-      - name: Check coding style
-        run: vendor/bin/php-cs-fixer fix --diff --verbose --dry-run --sequential
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose logs
 
-      - name: Run static analysis
-        run: vendor/bin/phpstan analyse --no-progress --memory-limit=-1
+      - name: Install Composer dependencies
+        run: docker compose exec -T app composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Check HTTP reachability
+        run: |
+          for i in {1..10}; do
+            if curl -s -f http://localhost:8002/health > /dev/null 2>&1; then
+              echo "App is ready"
+              break
+            fi
+            echo "Waiting for app... ($i/10)"
+            sleep 2
+          done
+          curl -v --fail-with-body http://localhost:8002/health
+
+      - name: Create test database
+        run: docker compose exec -T app php bin/console -e test doctrine:database:create --if-not-exists
+
+      - name: Run migrations
+        run: docker compose exec -T app php bin/console -e test doctrine:migrations:migrate --no-interaction
 
       - name: Run unit tests
-        env:
-          APP_ENV: test
-          APP_SECRET: ci-app-secret
-        run: vendor/bin/phpunit --testsuite=Unit
+        run: docker compose exec -T app vendor/bin/phpunit --testsuite=Unit
+
+      - name: Run CS Fixer (dry-run)
+        run: docker compose exec -T app vendor/bin/php-cs-fixer fix --dry-run --diff --sequential
+
+      - name: Run PHPStan
+        run: docker compose exec -T app vendor/bin/phpstan analyse --no-progress --memory-limit=-1
+
+      - name: YAML linter
+        run: docker compose exec -T app php bin/console lint:yaml config
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+  trivy:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build backend image
+        run: docker build -f backend/docker/frankenphp/Dockerfile -t fall-guardian-backend:ci backend
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: fall-guardian-backend:ci
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan repository for misconfigurations
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+  docker-lint:
+    name: Docker Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Lint backend Dockerfile (dev)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: backend/docker/frankenphp/Dockerfile.dev
+          failure-threshold: error
+
+      - name: Lint backend Dockerfile (prod)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: backend/docker/frankenphp/Dockerfile
+          failure-threshold: error
