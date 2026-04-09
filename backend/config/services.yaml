@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+# See also https://symfony.com/doc/current/service_container/import.html
+
+# Put parameters here that don't need to change on each machine where the app is deployed
+# https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
+parameters:
+    app.default_country_code: '%env(string:APP_DEFAULT_COUNTRY_CODE)%'
+    app.contact_encryption_key: '%env(string:CONTACT_ENCRYPTION_KEY)%'
+    app.contact_hash_key: '%env(string:CONTACT_HASH_KEY)%'
+    app.twilio.account_sid: '%env(string:SMS_PROVIDER_TWILIO_ACCOUNT_SID)%'
+    app.twilio.auth_token: '%env(string:SMS_PROVIDER_TWILIO_AUTH_TOKEN)%'
+    app.twilio.from: '%env(string:SMS_PROVIDER_TWILIO_FROM)%'
+
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true      # Automatically injects dependencies in your services.
+        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+
+    # makes classes in src/ available to be used as services
+    # this creates a service per class whose id is the fully-qualified class name
+    App\:
+        resource: '../src/'
+
+    App\Application\PhoneNumberNormalizer:
+        arguments:
+            $defaultCountryCode: '%app.default_country_code%'
+
+    App\Application\ContactCryptoService:
+        arguments:
+            $encryptionSecret: '%app.contact_encryption_key%'
+            $hashSecret: '%app.contact_hash_key%'
+
+    App\Infrastructure\Sms\TwilioSmsGateway:
+        arguments:
+            $accountSid: '%app.twilio.account_sid%'
+            $authToken: '%app.twilio.auth_token%'
+            $from: '%app.twilio.from%'
+
+    App\Application\SmsGateway: '@App\Infrastructure\Sms\TwilioSmsGateway'

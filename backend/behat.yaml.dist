@@ -1,0 +1,9 @@
+default:
+    suites:
+        api:
+            contexts:
+                - App\Tests\Behat\ApiContext
+    extensions:
+        FriendsOfBehat\SymfonyExtension:
+            kernel:
+                class: App\Kernel
