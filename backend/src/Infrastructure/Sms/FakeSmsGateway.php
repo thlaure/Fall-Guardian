@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Sms;
 
-use App\Application\SmsGateway;
+use App\Domain\Sms\Port\SmsGatewayInterface;
 
 use function sprintf;
 
 use Symfony\Component\Uid\Uuid;
 
-final class FakeSmsGateway implements SmsGateway
+final readonly class FakeSmsGateway implements SmsGatewayInterface
 {
-    public function __construct(private readonly FakeSmsStore $store)
+    public function __construct(private FakeSmsStore $store)
     {
     }
 

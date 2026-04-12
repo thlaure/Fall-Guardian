@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
 use Rector\Doctrine\Set\DoctrineSetList;
-use Rector\Php85\Rector\Class_\AddOverrideAttributeToOverriddenMethodsRector;
 use Rector\PHPUnit\Set\PHPUnitSetList;
 use Rector\Symfony\Set\SymfonySetList;
 
@@ -17,7 +16,6 @@ return RectorConfig::configure()
         __DIR__ . '/var',
         __DIR__ . '/vendor',
         __DIR__ . '/config/reference.php',
-        AddOverrideAttributeToOverriddenMethodsRector::class,
     ])
     ->withPhpSets(php85: true)
     ->withPreparedSets(

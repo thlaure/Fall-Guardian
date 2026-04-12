@@ -29,11 +29,11 @@ use function rtrim;
 use function sprintf;
 use function trim;
 
-final class FakeSmsStore
+final readonly class FakeSmsStore
 {
     public function __construct(
-        private readonly string $projectDir,
-        private readonly string $shareDir,
+        private string $projectDir,
+        private string $shareDir,
     ) {
     }
 
@@ -78,6 +78,15 @@ final class FakeSmsStore
         return $entries;
     }
 
+    public function clear(): void
+    {
+        $path = $this->path();
+
+        if (file_exists($path)) {
+            file_put_contents($path, '');
+        }
+    }
+
     public function append(string $providerMessageId, string $to, string $body): void
     {
         $path = $this->path();
@@ -91,7 +100,7 @@ final class FakeSmsStore
             'providerMessageId' => $providerMessageId,
             'to' => $to,
             'body' => $body,
-            'createdAt' => (new DateTimeImmutable())->format(DATE_ATOM),
+            'createdAt' => new DateTimeImmutable()->format(DATE_ATOM),
         ];
 
         file_put_contents(

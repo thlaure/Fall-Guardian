@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\FallAlertStatus;
-use App\Repository\FallAlertRepository;
+use App\Infrastructure\Persistence\DoctrineFallAlertRepository;
 use DateTimeImmutable;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\Entity(repositoryClass: FallAlertRepository::class)]
+#[ORM\Entity(repositoryClass: DoctrineFallAlertRepository::class)]
 #[ORM\Table(name: 'fall_alerts')]
 #[ORM\UniqueConstraint(name: 'uniq_alerts_device_client', columns: ['device_id', 'client_alert_id'])]
 class FallAlert
@@ -21,49 +21,36 @@ class FallAlert
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
 
-    #[ORM\ManyToOne(targetEntity: Device::class, inversedBy: 'alerts')]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
-    private Device $device;
-
-    #[ORM\Column(name: 'client_alert_id', length: 100)]
-    private string $clientAlertId;
-
-    #[ORM\Column(name: 'fall_detected_at')]
-    private DateTimeImmutable $fallDetectedAt;
-
     #[ORM\Column(name: 'received_at')]
     private DateTimeImmutable $receivedAt;
 
-    #[ORM\Column(enumType: FallAlertStatus::class, length: 32)]
+    #[ORM\Column(length: 32, enumType: FallAlertStatus::class)]
     private FallAlertStatus $status = FallAlertStatus::Received;
-
-    #[ORM\Column(length: 8)]
-    private string $locale;
-
-    #[ORM\Column(nullable: true)]
-    private ?float $latitude = null;
-
-    #[ORM\Column(nullable: true)]
-    private ?float $longitude = null;
 
     #[ORM\Column(name: 'cancelled_at', nullable: true)]
     private ?DateTimeImmutable $cancelledAt = null;
 
     /** @var Collection<int, SmsAttempt> */
-    #[ORM\OneToMany(mappedBy: 'fallAlert', targetEntity: SmsAttempt::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OneToMany(targetEntity: SmsAttempt::class, mappedBy: 'fallAlert', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $smsAttempts;
 
-    public function __construct(Device $device, string $clientAlertId, DateTimeImmutable $fallDetectedAt, string $locale, ?float $latitude, ?float $longitude)
+    /** @var Collection<int, PushAttempt> */
+    #[ORM\OneToMany(targetEntity: PushAttempt::class, mappedBy: 'fallAlert', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $pushAttempts;
+
+    public function __construct(#[ORM\ManyToOne(targetEntity: Device::class, inversedBy: 'alerts')]
+        #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+        private Device $device, #[ORM\Column(name: 'client_alert_id', length: 100)]
+        private string $clientAlertId, #[ORM\Column(name: 'fall_detected_at')]
+        private DateTimeImmutable $fallDetectedAt, #[ORM\Column(length: 8)]
+        private string $locale, #[ORM\Column(nullable: true)]
+        private ?float $latitude, #[ORM\Column(nullable: true)]
+        private ?float $longitude)
     {
         $this->id = Uuid::v7();
-        $this->device = $device;
-        $this->clientAlertId = $clientAlertId;
-        $this->fallDetectedAt = $fallDetectedAt;
         $this->receivedAt = new DateTimeImmutable();
-        $this->locale = $locale;
-        $this->latitude = $latitude;
-        $this->longitude = $longitude;
         $this->smsAttempts = new ArrayCollection();
+        $this->pushAttempts = new ArrayCollection();
     }
 
     public function getId(): Uuid
@@ -84,6 +71,11 @@ class FallAlert
     public function getFallDetectedAt(): DateTimeImmutable
     {
         return $this->fallDetectedAt;
+    }
+
+    public function getReceivedAt(): DateTimeImmutable
+    {
+        return $this->receivedAt;
     }
 
     public function getStatus(): FallAlertStatus
@@ -117,6 +109,11 @@ class FallAlert
         $this->cancelledAt = new DateTimeImmutable();
     }
 
+    public function markAcknowledged(): void
+    {
+        $this->status = FallAlertStatus::Acknowledged;
+    }
+
     public function getLocale(): string
     {
         return $this->locale;
@@ -147,6 +144,19 @@ class FallAlert
     {
         if (!$this->smsAttempts->contains($smsAttempt)) {
             $this->smsAttempts->add($smsAttempt);
+        }
+    }
+
+    /** @return Collection<int, PushAttempt> */
+    public function getPushAttempts(): Collection
+    {
+        return $this->pushAttempts;
+    }
+
+    public function addPushAttempt(PushAttempt $pushAttempt): void
+    {
+        if (!$this->pushAttempts->contains($pushAttempt)) {
+            $this->pushAttempts->add($pushAttempt);
         }
     }
 }
