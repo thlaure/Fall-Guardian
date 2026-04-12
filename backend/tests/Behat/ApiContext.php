@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Behat;
 
+use App\Infrastructure\Push\FakePushStore;
+use App\Infrastructure\Sms\FakeSmsStore;
+
 use function array_key_exists;
 
 use Behat\Behat\Context\Context;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\PyStringNode;
 
+use function count;
 use function is_array;
 use function is_scalar;
 use function json_decode;
@@ -43,8 +47,11 @@ final class ApiContext implements Context
     /** @var array<mixed>|null */
     private ?array $lastResponseData = null;
 
-    public function __construct(KernelInterface $kernel)
-    {
+    public function __construct(
+        KernelInterface $kernel,
+        private readonly FakeSmsStore $smsStore,
+        private readonly FakePushStore $pushStore,
+    ) {
         $this->client = new KernelBrowser($kernel);
         $this->client->disableReboot();
     }
@@ -61,6 +68,8 @@ final class ApiContext implements Context
         $this->stored = [];
         $this->lastStatusCode = 0;
         $this->lastResponseData = null;
+        $this->smsStore->clear();
+        $this->pushStore->clear();
     }
 
     // ─── Given ─────────────────────────────────────────────────────────────────
@@ -232,6 +241,30 @@ final class ApiContext implements Context
                 'Expected an empty collection but got: %s',
                 json_encode($this->lastResponseData, JSON_THROW_ON_ERROR),
             ));
+        }
+    }
+
+    /**
+     * @Then the fake SMS inbox contains :count messages
+     */
+    public function theFakeSmsInboxContainsMessages(int $count): void
+    {
+        $actual = count($this->smsStore->all());
+
+        if ($actual !== $count) {
+            throw new RuntimeException(sprintf('Expected %d SMS message(s) but found %d.', $count, $actual));
+        }
+    }
+
+    /**
+     * @Then the fake push inbox contains :count messages
+     */
+    public function theFakePushInboxContainsMessages(int $count): void
+    {
+        $actual = count($this->pushStore->all());
+
+        if ($actual !== $count) {
+            throw new RuntimeException(sprintf('Expected %d push message(s) but found %d.', $count, $actual));
         }
     }
 

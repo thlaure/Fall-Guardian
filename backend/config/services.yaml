@@ -70,6 +70,15 @@ services:
     App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverPushTokenRepository'
     App\Domain\Contact\Port\EmergencyContactRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineEmergencyContactRepository'
 
+    App\Infrastructure\Push\FakePushStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+            $shareDir: '%app.share_dir%'
+
+    App\UI\Controller\DebugFakePushController:
+        arguments:
+            $appEnv: '%kernel.environment%'
+
     App\Infrastructure\Push\FcmPushGateway:
         arguments:
             $projectId: '%app.fcm.project_id%'
