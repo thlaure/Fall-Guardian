@@ -15,7 +15,7 @@ import '../repositories/fall_events_repository.dart';
 enum AlertPhase {
   countdown,
   gettingLocation,
-  sendingSms,
+  sendingAlert,
   alertSent,
   alertFailed,
   timedOutNoSms,
@@ -35,7 +35,7 @@ class AlertUiState {
 
   bool get isSending =>
       phase == AlertPhase.gettingLocation ||
-      phase == AlertPhase.sendingSms ||
+      phase == AlertPhase.sendingAlert ||
       phase == AlertPhase.alertSent ||
       phase == AlertPhase.alertFailed ||
       phase == AlertPhase.timedOutNoSms;
@@ -182,8 +182,8 @@ class AlertCoordinator {
 
     _transition(
       timestamp,
-      AlertPhase.sendingSms,
-      statusMessage: l10n.sendingSms,
+      AlertPhase.sendingAlert,
+      statusMessage: l10n.sendingAlert,
     );
 
     final contacts = await _contactsStore.getAll();

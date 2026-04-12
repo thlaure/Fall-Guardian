@@ -26,9 +26,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get homeStatusBody => 'La détection de chutes est active.\n'
       'Une alerte de 30 secondes apparaîtra si une chute est détectée.';
   @override
-  String get homeContactsTitle => 'Contacts d\'urgence';
+  String get homeContactsTitle => 'Aidants';
   @override
-  String get homeContactsSubtitle => 'Gérer qui est alerté';
+  String get homeContactsSubtitle => 'Gérer qui reçoit l’alerte';
   @override
   String get homeHistoryTitle => 'Historique des chutes';
   @override
@@ -39,15 +39,14 @@ class AppLocalizationsFr extends AppLocalizations {
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   @override
-  String get contactsScreenTitle => 'Contacts d\'urgence';
+  String get contactsScreenTitle => 'Aidants';
   @override
-  String contactsRemoveTitle(String name) =>
-      'Retirer $name des contacts d\'urgence ?';
+  String contactsRemoveTitle(String name) => 'Retirer $name des aidants ?';
   @override
   String get contactsEmpty => 'Aucun contact';
   @override
   String get contactsEmptyHint =>
-      'Ajoutez des proches à prévenir en cas de chute détectée.';
+      'Ajoutez les aidants à prévenir en cas de chute détectée.';
   @override
   String get addContact => 'Ajouter un contact';
   @override
@@ -70,17 +69,17 @@ class AppLocalizationsFr extends AppLocalizations {
   String get fallAlertTitle => 'Chute détectée !';
   @override
   String get fallAlertBody =>
-      'Vos contacts d\'urgence seront prévenus sauf si vous annulez.';
+      'Vos aidants seront prévenus sauf si vous annulez.';
   @override
   String get gettingLocation => 'Récupération de votre position…';
   @override
-  String get sendingSms => 'Envoi des alertes SMS…';
+  String get sendingAlert => "Envoi de l’alerte\u2026";
   @override
   String get smsFailed =>
-      '⚠️ Échec de l\'envoi du SMS. Appelez vos contacts manuellement !';
+      '⚠️ Échec de l’envoi de l’alerte. Contactez vos aidants manuellement.';
   @override
   String alertSentCount(int count) =>
-      'Alerte envoyée à $count contact${count == 1 ? '' : 's'}.';
+      'Alerte envoyée à $count aidant${count == 1 ? '' : 's'}.';
   @override
   String get cancelAlert => 'Je vais bien — Annuler l\'alerte';
 
@@ -99,13 +98,13 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get statusAlertSent => 'Alerte envoyée';
   @override
-  String get statusAlertFailed => 'SMS échoué';
+  String get statusAlertFailed => 'Alerte échouée';
   @override
   String get statusCancelled => 'Annulée';
   @override
   String get statusTimedOut => 'Délai expiré';
   @override
-  String notifiedLabel(String names) => 'Prévenus : $names';
+  String notifiedLabel(String names) => 'Aidants prévenus : $names';
   @override
   String locationLabel(String coords) => 'Position : $coords';
 

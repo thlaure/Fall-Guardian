@@ -101,6 +101,24 @@ class BackendApiService implements AlertBackendGateway {
     return contacts.map((contact) => contact.name).toList(growable: false);
   }
 
+  Future<Map<String, dynamic>> createInvite() async {
+    final credentials = await _credentials();
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/api/v1/invites'),
+      headers: _jsonHeaders(token: credentials.deviceToken),
+    );
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to create caregiver invite',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
     final token = await _store.read(_deviceTokenKey);

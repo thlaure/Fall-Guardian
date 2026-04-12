@@ -91,22 +91,16 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   @override
   void initState() {
     super.initState();
-    // Register our two callback functions with the watch service.
-    // The service will call these whenever it receives an event from the
-    // native platform layer (Kotlin/Swift code on the watch side).
     _watchService.setFallDetectedCallback(_onFallDetected);
     _watchService.setCancelAlertCallback(_onAlertCancelled);
-
-    // Ask for location permission early so a real alert is not the first time
-    // the user sees the GPS authorization sheet.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_locationService.requestPermissionIfNeeded());
       unawaited(_bootstrapBackend());
     });
   }
 
   Future<void> _bootstrapBackend() async {
     try {
+      await _locationService.requestPermissionIfNeeded();
       await _backendApi.ensureReady();
       final contacts = await _contactsRepository.getAll();
       await _backendApi.syncContacts(contacts);

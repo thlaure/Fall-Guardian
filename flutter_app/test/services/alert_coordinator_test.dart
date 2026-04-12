@@ -258,7 +258,7 @@ void main() {
     expect(states.map((state) => state.phase), [
       AlertPhase.countdown,
       AlertPhase.gettingLocation,
-      AlertPhase.sendingSms,
+      AlertPhase.sendingAlert,
       AlertPhase.timedOutNoSms,
     ]);
 
@@ -297,7 +297,7 @@ void main() {
     expect(states.map((state) => state.phase), [
       AlertPhase.countdown,
       AlertPhase.gettingLocation,
-      AlertPhase.sendingSms,
+      AlertPhase.sendingAlert,
       AlertPhase.alertSent,
     ]);
 
@@ -331,7 +331,7 @@ void main() {
     expect(states.map((state) => state.phase), [
       AlertPhase.countdown,
       AlertPhase.gettingLocation,
-      AlertPhase.sendingSms,
+      AlertPhase.sendingAlert,
       AlertPhase.alertFailed,
     ]);
 
