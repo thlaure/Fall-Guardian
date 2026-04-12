@@ -46,6 +46,7 @@ Repository layout:
 ```text
 fall_guardian/
 ├── backend/
+├── caregiver_app/
 ├── flutter_app/
 ├── wear_os_app/
 └── watchos_app/
@@ -53,7 +54,7 @@ fall_guardian/
 
 ### Phone app
 
-The current phone app is Flutter and is the protected-person app. It uses a cleaner ports/adapters structure around the alert workflow:
+The current protected-person phone app is Flutter and uses a cleaner ports/adapters structure around the alert workflow:
 
 - `models/`: pure data structures
 - `repositories/`: persistence adapters
@@ -81,6 +82,12 @@ Target direction:
 - move from "phone-managed emergency contacts" toward caregiver links managed by the backend
 - use backend-owned push notifications as the primary caregiver alert channel
 - keep fake delivery in dev/test and optional Android local SMS fallback only where explicitly enabled
+
+### Caregiver app
+
+`caregiver_app/` is the separate Flutter app for the caregiver experience.
+
+At this stage it is only a scaffold. It exists to preserve the two-app architecture while the backend and notification model catch up.
 
 ### Native watch and phone bridges
 
