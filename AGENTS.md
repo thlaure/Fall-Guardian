@@ -99,6 +99,7 @@ Use the matching workflow when the task fits:
 - verification and checks: `.claude/skills/verify-quality/SKILL.md` or `.claude/commands/fall-guardian/verify-quality.md`
 - commit preparation: `.claude/skills/prepare-commit/SKILL.md` or `.claude/commands/fall-guardian/prepare-commit.md`
 - instruction improvement: `.claude/skills/improve-instructions/SKILL.md` or `.claude/commands/fall-guardian/improve-instructions.md`
+- build-in-public post drafting: `.claude/skills/propose-posts/SKILL.md` or `.claude/commands/fall-guardian/propose-posts.md`
 
 Use the Flutter/Dart-specific workflow when the task is mainly in the phone app:
 
