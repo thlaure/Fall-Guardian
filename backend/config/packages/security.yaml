@@ -11,7 +11,7 @@ security:
             stateless: true
             provider: devices_in_memory
             custom_authenticators:
-                - App\Security\DeviceTokenAuthenticator
+                - App\Infrastructure\Http\Security\DeviceTokenAuthenticator
 
     access_control:
         - { path: ^/health$, roles: PUBLIC_ACCESS }

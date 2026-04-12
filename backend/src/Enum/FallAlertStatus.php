@@ -12,4 +12,5 @@ enum FallAlertStatus: string
     case PartiallySent = 'partially_sent';
     case Failed = 'failed';
     case Cancelled = 'cancelled';
+    case Acknowledged = 'acknowledged';
 }

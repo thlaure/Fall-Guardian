@@ -79,7 +79,7 @@ test: ## Run all PHPUnit tests
 	$(DOCKER_COMPOSE) exec app vendor/bin/phpunit
 
 test-behat: ## Run Behat API tests
-	$(DOCKER_COMPOSE) exec app vendor/bin/behat --colors
+	$(DOCKER_COMPOSE) exec app vendor/bin/behat --config behat.yaml.dist --colors
 
 migrate: ## Run database migrations
 	$(DOCKER_COMPOSE) exec app php bin/console doctrine:migrations:migrate --no-interaction

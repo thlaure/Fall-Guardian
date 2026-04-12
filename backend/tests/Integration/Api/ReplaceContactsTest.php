@@ -14,9 +14,9 @@ final class ReplaceContactsTest extends WebTestCase
 {
     public function testContactsCanBeSyncedAfterDeviceRegistration(): void
     {
-        $client = static::createClient();
+        $client = self::createClient();
 
-        $client->request('POST', '/api/v1/devices/register', server: [
+        $client->request(\Symfony\Component\HttpFoundation\Request::METHOD_POST, '/api/v1/devices/register', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
         ], content: json_encode([
@@ -35,7 +35,7 @@ final class ReplaceContactsTest extends WebTestCase
         self::assertIsString($token);
         self::assertNotSame('', $token);
 
-        $client->request('PUT', '/api/v1/emergency-contacts', server: [
+        $client->request(\Symfony\Component\HttpFoundation\Request::METHOD_PUT, '/api/v1/emergency-contacts', server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_AUTHORIZATION' => sprintf('Bearer %s', $token),

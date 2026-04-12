@@ -10,8 +10,8 @@ final class HealthControllerTest extends WebTestCase
 {
     public function testHealthEndpointIsAvailable(): void
     {
-        $client = static::createClient();
-        $client->request('GET', '/health');
+        $client = self::createClient();
+        $client->request(\Symfony\Component\HttpFoundation\Request::METHOD_GET, '/health');
 
         self::assertResponseIsSuccessful();
     }

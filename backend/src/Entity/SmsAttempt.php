@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\SmsAttemptStatus;
-use App\Repository\SmsAttemptRepository;
+use App\Infrastructure\Persistence\DoctrineSmsAttemptRepository;
 use DateTimeImmutable;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\Entity(repositoryClass: SmsAttemptRepository::class)]
+#[ORM\Entity(repositoryClass: DoctrineSmsAttemptRepository::class)]
 #[ORM\Table(name: 'sms_attempts')]
 class SmsAttempt
 {
@@ -18,27 +18,16 @@ class SmsAttempt
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
 
-    #[ORM\ManyToOne(targetEntity: FallAlert::class, inversedBy: 'smsAttempts')]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
-    private FallAlert $fallAlert;
-
-    #[ORM\ManyToOne(targetEntity: EmergencyContact::class)]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
-    private EmergencyContact $contact;
-
-    #[ORM\Column(length: 32)]
-    private string $provider;
-
     #[ORM\Column(name: 'provider_message_id', nullable: true)]
     private ?string $providerMessageId = null;
 
-    #[ORM\Column(enumType: SmsAttemptStatus::class, length: 32)]
+    #[ORM\Column(length: 32, enumType: SmsAttemptStatus::class)]
     private SmsAttemptStatus $status = SmsAttemptStatus::Queued;
 
     #[ORM\Column(name: 'error_code', nullable: true)]
     private ?string $errorCode = null;
 
-    #[ORM\Column(name: 'error_message', type: 'text', nullable: true)]
+    #[ORM\Column(name: 'error_message', type: \Doctrine\DBAL\Types\Types::TEXT, nullable: true)]
     private ?string $errorMessage = null;
 
     #[ORM\Column(name: 'retry_count')]
@@ -53,12 +42,14 @@ class SmsAttempt
     #[ORM\Column(name: 'delivered_at', nullable: true)]
     private ?DateTimeImmutable $deliveredAt = null;
 
-    public function __construct(FallAlert $fallAlert, EmergencyContact $contact, string $provider)
+    public function __construct(#[ORM\ManyToOne(targetEntity: FallAlert::class, inversedBy: 'smsAttempts')]
+        #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+        private FallAlert $fallAlert, #[ORM\ManyToOne(targetEntity: EmergencyContact::class)]
+        #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+        private EmergencyContact $contact, #[ORM\Column(length: 32)]
+        private string $provider)
     {
         $this->id = Uuid::v7();
-        $this->fallAlert = $fallAlert;
-        $this->contact = $contact;
-        $this->provider = $provider;
         $this->queuedAt = new DateTimeImmutable();
     }
 

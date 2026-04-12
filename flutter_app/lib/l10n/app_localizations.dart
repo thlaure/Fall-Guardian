@@ -54,7 +54,7 @@ abstract class AppLocalizations {
   String get fallAlertTitle;
   String get fallAlertBody;
   String get gettingLocation;
-  String get sendingSms;
+  String get sendingAlert;
   String get smsFailed;
   String alertSentCount(int count);
   String get cancelAlert;

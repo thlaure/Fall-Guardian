@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use App\Repository\DeviceRepository;
+use App\Enum\DeviceType;
+use App\Infrastructure\Persistence\DoctrineDeviceRepository;
 use DateTimeImmutable;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
-#[ORM\Entity(repositoryClass: DeviceRepository::class)]
+#[ORM\Entity(repositoryClass: DoctrineDeviceRepository::class)]
 #[ORM\Table(name: 'devices')]
 #[ORM\UniqueConstraint(name: 'uniq_devices_public_id', columns: ['public_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_devices_token_hash', columns: ['token_hash'])]
@@ -20,18 +21,6 @@ class Device
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
-
-    #[ORM\Column(name: 'public_id', length: 36)]
-    private string $publicId;
-
-    #[ORM\Column(name: 'token_hash', length: 64)]
-    private string $tokenHash;
-
-    #[ORM\Column(length: 16)]
-    private string $platform;
-
-    #[ORM\Column(name: 'app_version', length: 32)]
-    private string $appVersion;
 
     #[ORM\Column]
     private bool $revoked = false;
@@ -45,22 +34,25 @@ class Device
     #[ORM\Column(name: 'last_seen_at', nullable: true)]
     private ?DateTimeImmutable $lastSeenAt = null;
 
+    #[ORM\Column(name: 'device_type', length: 32, enumType: DeviceType::class)]
+    private DeviceType $deviceType = DeviceType::ProtectedPerson;
+
     /** @var Collection<int, EmergencyContact> */
-    #[ORM\OneToMany(mappedBy: 'device', targetEntity: EmergencyContact::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OneToMany(targetEntity: EmergencyContact::class, mappedBy: 'device', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $contacts;
 
     /** @var Collection<int, FallAlert> */
-    #[ORM\OneToMany(mappedBy: 'device', targetEntity: FallAlert::class, cascade: ['persist', 'remove'], orphanRemoval: true)]
+    #[ORM\OneToMany(targetEntity: FallAlert::class, mappedBy: 'device', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $alerts;
 
-    public function __construct(string $publicId, string $tokenHash, string $platform, string $appVersion)
+    public function __construct(#[ORM\Column(name: 'public_id', length: 36)]
+        private string $publicId, #[ORM\Column(name: 'token_hash', length: 64)]
+        private string $tokenHash, #[ORM\Column(length: 16)]
+        private string $platform, #[ORM\Column(name: 'app_version', length: 32)]
+        private string $appVersion)
     {
         $now = new DateTimeImmutable();
         $this->id = Uuid::v7();
-        $this->publicId = $publicId;
-        $this->tokenHash = $tokenHash;
-        $this->platform = $platform;
-        $this->appVersion = $appVersion;
         $this->createdAt = $now;
         $this->updatedAt = $now;
         $this->contacts = new ArrayCollection();
@@ -109,9 +101,35 @@ class Device
         $this->touch();
     }
 
+    public function getCreatedAt(): DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
+    public function getUpdatedAt(): DateTimeImmutable
+    {
+        return $this->updatedAt;
+    }
+
     public function getLastSeenAt(): ?DateTimeImmutable
     {
         return $this->lastSeenAt;
+    }
+
+    public function getDeviceType(): DeviceType
+    {
+        return $this->deviceType;
+    }
+
+    public function setDeviceType(DeviceType $deviceType): void
+    {
+        $this->deviceType = $deviceType;
+        $this->touch();
+    }
+
+    public function isCaregiver(): bool
+    {
+        return DeviceType::Caregiver === $this->deviceType;
     }
 
     public function addContact(EmergencyContact $contact): void

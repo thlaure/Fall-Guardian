@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Application;
 
-use App\Application\PhoneNumberNormalizer;
+use App\Application\Contact\Handler\PhoneNumberNormalizer;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

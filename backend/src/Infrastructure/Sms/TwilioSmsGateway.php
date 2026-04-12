@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Sms;
 
-use App\Application\SmsGateway;
+use App\Domain\Sms\Port\SmsGatewayInterface;
+
+use function in_array;
+
 use RuntimeException;
 use Twilio\Rest\Client;
 
-final class TwilioSmsGateway implements SmsGateway
+final readonly class TwilioSmsGateway implements SmsGatewayInterface
 {
     public function __construct(
-        private readonly string $accountSid,
-        private readonly string $authToken,
-        private readonly string $from,
+        private string $accountSid,
+        private string $authToken,
+        private string $from,
     ) {
     }
 
@@ -24,7 +27,7 @@ final class TwilioSmsGateway implements SmsGateway
 
     public function send(string $to, string $body): array
     {
-        if ('' === $this->accountSid || '' === $this->authToken || '' === $this->from) {
+        if (in_array('', [$this->accountSid, $this->authToken, $this->from], true)) {
             throw new RuntimeException('Twilio credentials are not configured.');
         }
 

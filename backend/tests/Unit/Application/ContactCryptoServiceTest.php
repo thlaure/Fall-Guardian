@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Application;
 
-use App\Application\ContactCryptoService;
+use App\Application\Contact\Handler\ContactCryptoService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 

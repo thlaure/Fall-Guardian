@@ -36,6 +36,16 @@ Le comportement idéal de Fall Guardian est le suivant :
 9. L'escalade soumet l'alerte au backend, qui devient l'unique propriétaire de la notification des aidants liés au profil protégé, avec position GPS si disponible.
 10. La direction produit cible est une application dédiée pour les aidants, alimentée par des notifications push backend-owned.
 11. Android peut conserver un envoi SMS local uniquement comme fallback explicite, pas comme mécanisme principal du produit.
+
+### Pourquoi les notifications push plutôt que le SMS
+
+Trois raisons cumulatives ont conduit à ce choix :
+
+**Raison économique** : les passerelles SMS tierces (Twilio, etc.) sont payantes à l'usage. Chaque alerte envoyée a un coût direct. Les notifications push FCM (Android) et APNs (iOS) sont gratuites, quel que soit le volume.
+
+**Raison technique iOS** : Apple ne permet pas à une application d'envoyer un SMS en silence. Sur iOS, `flutter_sms` ouvre obligatoirement la feuille de composition Messages native — l'utilisateur doit confirmer l'envoi manuellement. Si la personne est à terre ou inconsciente, personne ne confirme. Le SMS ne part jamais. C'est un échec silencieux dans le cas exactement prévu par le produit.
+
+**Raison produit** : le SMS est unidirectionnel et sans état. Il n't y a aucune traçabilité (livré ? lu ? acquitté ?), aucune coordination entre plusieurs aidants, et aucune surface pour une application dédiée. Les notifications push permettent de piloter une vraie expérience aidant : écran d'alerte active, acquittement, historique, arrêt des relances quand quelqu'un répond.
 12. Si le backend n'est pas joignable ou refuse l'alerte, l'application doit l'indiquer clairement et enregistrer l'échec au lieu de signaler un faux succès.
 13. Les réglages de sensibilité modifiés sur le téléphone sont appliqués immédiatement sur la montre, ou mis en file d'attente si la montre est hors ligne.
 14. Les permissions critiques ne doivent jamais échouer silencieusement.

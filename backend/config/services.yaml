@@ -15,6 +15,9 @@ parameters:
     app.twilio.account_sid: '%env(string:SMS_PROVIDER_TWILIO_ACCOUNT_SID)%'
     app.twilio.auth_token: '%env(string:SMS_PROVIDER_TWILIO_AUTH_TOKEN)%'
     app.twilio.from: '%env(string:SMS_PROVIDER_TWILIO_FROM)%'
+    app.push_provider: '%env(string:PUSH_PROVIDER)%'
+    app.fcm.project_id: '%env(string:FCM_PROJECT_ID)%'
+    app.fcm.service_account_json: '%env(string:FCM_SERVICE_ACCOUNT_JSON)%'
 
 services:
     # default configuration for services in *this* file
@@ -27,11 +30,11 @@ services:
     App\:
         resource: '../src/'
 
-    App\Application\PhoneNumberNormalizer:
+    App\Application\Contact\Handler\PhoneNumberNormalizer:
         arguments:
             $defaultCountryCode: '%app.default_country_code%'
 
-    App\Application\ContactCryptoService:
+    App\Application\Contact\Handler\ContactCryptoService:
         arguments:
             $encryptionSecret: '%app.contact_encryption_key%'
             $hashSecret: '%app.contact_hash_key%'
@@ -51,8 +54,38 @@ services:
         arguments:
             $provider: '%app.sms_provider%'
 
-    App\Controller\DebugFakeSmsController:
+    App\UI\Controller\DebugFakeSmsController:
         arguments:
             $appEnv: '%kernel.environment%'
 
-    App\Application\SmsGateway: '@App\Infrastructure\Sms\DelegatingSmsGateway'
+    App\Domain\Sms\Port\SmsGatewayInterface: '@App\Infrastructure\Sms\DelegatingSmsGateway'
+
+    App\Domain\Alert\Port\FallAlertRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineFallAlertRepository'
+    App\Domain\Alert\Port\SmsAttemptRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineSmsAttemptRepository'
+    App\Domain\Alert\Port\PushAttemptRepositoryInterface: '@App\Infrastructure\Persistence\DoctrinePushAttemptRepository'
+    App\Domain\Alert\Port\AlertAcknowledgementRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineAlertAcknowledgementRepository'
+    App\Domain\Device\Port\DeviceRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineDeviceRepository'
+    App\Domain\Caregiver\Port\CaregiverInviteRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverInviteRepository'
+    App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverLinkRepository'
+    App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverPushTokenRepository'
+    App\Domain\Contact\Port\EmergencyContactRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineEmergencyContactRepository'
+
+    App\Infrastructure\Push\FakePushStore:
+        arguments:
+            $projectDir: '%kernel.project_dir%'
+            $shareDir: '%app.share_dir%'
+
+    App\UI\Controller\DebugFakePushController:
+        arguments:
+            $appEnv: '%kernel.environment%'
+
+    App\Infrastructure\Push\FcmPushGateway:
+        arguments:
+            $projectId: '%app.fcm.project_id%'
+            $serviceAccountJson: '%app.fcm.service_account_json%'
+
+    App\Infrastructure\Push\DelegatingPushGateway:
+        arguments:
+            $provider: '%app.push_provider%'
+
+    App\Domain\Push\Port\PushGatewayInterface: '@App\Infrastructure\Push\DelegatingPushGateway'

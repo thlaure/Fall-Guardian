@@ -6,9 +6,11 @@ namespace DoctrineMigrations;
 
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
+use Override;
 
 final class Version20260409120000 extends AbstractMigration
 {
+    #[Override]
     public function getDescription(): string
     {
         return 'Creates device, contact, alert, and SMS attempt tables';
@@ -35,6 +37,7 @@ final class Version20260409120000 extends AbstractMigration
         $this->addSql('ALTER TABLE sms_attempts ADD CONSTRAINT FK_SMS_CONTACT FOREIGN KEY (contact_id) REFERENCES emergency_contacts (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE');
     }
 
+    #[Override]
     public function down(Schema $schema): void
     {
         $this->addSql('DROP TABLE sms_attempts');

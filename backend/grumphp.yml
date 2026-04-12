@@ -27,7 +27,8 @@ grumphp:
                 - "exit;"
                 - "exit();"
                 - "print_r("
-                - "dd("
+                - "[^a-zA-Z_]dd("
+                - "^dd("
             regexp_type: G
 
         yamllint:

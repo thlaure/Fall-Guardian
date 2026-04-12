@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Sms;
 
-use App\Application\SmsGateway;
+use App\Domain\Sms\Port\SmsGatewayInterface;
 use InvalidArgumentException;
 
 use function sprintf;
 
-final class DelegatingSmsGateway implements SmsGateway
+final readonly class DelegatingSmsGateway implements SmsGatewayInterface
 {
     public function __construct(
-        private readonly string $provider,
-        private readonly TwilioSmsGateway $twilioSmsGateway,
-        private readonly FakeSmsGateway $fakeSmsGateway,
+        private string $provider,
+        private TwilioSmsGateway $twilioSmsGateway,
+        private FakeSmsGateway $fakeSmsGateway,
     ) {
     }
 
@@ -28,7 +28,7 @@ final class DelegatingSmsGateway implements SmsGateway
         return $this->inner()->send($to, $body);
     }
 
-    private function inner(): SmsGateway
+    private function inner(): SmsGatewayInterface
     {
         return match ($this->provider) {
             'twilio' => $this->twilioSmsGateway,

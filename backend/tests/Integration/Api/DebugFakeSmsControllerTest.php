@@ -16,11 +16,16 @@ final class DebugFakeSmsControllerTest extends WebTestCase
 {
     public function testFakeSmsInboxEndpointReturnsStoredMessages(): void
     {
-        $client = static::createClient();
+        $client = self::createClient();
+
+        /** @var \App\Infrastructure\Sms\FakeSmsStore $store */
+        $store = self::getContainer()->get(\App\Infrastructure\Sms\FakeSmsStore::class);
+        $store->clear();
+
         $gateway = self::getContainer()->get(FakeSmsGateway::class);
         $gateway->send('+33612345678', 'Hello fake SMS');
 
-        $client->request('GET', '/debug/fake-sms');
+        $client->request(\Symfony\Component\HttpFoundation\Request::METHOD_GET, '/debug/fake-sms');
 
         self::assertResponseIsSuccessful();
 
