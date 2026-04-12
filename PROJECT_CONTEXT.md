@@ -19,7 +19,7 @@ Flow:
 - watch detects a fall
 - watch starts a 30-second alert
 - phone becomes an alert surface
-- if not cancelled within 30 seconds, emergency escalation starts
+- if not cancelled within 30 seconds, backend-owned emergency escalation starts
 
 ## Product requirements
 
@@ -31,9 +31,13 @@ Flow:
    - phone shows full-screen alert if foregrounded
    - phone shows system notification when backgrounded or locked
    - either device can cancel
-4. Sensitivity settings are edited on the phone and synced to the watch, with offline retry if needed.
-5. Emergency contacts are managed on the phone.
-6. Timeout escalation attempts to notify all configured contacts with location if available.
+4. Sensitivity settings are edited on the protected-person phone and synced to the watch, with offline retry if needed.
+5. Production direction:
+   - one protected-person mobile app
+   - one caregiver mobile app
+   - backend-owned push notification escalation as the primary delivery path
+6. Android local SMS may exist only as an explicit optional fallback, not as the main product contract.
+7. Timeout escalation attempts to notify linked caregivers with location if available.
 
 ## Current architecture
 
@@ -41,6 +45,7 @@ Repository layout:
 
 ```text
 fall_guardian/
+├── backend/
 ├── flutter_app/
 ├── wear_os_app/
 └── watchos_app/
@@ -48,7 +53,7 @@ fall_guardian/
 
 ### Phone app
 
-The phone app is Flutter and currently uses a cleaner ports/adapters structure around the alert workflow:
+The current phone app is Flutter and is the protected-person app. It uses a cleaner ports/adapters structure around the alert workflow:
 
 - `models/`: pure data structures
 - `repositories/`: persistence adapters
@@ -61,6 +66,21 @@ Important design rule:
 - keep alert workflow logic in `AlertCoordinator`
 - keep UI in widgets
 - keep storage/plugin/platform code behind ports or service adapters
+
+### Backend
+
+The backend is Symfony/API Platform and owns:
+
+- device identity
+- caregiver/contact persistence during the current transition
+- alert persistence
+- escalation dispatch
+- delivery auditability
+
+Target direction:
+- move from "phone-managed emergency contacts" toward caregiver links managed by the backend
+- use backend-owned push notifications as the primary caregiver alert channel
+- keep fake delivery in dev/test and optional Android local SMS fallback only where explicitly enabled
 
 ### Native watch and phone bridges
 
@@ -99,7 +119,8 @@ iOS/watchOS:
 
 ## Current platform limitations
 
-- Backend-owned SMS escalation is now the preferred path for the phone app; local device SMS should not be treated as the main production mechanism anymore.
+- The current backend path still uses SMS-oriented delivery plumbing and fake SMS in development; the long-term product target is caregiver-app push escalation.
+- Android local SMS is acceptable only as an optional fallback or debug path, not as the main production mechanism.
 - Simulator watch/phone communication is not as trustworthy as real-device behavior.
 - `flutter_sms` and `flutter_local_notifications` still warn about missing Swift Package Manager support.
 
@@ -133,10 +154,12 @@ If changing native watch/phone integration, also verify the relevant native targ
 When changing alert flow, review:
 - Flutter `AlertCoordinator`
 - Flutter alert UI
+- role-specific app flow if onboarding/settings change protected-person vs caregiver behavior
 - Android phone native bridge
 - iOS phone native bridge
 - Wear OS watch behavior
 - watchOS behavior
+- backend escalation behavior
 - tests
 - `WORKFLOW.md`
 

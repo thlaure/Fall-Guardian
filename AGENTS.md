@@ -14,7 +14,7 @@ Canonical agent instructions for this repository live in this file.
 
 - Cross-platform fall detection and alerting app
 - Flutter phone app, native watch apps, Symfony/API Platform backend
-- Primary workflows: watch fall detection, phone alert orchestration, backend-owned SMS escalation
+- Primary workflows: watch fall detection, phone alert orchestration, backend-owned escalation, caregiver notification delivery
 
 ## Architecture
 
@@ -34,7 +34,7 @@ Current rule for this project:
 
 ## Current Flow
 
-- `watch detects fall -> watch countdown starts -> phone receives shared timestamp -> AlertCoordinator owns phone workflow -> timeout submits to backend -> backend dispatches SMS`
+- `watch detects fall -> watch countdown starts -> phone receives shared timestamp -> AlertCoordinator owns phone workflow -> timeout submits to backend -> backend dispatches escalation`
 
 ## Repository Structure
 

@@ -2,7 +2,7 @@
 
 Fall Guardian is a cross-platform fall detection system built for people who need a faster, more reliable response than standard “immobility-based” fall alerts.
 
-The watch detects the fall. The watch and phone start a synchronized 30-second alert. If the alert is not cancelled, the phone escalates to emergency contacts.
+The watch detects the fall. The watch and phone start a synchronized 30-second alert. If the alert is not cancelled, the phone submits an escalation event to the backend.
 
 ## Why this project exists
 
@@ -16,8 +16,8 @@ Fall Guardian is designed to react to the **fall event itself**.
 - Starts a 30-second alert on the watch immediately after detection
 - Turns the phone into an alert surface too
 - Lets the alert be cancelled from either watch or phone
-- Escalates to emergency contacts if the countdown expires
-- Includes location in the message when available
+- Submits timeout escalation to the backend
+- Includes location in the escalation payload when available
 - Keeps alert history and sensitivity settings on the phone
 
 ## Supported platforms
@@ -26,9 +26,16 @@ Fall Guardian is designed to react to the **fall event itself**.
 - Android phone + Wear OS watch
 
 Implementation split:
-- phone app: Flutter
+- protected-person phone app: Flutter
+- backend: Symfony / API Platform
 - Apple Watch app: native Swift/watchOS
 - Wear OS app: native Kotlin
+
+Target product direction:
+- protected-person app for the at-risk user
+- dedicated caregiver app for alert reception and acknowledgement
+- backend-owned push notifications as the primary escalation path
+- optional Android local SMS fallback only when explicitly enabled
 
 ## How the system works
 
@@ -44,13 +51,14 @@ or system notification if backgrounded
         ↓
 Cancel from either device stops both sides
         ↓
-If timeout expires, phone starts escalation
+If timeout expires, phone submits escalation to backend
 ```
 
 ## Project architecture
 
 ```text
 fall_guardian/
+├── backend/        # Symfony/API Platform backend
 ├── flutter_app/    # Shared phone app (iOS + Android)
 ├── wear_os_app/    # Native Wear OS app
 └── watchos_app/    # Native watchOS app
@@ -151,7 +159,8 @@ The repo also includes end-to-end automation for:
 
 ## Current limitations
 
-- iOS cannot perform silent SMS sending in the same way Android can
+- The current backend implementation still uses SMS/fake-SMS-oriented delivery plumbing while the preferred long-term direction is caregiver push notifications
+- iOS cannot perform silent local SMS sending in the same way Android can
 - Apple Watch/iPhone simulator communication is not equivalent to real-device behavior
 - Some Flutter plugins still warn about missing Swift Package Manager support
 

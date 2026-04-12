@@ -13,7 +13,7 @@ Ce document décrit exactement ce qui se passe sur chaque appareil dans chaque s
 5. [Chute détectée — Application téléphone tuée](#5-chute-détectée--application-téléphone-tuée)
 6. [Alerte active — L'utilisateur annule sur le téléphone](#6-alerte-active--lutilisateur-annule-sur-le-téléphone)
 7. [Alerte active — L'utilisateur annule sur la montre](#7-alerte-active--lutilisateur-annule-sur-la-montre)
-8. [Alerte active — 30 secondes écoulées (envoi SMS)](#8-alerte-active--30-secondes-écoulées-envoi-sms)
+8. [Alerte active — 30 secondes écoulées (escalade backend)](#8-alerte-active--30-secondes-écoulées-escalade-backend)
 9. [Synchronisation des réglages : téléphone → montre](#9-synchronisation-des-réglages--téléphone--montre)
 10. [Cas limites et protections](#10-cas-limites-et-protections)
 
@@ -33,14 +33,16 @@ Le comportement idéal de Fall Guardian est le suivant :
 6. L'annulation depuis n'importe quel appareil doit arrêter immédiatement l'alerte sur tous les autres appareils.
 7. Une annulation reçue d'un autre appareil ne doit jamais être renvoyée en boucle au périphérique source.
 8. Si les 30 secondes expirent sans annulation, l'alerte est escaladée exactement une fois.
-9. L'escalade soumet l'alerte au backend, qui devient l'unique propriétaire de l'envoi SMS aux contacts d'urgence configurés, avec position GPS si disponible.
-10. Si le backend n'est pas joignable ou refuse l'alerte, l'application doit l'indiquer clairement et enregistrer l'échec au lieu de signaler un faux succès.
-11. Les réglages de sensibilité modifiés sur le téléphone sont appliqués immédiatement sur la montre, ou mis en file d'attente si la montre est hors ligne.
-12. Les permissions critiques ne doivent jamais échouer silencieusement.
-13. L'historique doit refléter fidèlement ce qu'il s'est passé : annulation, alerte envoyée, échec d'envoi, absence de contacts, etc.
-14. Les différences entre plateformes ne doivent pas changer le résultat de sécurité attendu.
-15. L'alerte téléphone doit être pilotée par une machine à états explicite, pas par la seule durée de vie d'un écran.
-16. Les transitions de cette machine à états doivent être testées directement au niveau service.
+9. L'escalade soumet l'alerte au backend, qui devient l'unique propriétaire de la notification des aidants liés au profil protégé, avec position GPS si disponible.
+10. La direction produit cible est une application dédiée pour les aidants, alimentée par des notifications push backend-owned.
+11. Android peut conserver un envoi SMS local uniquement comme fallback explicite, pas comme mécanisme principal du produit.
+12. Si le backend n'est pas joignable ou refuse l'alerte, l'application doit l'indiquer clairement et enregistrer l'échec au lieu de signaler un faux succès.
+13. Les réglages de sensibilité modifiés sur le téléphone sont appliqués immédiatement sur la montre, ou mis en file d'attente si la montre est hors ligne.
+14. Les permissions critiques ne doivent jamais échouer silencieusement.
+15. L'historique doit refléter fidèlement ce qu'il s'est passé : annulation, alerte envoyée, échec d'envoi, absence de destinataires, etc.
+16. Les différences entre plateformes ne doivent pas changer le résultat de sécurité attendu.
+17. L'alerte téléphone doit être pilotée par une machine à états explicite, pas par la seule durée de vie d'un écran.
+18. Les transitions de cette machine à états doivent être testées directement au niveau service.
 
 Le reste de ce document décrit l'implémentation actuelle visée pour atteindre ce comportement.
 
@@ -348,7 +350,7 @@ Côté Dart (`main.dart._onAlertCancelled`) :
 
 ---
 
-## 8. Alerte active — 30 secondes écoulées (escalade backend + SMS)
+## 8. Alerte active — 30 secondes écoulées (escalade backend)
 
 Le tick de `FallAlertScreen._timer` se déclenche quand `remaining == 0` :
 
@@ -366,9 +368,13 @@ Le tick de `FallAlertScreen._timer` se déclenche quand `remaining == 0` :
 3. `Geolocator.getCurrentPosition(desiredAccuracy: high, timeLimit: 10s)`
 4. Retourne `Position?` (lat/lng) ou null en cas d'échec
 
-### Étape C : Charger les contacts
+### Étape C : Charger les destinataires locaux connus
 
 `ContactsRepository().getAll()` lit le stockage sécurisé du téléphone et désérialise le JSON. Si la clé n'existe pas ou est malformée, retourne une liste vide.
+
+Note produit :
+- l'implémentation actuelle repose encore sur des contacts d'urgence côté téléphone et un backend à sémantique SMS
+- la direction cible est de remplacer ce modèle par des aidants liés au backend et une application aidant dédiée
 
 ### Étape D : Soumettre l'alerte au backend
 
@@ -382,7 +388,7 @@ Le tick de `FallAlertScreen._timer` se déclenche quand `remaining == 0` :
    - `fallTimestamp`
    - `locale`
    - `latitude` / `longitude`
-5. Le backend persiste l'événement, met en file l'envoi SMS, puis renvoie un accusé de réception
+5. Le backend persiste l'événement, met en file l'escalade, puis renvoie un accusé de réception
 6. Le téléphone traite cet accusé comme une escalade acceptée et journalise les noms de contacts locaux comme destinataires attendus
 
 ### Étape E : Persister dans l'historique
@@ -392,7 +398,7 @@ FallEvent(
   id: UUID,
   timestamp: DateTime.fromMillisecondsSinceEpoch(fallTimestamp),
   status: alertSent  (si notified.isNotEmpty)
-       OU alertFailed (si des contacts existaient mais le backend n'a pas accepté l'alerte),
+       OU alertFailed (si des destinataires existaient mais le backend n'a pas accepté l'alerte),
   latitude: position?.latitude,
   longitude: position?.longitude,
   notifiedContacts: ["Alice", "Bob", ...]
@@ -403,7 +409,7 @@ FallEvent(
 ### Étape F : Nettoyage
 
 1. `NotificationService().cancelAll()` — supprime la notification OS du centre de notifications
-2. **La montre n'est PAS explicitement notifiée** à ce stade. Le décompte sur la montre atteindra 0 de façon indépendante et son `alertExpireTask` déclenchera `isAlertActive = false`, fermant son propre écran. Il n'y a pas de message "SMS envoyé" vers la montre.
+2. **La montre n'est PAS explicitement notifiée** à ce stade. Le décompte sur la montre atteindra 0 de façon indépendante et son `alertExpireTask` déclenchera `isAlertActive = false`, fermant son propre écran. Il n'y a pas de message "escalade envoyée" vers la montre.
 3. L'interface affiche le résultat pendant 2s (succès) ou 5s (échec), puis `Navigator.pop()` → écran d'accueil
 
 ---
@@ -467,16 +473,16 @@ Si une seconde chute est détectée pendant que `FallAlertScreen` est encore vis
 
 ### Montre déconnectée lors d'une chute
 
-- *Wear OS* : `MessageClient` déclenche son listener d'échec silencieusement. Le décompte de la montre continue et atteint 0 sans que le téléphone le sache. Aucun SMS n'est envoyé.
+- *Wear OS* : `MessageClient` déclenche son listener d'échec silencieusement. Le décompte de la montre continue et atteint 0 sans que le téléphone le sache. Aucune escalade backend n'est soumise.
 - *watchOS* : `sendMessage` échoue → `transferUserInfo` est mis en file. Quand le Bluetooth se reconnecte, le téléphone reçoit l'événement (potentiellement plusieurs secondes plus tard). `FallAlertScreen` affichera un décompte déjà partiellement ou totalement écoulé — il calcule à partir du timestamp original, donc `remaining` peut être 0 immédiatement, déclenchant `_sendAlert()` aussitôt.
 
 ### Téléphone hors de portée — iOS / watchOS
 
 `sendMessage` échoue silencieusement. `transferUserInfo` persiste la file sur la montre. Quand le téléphone revient à portée, la livraison se produit. Si le téléphone était tué, le chemin de vidange UserDefaults gère cela (section 4). Si le téléphone était en arrière-plan, `session(_:didReceiveUserInfo:)` se déclenche normalement.
 
-### Aucun contact d'urgence
+### Aucun destinataire configuré
 
-`SmsService` vérifie `contacts.isEmpty` en premier et retourne `[]` immédiatement. `FallAlertScreen` journalise un `FallEvent(status: alertFailed)` sans contacts notifiés. L'utilisateur voit le message d'échec pendant 5 secondes.
+Le flux d'escalade vérifie qu'au moins un destinataire local connu existe avant soumission. `FallAlertScreen` journalise un `FallEvent(status: alertFailed)` sans destinataire notifié. L'utilisateur voit le message d'échec pendant 5 secondes.
 
 ### GPS indisponible ou permission refusée
 
