@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../l10n/app_localizations.dart';
 import '../models/contact.dart';
 import '../repositories/contacts_repository.dart';
+import '../services/backend_api_service.dart';
 
 class ContactsScreen extends StatefulWidget {
   const ContactsScreen({super.key});
@@ -14,9 +15,13 @@ class ContactsScreen extends StatefulWidget {
 
 class _ContactsScreenState extends State<ContactsScreen> {
   final _repo = ContactsRepository();
+  final _api = BackendApiService();
   List<Contact> _contacts = [];
   bool _loading = true;
   ContactsSyncState _syncState = ContactsSyncState.unknown;
+  String? _inviteCode;
+  DateTime? _inviteExpiresAt;
+  bool _creatingInvite = false;
 
   @override
   void initState() {
@@ -52,6 +57,29 @@ class _ContactsScreenState extends State<ContactsScreen> {
           const SnackBar(content: Text('Failed to load contacts.')),
         );
       }
+    }
+  }
+
+  Future<void> _createInvite() async {
+    setState(() => _creatingInvite = true);
+    try {
+      final data = await _api.createInvite();
+      if (!mounted) return;
+      setState(() {
+        _inviteCode = data['code'] as String?;
+        _inviteExpiresAt = data['expiresAt'] != null
+            ? DateTime.tryParse(data['expiresAt'] as String)
+            : null;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Failed to create invite. Check backend.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creatingInvite = false);
     }
   }
 
@@ -127,25 +155,136 @@ class _ContactsScreenState extends State<ContactsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _contacts.isEmpty
-              ? _EmptyState(l10n: l10n, onAdd: _addContact)
-              : Column(
-                  children: [
-                    if (_syncState == ContactsSyncState.failed)
-                      _SyncWarningBanner(l10n: l10n),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _contacts.length,
-                        itemBuilder: (_, i) => _ContactTile(
-                          contact: _contacts[i],
-                          onEdit: () => _editContact(_contacts[i]),
-                          onDelete: () => _deleteContact(_contacts[i]),
-                        ),
+          : Column(
+              children: [
+                _InviteCaregiverSection(
+                  inviteCode: _inviteCode,
+                  expiresAt: _inviteExpiresAt,
+                  loading: _creatingInvite,
+                  onCreateInvite: _createInvite,
+                ),
+                if (_syncState == ContactsSyncState.failed)
+                  _SyncWarningBanner(l10n: l10n),
+                if (_contacts.isEmpty)
+                  Expanded(child: _EmptyState(l10n: l10n, onAdd: _addContact))
+                else
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _contacts.length,
+                      itemBuilder: (_, i) => _ContactTile(
+                        contact: _contacts[i],
+                        onEdit: () => _editContact(_contacts[i]),
+                        onDelete: () => _deleteContact(_contacts[i]),
                       ),
                     ),
-                  ],
+                  ),
+              ],
+            ),
+    );
+  }
+}
+
+class _InviteCaregiverSection extends StatelessWidget {
+  const _InviteCaregiverSection({
+    required this.inviteCode,
+    required this.expiresAt,
+    required this.loading,
+    required this.onCreateInvite,
+  });
+
+  final String? inviteCode;
+  final DateTime? expiresAt;
+  final bool loading;
+  final VoidCallback onCreateInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.link, color: cs.onPrimaryContainer),
+              const SizedBox(width: 10),
+              Text(
+                'Invite a Caregiver',
+                style: TextStyle(
+                  color: cs.onPrimaryContainer,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
                 ),
+              ),
+            ],
+          ),
+          if (inviteCode != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Share this code with your caregiver:',
+              style: TextStyle(color: cs.onPrimaryContainer, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    inviteCode!,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 6,
+                      color: cs.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (expiresAt != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Expires at ${expiresAt!.toLocal().toString().substring(11, 16)}',
+                  style: TextStyle(color: cs.onPrimaryContainer, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Text(
+              'Generate a one-time code (valid 30 min) for your caregiver to scan.',
+              style: TextStyle(color: cs.onPrimaryContainer, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: loading ? null : onCreateInvite,
+            icon: loading
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_link),
+            label: Text(inviteCode != null
+                ? 'Regenerate Code'
+                : 'Generate Invite Code'),
+          ),
+        ],
+      ),
     );
   }
 }

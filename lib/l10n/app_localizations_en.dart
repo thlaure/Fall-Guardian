@@ -26,9 +26,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeStatusBody =>
       'Fall detection is active.\nA 30-second alert will appear if a fall is detected.';
   @override
-  String get homeContactsTitle => 'Emergency Contacts';
+  String get homeContactsTitle => 'Caregivers';
   @override
-  String get homeContactsSubtitle => 'Manage who gets alerted';
+  String get homeContactsSubtitle => 'Manage who should be alerted';
   @override
   String get homeHistoryTitle => 'Fall History';
   @override
@@ -39,15 +39,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   @override
-  String get contactsScreenTitle => 'Emergency Contacts';
+  String get contactsScreenTitle => 'Caregivers';
   @override
-  String contactsRemoveTitle(String name) =>
-      'Remove $name from emergency contacts?';
+  String contactsRemoveTitle(String name) => 'Remove $name from caregivers?';
   @override
   String get contactsEmpty => 'No contacts yet';
   @override
-  String get contactsEmptyHint =>
-      'Add family members to notify on fall detection.';
+  String get contactsEmptyHint => 'Add caregivers to notify on fall detection.';
   @override
   String get addContact => 'Add Contact';
   @override
@@ -70,16 +68,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fallAlertTitle => 'Fall Detected!';
   @override
   String get fallAlertBody =>
-      'Your emergency contacts will be notified unless you cancel.';
+      'Your caregivers will be notified unless you cancel.';
   @override
   String get gettingLocation => 'Getting your location…';
   @override
-  String get sendingSms => 'Sending SMS alerts…';
+  String get sendingAlert => 'Sending alert…';
   @override
-  String get smsFailed => '⚠️ SMS failed to send. Call your contacts manually!';
+  String get smsFailed =>
+      '⚠️ Alert delivery failed. Contact your caregivers manually.';
   @override
   String alertSentCount(int count) =>
-      'Alert sent to $count contact${count == 1 ? '' : 's'}.';
+      'Alert sent to $count caregiver${count == 1 ? '' : 's'}.';
   @override
   String get cancelAlert => "I'm OK — Cancel Alert";
 
@@ -98,13 +97,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get statusAlertSent => 'Alert Sent';
   @override
-  String get statusAlertFailed => 'SMS Failed';
+  String get statusAlertFailed => 'Alert Failed';
   @override
   String get statusCancelled => 'Cancelled';
   @override
   String get statusTimedOut => 'Timed Out';
   @override
-  String notifiedLabel(String names) => 'Notified: $names';
+  String notifiedLabel(String names) => 'Caregivers alerted: $names';
   @override
   String locationLabel(String coords) => 'Location: $coords';
 
