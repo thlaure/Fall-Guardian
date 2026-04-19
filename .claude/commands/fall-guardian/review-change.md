@@ -1,4 +1,4 @@
-Perform a structured code review for a Symfony/API Platform change.
+Perform a structured code review for a Fall Guardian change.
 
 Review scope: `$ARGUMENTS`
 
@@ -6,13 +6,14 @@ If the scope is omitted, inspect the current git diff.
 
 Review checklist:
 1. Confirm the change respects the repository architecture and `AGENTS.md`.
-2. Check that entrypoints remain orchestration-only.
-3. Check that business rules stay in handlers, use-cases, or domain services.
+2. Check that widgets, controllers, and framework entrypoints remain orchestration-only.
+3. Check that business rules stay in the owning layer: coordinator, native bridge adapter, handler, use-case, or domain service.
 4. Check validation at the input boundary.
 5. Check persistence code for leaked business logic.
-6. Check error handling and API behavior consistency.
-7. Check test completeness for the changed behavior.
-8. Check that the change can pass the repo quality gates.
+6. Check cross-platform contract alignment when Flutter/native/backend integrations changed.
+7. Check error handling and API behavior consistency.
+8. Check test completeness for the changed behavior.
+9. Check that the change can pass the repo quality gates.
 
 Prioritize findings:
 - correctness bugs

@@ -1,6 +1,6 @@
 ---
 name: verify-quality
-description: Use this skill when the user asks to run checks, validate a change, see whether code is ready, or investigate lint, analysis, test, or security-gate results in a Symfony/API Platform project.
+description: Use this skill when the user asks to run checks, validate a change, see whether code is ready, or investigate lint, analysis, test, or security-gate results in the Fall Guardian repository.
 ---
 
 # Verify Quality
@@ -22,18 +22,14 @@ Workflow:
 4. Report failures with the command, affected area, and smallest likely fix direction.
 
 Typical order:
-1. `make quality` (runs lint, analyse, rector together)
-2. `make tests-unit`
-3. `make tests-integration`
-4. `make tests`
-5. `make tests-api`
-6. `make security`
+1. `make check`
+2. `cd flutter_app && flutter analyze`
+3. `cd flutter_app && flutter test`
+4. Add backend, native, or integration verification when the affected layer requires it
 
-For targeted runs only (skip if running `make quality`):
-- `make lint`
-- `make analyse`
-- `make rector`
+For targeted runs only, use the narrowest relevant command in the affected layer.
 
 Rules:
 - Do not invent substitute commands silently.
 - If endpoint behavior changed, do not stop at unit tests only.
+- If a change crosses Flutter/native/backend boundaries, do not stop at one layer's checks only.

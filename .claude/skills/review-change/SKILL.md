@@ -1,6 +1,6 @@
 ---
 name: review-change
-description: Use this skill when the user asks for a code review, a correctness pass, a check before PR, or asks whether a Symfony/API Platform change follows project conventions. Trigger on "review this", "check my changes", or "is this implementation correct?".
+description: Use this skill when the user asks for a code review, a correctness pass, a check before PR, or asks whether a Fall Guardian change follows project conventions. Trigger on "review this", "check my changes", or "is this implementation correct?".
 ---
 
 # Review Change
@@ -20,7 +20,7 @@ Read as needed:
 Workflow:
 1. Inspect the diff or the requested scope.
 2. Check architecture and layer ownership.
-3. Check validation, persistence boundaries, and error handling consistency.
+3. Check validation, persistence boundaries, cross-platform contract alignment, and error handling consistency.
 4. Check test coverage for the changed behavior.
 5. Check whether the change is likely to pass the repository quality gates.
 

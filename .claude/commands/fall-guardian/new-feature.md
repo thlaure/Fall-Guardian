@@ -1,4 +1,4 @@
-Implement a new Symfony/API Platform feature by mirroring the local repository patterns.
+Implement a new Fall Guardian feature by mirroring the local repository patterns.
 
 User request: `$ARGUMENTS`
 
@@ -12,10 +12,10 @@ Execution order:
 Default expectations unless the repo clearly differs:
 - Follow SOLID principles.
 - Prefer clean architecture and hexagonal boundaries when the project already uses them.
-- If API Platform already provides a direct, readable solution for the requested behavior, use the API Platform feature instead of adding extra layers.
-- Symfony entrypoints stay thin.
+- If a framework-native solution already provides a direct, readable implementation in the local layer, use it instead of adding extra layers.
+- Framework entrypoints stay thin.
 - Input validation happens at the DTO or request boundary.
-- Business logic lives in handlers, use-cases, or domain services.
+- Business logic lives in the owning layer for the platform or flow: coordinator, handler, use-case, or domain service.
 - Repositories handle persistence only.
 - Output shaping is explicit through DTOs, resources, or entity serialization.
 - Prefer simple, readable code over clever or highly optimized code.
@@ -23,7 +23,7 @@ Default expectations unless the repo clearly differs:
 - Keep the result easy for a human reviewer to follow.
 
 Checklist:
-1. Confirm the target flow: API Platform native, layered write side, or both.
+1. Confirm the target flow and owning layer: Flutter coordinator, native bridge, backend application service, API Platform native read side, or a cross-platform contract.
 2. Reuse existing naming and file placement conventions.
 3. Keep `declare(strict_types=1);` and modern PHP syntax.
 4. Add or update validation at the input boundary.
@@ -32,12 +32,12 @@ Checklist:
    - unit tests for behavior and orchestration
    - integration tests when persistence behavior changes
    - API tests when endpoint behavior changes
-7. Verify with the commands exposed by `Makefile`.
+7. Verify with the commands exposed by the repo `Makefile` files and `AGENTS.md`.
 
 Avoid:
-- business logic in controllers or framework entrypoints
+- business logic in widgets, controllers, or framework entrypoints
 - new dependencies without explicit approval
 - schema changes without explicit approval
-- adding hexagonal or CQRS indirection when API Platform can solve the case directly and cleanly
+- adding indirection when the local framework or layer can solve the case directly and cleanly
 - premature optimization or indirection that hurts readability
 - project reshaping when the request only needs a local change

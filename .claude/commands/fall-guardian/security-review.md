@@ -1,4 +1,4 @@
-Perform a focused security review for a Symfony/API Platform change.
+Perform a focused security review for a Fall Guardian change.
 
 Review scope: `$ARGUMENTS`
 
@@ -18,6 +18,7 @@ Security checklist:
    - secrets come from configuration, not code
    - outbound calls are bounded and validated
    - user-provided URLs or remote targets are handled safely
+   - platform-channel or cross-device messages are treated as untrusted until validated
 5. Data exposure:
    - only intended fields are returned
    - stack traces, tokens, and internal details are not leaked
@@ -26,6 +27,7 @@ Security checklist:
    - validation happens before persistence or outbound calls
 7. Tests:
    - negative tests exist for forbidden or invalid paths when relevant
+   - cross-platform safety-critical flows keep negative-path or cancellation coverage when relevant
 
 Prioritize findings:
 - auth or authz bypass

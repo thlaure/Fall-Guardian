@@ -40,6 +40,7 @@ Current rule for this project:
 
 ```text
 fall_guardian/
+├── caregiver_app/
 ├── flutter_app/
 ├── wear_os_app/
 ├── watchos_app/
@@ -118,7 +119,8 @@ Guidance:
 - prefer skills when the user is speaking naturally
 - prefer commands when the user explicitly invokes a named workflow
 - rules and patterns are the shared source of truth behind both interfaces
-- `.claude/settings.json` is the versioned repository-default settings file for both Claude and Codex
+- `.claude/settings.json` is the versioned Claude Code settings file for this repository
+- Codex should follow the shared repository guidance from `AGENTS.md` and the reusable `.claude/` docs, even though it does not consume Claude Code settings natively
 - `.claude/settings.local.json` is only for optional local overrides and must not be treated as the shared team standard
 
 ## Instructions Improvement Policy

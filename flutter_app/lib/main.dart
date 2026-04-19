@@ -22,6 +22,7 @@ import 'screens/fall_alert_screen.dart';
 import 'repositories/contacts_repository.dart';
 
 // The service that talks to the native watch layer (Wear OS / watchOS).
+import 'services/app_bootstrap_service.dart';
 import 'services/watch_communication_service.dart';
 import 'services/alert_coordinator.dart';
 import 'services/backend_api_service.dart';
@@ -70,7 +71,8 @@ class FallGuardianApp extends StatefulWidget {
   State<FallGuardianApp> createState() => _FallGuardianAppState();
 }
 
-class _FallGuardianAppState extends State<FallGuardianApp> {
+class _FallGuardianAppState extends State<FallGuardianApp>
+    with WidgetsBindingObserver {
   // The watch service is instantiated here (at the app root) because it must
   // live for the entire lifetime of the app — fall events can arrive at any
   // time, including while the user is on a different screen.
@@ -91,6 +93,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _watchService.setFallDetectedCallback(_onFallDetected);
     _watchService.setCancelAlertCallback(_onAlertCancelled);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -98,12 +101,21 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_alertCoordinator.reconcileActiveAlert());
+    }
+  }
+
   Future<void> _bootstrapBackend() async {
+    final bootstrapService = AppBootstrapService(
+      locationService: _locationService,
+      backendApi: _backendApi,
+      contactsRepository: _contactsRepository,
+    );
     try {
-      await _locationService.requestPermissionIfNeeded();
-      await _backendApi.ensureReady();
-      final contacts = await _contactsRepository.getAll();
-      await _backendApi.syncContacts(contacts);
+      await bootstrapService.bootstrap();
     } catch (_) {
       // Best effort only: the app must still function locally if the backend is
       // unavailable, and alert submission will surface the failure later.
@@ -165,6 +177,7 @@ class _FallGuardianAppState extends State<FallGuardianApp> {
   // - Disposing the watch service clears the MethodChannel handler.
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _alertCoordinator.dispose();
     _watchService.dispose();
     super.dispose();
