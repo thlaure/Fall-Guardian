@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import 'link_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
@@ -27,22 +28,22 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
   void _onLinked() {
     setState(() => _linked = true);
     widget.onLinked?.call();
+    final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Linked successfully! You will now receive fall alerts.'),
-      ),
+      SnackBar(content: Text(l10n.linkedSnackbar)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Fall Guardian Caregiver',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          l10n.appTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
       body: SingleChildScrollView(
@@ -71,7 +72,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    _linked ? 'Monitoring Active' : 'Not Linked Yet',
+                    _linked ? l10n.statusLinkedTitle : l10n.statusUnlinkedTitle,
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
@@ -80,9 +81,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _linked
-                        ? 'You will receive push alerts if a fall is detected on the protected person\'s device.'
-                        : 'Link with a protected person to start receiving fall alerts.',
+                    _linked ? l10n.statusLinkedBody : l10n.statusUnlinkedBody,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
@@ -99,7 +98,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   ),
                 ),
                 icon: const Icon(Icons.add_link),
-                label: const Text('Link with Protected Person'),
+                label: Text(l10n.linkButton),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
@@ -107,23 +106,19 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
               const SizedBox(height: 16),
             ],
             _InfoCard(
-              title: _linked ? 'Status' : 'How it works',
-              body: _linked
-                  ? 'Push notifications are active. Keep this app installed.'
-                  : '1. Ask the protected person to generate a code in their Fall Guardian app.\n'
-                      '2. Tap "Link" above and enter the code.\n'
-                      '3. You\'ll receive push alerts on every detected fall.',
+              title: _linked ? l10n.statusCardTitle : l10n.howItWorksTitle,
+              body: _linked ? l10n.statusCardBody : l10n.howItWorksBody,
               icon: _linked ? Icons.check_circle_outline : Icons.info_outline,
             ),
             const SizedBox(height: 16),
             _InfoCard(
-              title: 'Important',
-              body: 'Keep notifications enabled for this app. Fall alerts are delivered as data-only messages — your phone must be on and connected.',
+              title: l10n.importantTitle,
+              body: l10n.importantBody,
               icon: Icons.notifications_active_outlined,
             ),
             const SizedBox(height: 24),
             Text(
-              'Separate apps keep the protected-person and caregiver flows cleaner, safer, and easier to maintain.',
+              l10n.homeFootnote,
               textAlign: TextAlign.center,
               style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
             ),

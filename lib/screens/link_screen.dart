@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 
 /// Screen where the caregiver enters the 8-character invite code generated
@@ -27,6 +28,7 @@ class _LinkScreenState extends State<LinkScreen> {
 
   Future<void> _accept() async {
     if (!_formKey.currentState!.validate()) return;
+    final l10n = AppLocalizations.of(context);
 
     setState(() {
       _loading = true;
@@ -40,12 +42,12 @@ class _LinkScreenState extends State<LinkScreen> {
       if (!mounted) return;
       setState(() {
         _errorMessage = e.statusCode == 404
-            ? 'Code not found or expired. Ask for a new code.'
-            : 'Failed to accept invite (${e.statusCode}).';
+            ? l10n.codeNotFound
+            : l10n.inviteFailed(e.statusCode ?? 0);
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _errorMessage = 'Connection error. Check the backend.');
+      setState(() => _errorMessage = l10n.connectionError);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -53,10 +55,11 @@ class _LinkScreenState extends State<LinkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Link with Protected Person')),
+      appBar: AppBar(title: Text(l10n.linkScreenTitle)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -72,23 +75,24 @@ class _LinkScreenState extends State<LinkScreen> {
                 ),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Column(
+              child: Column(
                 children: [
-                  Icon(Icons.link, color: Colors.white, size: 48),
-                  SizedBox(height: 16),
+                  const Icon(Icons.link, color: Colors.white, size: 48),
+                  const SizedBox(height: 16),
                   Text(
-                    'Enter Invite Code',
-                    style: TextStyle(
+                    l10n.enterInviteCodeTitle,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    'Ask the protected person to generate a code in their Fall Guardian app.',
+                    l10n.inviteCodeInstructions,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),
@@ -101,7 +105,7 @@ class _LinkScreenState extends State<LinkScreen> {
                 textCapitalization: TextCapitalization.characters,
                 maxLength: 8,
                 decoration: InputDecoration(
-                  labelText: '8-character code',
+                  labelText: l10n.codeFieldLabel,
                   prefixIcon: const Icon(Icons.vpn_key),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -114,7 +118,7 @@ class _LinkScreenState extends State<LinkScreen> {
                 ),
                 validator: (v) {
                   if (v == null || v.trim().length != 8) {
-                    return 'Enter the full 8-character code';
+                    return l10n.codeFieldValidation;
                   }
                   return null;
                 },
@@ -141,7 +145,7 @@ class _LinkScreenState extends State<LinkScreen> {
                       ),
                     )
                   : const Icon(Icons.check),
-              label: const Text('Link as Caregiver'),
+              label: Text(l10n.linkAsCaregiverButton),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
