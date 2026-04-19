@@ -100,6 +100,8 @@ Use the matching workflow when the task fits:
 - commit preparation: `.claude/skills/prepare-commit/SKILL.md` or `.claude/commands/fall-guardian/prepare-commit.md`
 - instruction improvement: `.claude/skills/improve-instructions/SKILL.md` or `.claude/commands/fall-guardian/improve-instructions.md`
 - build-in-public post drafting: `.claude/skills/propose-posts/SKILL.md` or `.claude/commands/fall-guardian/propose-posts.md`
+- production-urgency fixes: `.claude/skills/hotfix/SKILL.md` or `.claude/commands/fall-guardian/hotfix.md`
+- execution discipline for review, refactor, or ambiguity-heavy tasks: `.claude/skills/karpathy-guidelines/SKILL.md`
 
 Use the Flutter/Dart-specific workflow when the task is mainly in the phone app:
 
@@ -129,6 +131,7 @@ Files in scope:
 - `CLAUDE.md`
 - `.claude/rules/*.md`
 - `.claude/patterns.md`
+- `.claude/hooks/guardrails.py`
 - `.claude/commands/fall-guardian/*.md`
 - `.claude/commands/flutter/*.md`
 - `.claude/skills/*/SKILL.md`
