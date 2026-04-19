@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 
 /// Full-screen alert shown when a fall notification is received.
@@ -25,7 +26,8 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
   bool _acknowledging = false;
 
   String get _alertId => widget.alertData['alertId'] as String? ?? '';
-  String get _fallTimestamp => widget.alertData['fallTimestamp'] as String? ?? '';
+  String get _fallTimestamp =>
+      widget.alertData['fallTimestamp'] as String? ?? '';
   String? get _latitude => widget.alertData['latitude'] as String?;
   String? get _longitude => widget.alertData['longitude'] as String?;
 
@@ -48,13 +50,18 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
         await _api.acknowledgeFallAlert(_alertId);
       }
     } catch (e) {
-      developer.log('Failed to acknowledge alert: $e', name: '_ActiveAlertScreenState');
+      developer.log(
+        'Failed to acknowledge alert: $e',
+        name: '_ActiveAlertScreenState',
+      );
     }
     if (mounted) widget.onDismiss();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFB00020),
       body: SafeArea(
@@ -70,10 +77,10 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                 size: 96,
               ),
               const SizedBox(height: 24),
-              const Text(
-                'FALL DETECTED',
+              Text(
+                l10n.fallDetectedTitle,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 32,
                   fontWeight: FontWeight.w900,
@@ -82,7 +89,7 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Detected at $_formattedTime',
+                l10n.detectedAt(_formattedTime),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 18),
               ),
@@ -90,14 +97,14 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
               if (_hasLocation) ...[
                 _InfoCard(
                   icon: Icons.location_on,
-                  title: 'Location',
+                  title: l10n.locationTitle,
                   body: 'Lat: $_latitude\nLng: $_longitude',
                 ),
                 const SizedBox(height: 16),
               ],
               _InfoCard(
                 icon: Icons.info_outline,
-                title: 'Alert ID',
+                title: l10n.alertIdTitle,
                 body: _alertId,
               ),
               const Spacer(),
@@ -113,7 +120,7 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
                         ),
                       )
                     : const Icon(Icons.check_circle_outline),
-                label: const Text('Acknowledge'),
+                label: Text(l10n.acknowledge),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: const Color(0xFFB00020),
@@ -171,7 +178,8 @@ class _InfoCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style:
+                      const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),

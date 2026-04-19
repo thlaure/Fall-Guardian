@@ -18,6 +18,11 @@ class CaregiverBackendService {
   final FlutterSecureStorage _storage;
   final http.Client _client;
 
+  // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
+  // Update this to your dev machine's LAN IP when testing on a real device,
+  // or pass --dart-define=BACKEND_BASE_URL=http://<lan-ip>:8002 at build time.
+  static const _devMachineLanIp = '192.168.1.55';
+
   String get _baseUrl {
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
     if (defined.isNotEmpty) {
@@ -28,7 +33,7 @@ class CaregiverBackendService {
       return 'http://10.0.2.2:8002';
     }
 
-    return 'http://127.0.0.1:8002';
+    return 'http://$_devMachineLanIp:8002';
   }
 
   Future<void> ensureRegistered() async {
