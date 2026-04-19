@@ -11,6 +11,7 @@ use App\UI\State\AcceptInviteProcessor;
 #[ApiResource(operations: [
     new Post(
         uriTemplate: '/api/v1/invites/{code}/accept',
+        input: false,
         output: false,
         read: false,
         processor: AcceptInviteProcessor::class,

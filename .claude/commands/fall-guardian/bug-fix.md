@@ -1,4 +1,4 @@
-Fix a Symfony/API Platform bug using a small, repeatable regression-first workflow.
+Fix a Fall Guardian bug using a small, repeatable regression-first workflow.
 
 Bug report or scope: `$ARGUMENTS`
 
@@ -13,16 +13,16 @@ Execution order:
 Default expectations unless the repo clearly differs:
 - Prefer the smallest understandable fix over broad refactoring.
 - Keep the fix easy for a human reviewer to understand.
-- If API Platform already provides the correct behavior directly, use it instead of adding extra layers.
+- If a framework-native solution already fits the local layer cleanly, use it instead of adding extra layers.
 - If performance and readability conflict and there is no measured bottleneck, choose readability.
 
 Checklist:
 1. State expected behavior versus actual behavior.
-2. Point to the concrete failing path: endpoint, handler, repository, listener, or adapter.
+2. Point to the concrete failing path: coordinator, screen, native bridge, endpoint, handler, repository, listener, or adapter.
 3. Reuse local patterns instead of introducing a new structure during a bug fix.
 4. Add one regression test for the reproduced scenario.
 5. Add extra coverage only for closely related edge cases.
-6. Verify with the commands exposed by `Makefile`.
+6. Verify with the commands exposed by the repo `Makefile` files and `AGENTS.md`.
 
 Avoid:
 - mixing unrelated cleanup into the fix

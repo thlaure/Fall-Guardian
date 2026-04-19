@@ -76,6 +76,11 @@ services:
       redis:
         condition: service_healthy
     command: sh -c 'while true; do php bin/console messenger:consume async --time-limit=30 --memory-limit=256M -vv; done'
+    healthcheck:
+      test: ["CMD", "php", "-r", "echo 'ok';"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
 
   postgres:
     image: postgres:16-alpine

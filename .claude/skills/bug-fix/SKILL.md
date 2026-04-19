@@ -28,5 +28,5 @@ Workflow:
 Rules:
 - Reuse local patterns instead of introducing a new structure.
 - Prefer the smallest understandable fix over broad refactoring.
-- If API Platform already provides the correct behavior directly, use it.
+- If a framework-native solution already provides the correct behavior directly in the local layer, use it.
 - Choose readability over performance unless there is a measured bottleneck.

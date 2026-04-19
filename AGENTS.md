@@ -40,6 +40,7 @@ Current rule for this project:
 
 ```text
 fall_guardian/
+├── caregiver_app/
 ├── flutter_app/
 ├── wear_os_app/
 ├── watchos_app/
@@ -100,6 +101,8 @@ Use the matching workflow when the task fits:
 - commit preparation: `.claude/skills/prepare-commit/SKILL.md` or `.claude/commands/fall-guardian/prepare-commit.md`
 - instruction improvement: `.claude/skills/improve-instructions/SKILL.md` or `.claude/commands/fall-guardian/improve-instructions.md`
 - build-in-public post drafting: `.claude/skills/propose-posts/SKILL.md` or `.claude/commands/fall-guardian/propose-posts.md`
+- production-urgency fixes: `.claude/skills/hotfix/SKILL.md` or `.claude/commands/fall-guardian/hotfix.md`
+- execution discipline for review, refactor, or ambiguity-heavy tasks: `.claude/skills/karpathy-guidelines/SKILL.md`
 
 Use the Flutter/Dart-specific workflow when the task is mainly in the phone app:
 
@@ -116,7 +119,8 @@ Guidance:
 - prefer skills when the user is speaking naturally
 - prefer commands when the user explicitly invokes a named workflow
 - rules and patterns are the shared source of truth behind both interfaces
-- `.claude/settings.json` is the versioned repository-default settings file for both Claude and Codex
+- `.claude/settings.json` is the versioned Claude Code settings file for this repository
+- Codex should follow the shared repository guidance from `AGENTS.md` and the reusable `.claude/` docs, even though it does not consume Claude Code settings natively
 - `.claude/settings.local.json` is only for optional local overrides and must not be treated as the shared team standard
 
 ## Instructions Improvement Policy
@@ -129,6 +133,7 @@ Files in scope:
 - `CLAUDE.md`
 - `.claude/rules/*.md`
 - `.claude/patterns.md`
+- `.claude/hooks/guardrails.py`
 - `.claude/commands/fall-guardian/*.md`
 - `.claude/commands/flutter/*.md`
 - `.claude/skills/*/SKILL.md`
