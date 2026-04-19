@@ -94,8 +94,16 @@ class _FakeWatchGateway implements WatchCommandGateway {
 }
 
 class _FakeClock implements Clock {
+  _FakeClock([DateTime? initialNow]) : _now = initialNow ?? DateTime.now();
+
+  DateTime _now;
+
   @override
-  DateTime now() => DateTime.now();
+  DateTime now() => _now;
+
+  void setNow(DateTime value) {
+    _now = value;
+  }
 }
 
 class _FakeIdGenerator implements IdGenerator {
@@ -261,6 +269,41 @@ void main() {
           const Duration(seconds: 31).inMilliseconds,
     );
 
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(backend.callCount, 1);
+    expect(repo.savedEvents.single.status, FallEventStatus.alertFailed);
+    expect(notifications.cancelCount, 1);
+    expect(states.map((state) => state.phase), [
+      AlertPhase.countdown,
+      AlertPhase.gettingLocation,
+      AlertPhase.sendingAlert,
+      AlertPhase.alertFailed,
+    ]);
+
+    await sub.cancel();
+    coordinator.dispose();
+  });
+
+  test('reconcileActiveAlert triggers timeout after lifecycle pause', () async {
+    final repo = _FakeFallEventsRepository();
+    final notifications = _FakeNotificationService();
+    final backend = _FakeBackendGateway(const []);
+    final clock = _FakeClock(DateTime(2026, 4, 19, 12, 0, 0));
+    final states = <AlertUiState>[];
+    final coordinator = _coordinator(
+      eventRecorder: repo,
+      notificationGateway: notifications,
+      backendGateway: backend,
+      clock: clock,
+    );
+    final sub = coordinator.stateStream.listen(states.add);
+
+    final timestamp = clock.now().millisecondsSinceEpoch;
+    await coordinator.startAlert(timestamp);
+
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(backend.callCount, 1);
