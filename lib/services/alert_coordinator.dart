@@ -124,23 +124,24 @@ class AlertCoordinator {
     );
   }
 
-  Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
-
-  Future<void> cancelFromWatch() => _cancel(notifyWatch: false);
-
-  /// Called by [FallAlertScreen] when the UI countdown reaches zero but the
-  /// coordinator is still in [AlertPhase.countdown]. This happens when the
-  /// Android OS paused the Flutter engine while the app was backgrounded,
-  /// preventing the internal [_timeoutTimer] callback from running on time.
-  /// Re-entrant calls are safe: the [_isCurrentAlert] and phase guards inside
-  /// [_handleTimeout] make them no-ops for any timestamp that no longer matches.
-  Future<void> handleExpiredCountdown(int timestamp) async {
-    if (!_isCurrentAlert(timestamp)) return;
+  /// Reconciles the active alert after lifecycle interruptions such as the app
+  /// being backgrounded long enough for Dart timers to pause.
+  Future<void> reconcileActiveAlert() async {
+    final timestamp = _activeTimestamp;
+    if (timestamp == null) return;
     if (_currentState?.phase != AlertPhase.countdown) return;
+
+    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    if (elapsedMs < _countdownSeconds * 1000) return;
+
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
     await _handleTimeout(timestamp);
   }
+
+  Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
+
+  Future<void> cancelFromWatch() => _cancel(notifyWatch: false);
 
   Future<void> _cancel({required bool notifyWatch}) async {
     final timestamp = _activeTimestamp;
