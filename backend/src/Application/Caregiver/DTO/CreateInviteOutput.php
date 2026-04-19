@@ -13,6 +13,7 @@ use DateTimeInterface;
 #[ApiResource(operations: [
     new Post(
         uriTemplate: '/api/v1/invites',
+        input: false,
         output: self::class,
         read: false,
         processor: CreateInviteProcessor::class,

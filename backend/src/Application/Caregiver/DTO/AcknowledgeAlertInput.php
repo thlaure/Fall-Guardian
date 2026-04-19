@@ -11,6 +11,7 @@ use App\UI\State\AcknowledgeAlertProcessor;
 #[ApiResource(operations: [
     new Post(
         uriTemplate: '/api/v1/fall-alerts/{id}/acknowledge',
+        input: false,
         output: false,
         read: false,
         processor: AcknowledgeAlertProcessor::class,
