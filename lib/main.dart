@@ -2,7 +2,9 @@ import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'l10n/app_localizations.dart';
 import 'screens/active_alert_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/caregiver_backend_service.dart';
@@ -10,7 +12,11 @@ import 'services/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    developer.log('Firebase init skipped (no config): $e', name: 'main');
+  }
   runApp(const CaregiverApp());
 }
 
@@ -22,6 +28,14 @@ class CaregiverApp extends StatelessWidget {
     return MaterialApp(
       title: 'Fall Guardian Caregiver',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: AppLocalizations.supportedLocales,
+      locale: null,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF2D6A4F),
