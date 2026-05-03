@@ -71,11 +71,7 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(
-                Icons.warning_rounded,
-                color: Colors.white,
-                size: 96,
-              ),
+              const Icon(Icons.warning_rounded, color: Colors.white, size: 96),
               const SizedBox(height: 24),
               Text(
                 l10n.fallDetectedTitle,
@@ -178,8 +174,7 @@ class _InfoCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   body,
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),

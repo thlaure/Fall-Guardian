@@ -73,8 +73,7 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String inviteFailed(int code) => 'Échec de l\'invitation ($code).';
   @override
-  String get connectionError =>
-      'Erreur de connexion. Vérifiez le backend.';
+  String get connectionError => 'Erreur de connexion. Vérifiez le backend.';
   @override
   String get linkAsCaregiverButton => 'Se lier en tant qu\'aidant';
 }
