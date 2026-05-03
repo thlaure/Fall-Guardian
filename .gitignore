@@ -17,6 +17,10 @@ DerivedData/
 **/build/
 *.xcresult
 
+# Xcode Swift Package Manager generated shared data
+**/*.xcworkspace/xcshareddata/swiftpm/
+**/*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
 # Android / Gradle local machine files
 **/.gradle/
 **/local.properties

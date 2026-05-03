@@ -70,7 +70,6 @@
       "Edit"
     ],
     "deny": [
-      "Bash(git push:*)",
       "Bash(composer require:*)",
       "Bash(composer remove:*)",
       "Bash(composer update:*)",
