@@ -3,11 +3,7 @@ import '../l10n/app_localizations.dart';
 import 'link_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
-  const CaregiverHomeScreen({
-    super.key,
-    required this.isLinked,
-    this.onLinked,
-  });
+  const CaregiverHomeScreen({super.key, required this.isLinked, this.onLinked});
 
   final bool isLinked;
   final VoidCallback? onLinked;
@@ -29,9 +25,9 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     setState(() => _linked = true);
     widget.onLinked?.call();
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.linkedSnackbar)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(l10n.linkedSnackbar)));
   }
 
   @override
