@@ -6,11 +6,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class CaregiverBackendService {
-  CaregiverBackendService({
-    FlutterSecureStorage? storage,
-    http.Client? client,
-  })  : _storage = storage ?? const FlutterSecureStorage(),
-        _client = client ?? http.Client();
+  CaregiverBackendService({FlutterSecureStorage? storage, http.Client? client})
+    : _storage = storage ?? const FlutterSecureStorage(),
+      _client = client ?? http.Client();
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
@@ -21,16 +19,12 @@ class CaregiverBackendService {
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
   // Update this to your dev machine's LAN IP when testing on a real device,
   // or pass --dart-define=BACKEND_BASE_URL=http://<lan-ip>:8002 at build time.
-  static const _devMachineLanIp = '192.168.1.55';
+  static const _devMachineLanIp = '192.168.1.20';
 
   String get _baseUrl {
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
     if (defined.isNotEmpty) {
       return defined;
-    }
-
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8002';
     }
 
     return 'http://$_devMachineLanIp:8002';
@@ -122,7 +116,10 @@ class CaregiverBackendService {
         deviceId.isNotEmpty &&
         deviceToken != null &&
         deviceToken.isNotEmpty) {
-      return _CaregiverCredentials(deviceId: deviceId, deviceToken: deviceToken);
+      return _CaregiverCredentials(
+        deviceId: deviceId,
+        deviceToken: deviceToken,
+      );
     }
 
     final response = await _client.post(

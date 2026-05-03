@@ -91,8 +91,7 @@ class _LinkScreenState extends State<LinkScreen> {
                   Text(
                     l10n.inviteCodeInstructions,
                     textAlign: TextAlign.center,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 14),
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
               ),

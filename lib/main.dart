@@ -90,7 +90,10 @@ class _AppRootState extends State<_AppRoot> {
         } catch (e) {
           // Not yet linked — token registration will fail if device is not caregiver type.
           // This is fine; we'll retry after linking.
-          developer.log('FCM token registration skipped: $e', name: '_AppRootState');
+          developer.log(
+            'FCM token registration skipped: $e',
+            name: '_AppRootState',
+          );
         }
       }
     } catch (e) {
@@ -110,9 +113,14 @@ class _AppRootState extends State<_AppRoot> {
     // Re-register the FCM token now that we are linked
     _pushService.getFcmToken().then((token) {
       if (token != null) {
-        _backend.registerPushToken(token).catchError(
-          (e) => developer.log('Push token re-registration error: $e', name: '_AppRootState'),
-        );
+        _backend
+            .registerPushToken(token)
+            .catchError(
+              (e) => developer.log(
+                'Push token re-registration error: $e',
+                name: '_AppRootState',
+              ),
+            );
       }
     });
   }
@@ -120,9 +128,7 @@ class _AppRootState extends State<_AppRoot> {
   @override
   Widget build(BuildContext context) {
     if (!_ready) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_activeAlert != null) {
@@ -132,9 +138,6 @@ class _AppRootState extends State<_AppRoot> {
       );
     }
 
-    return CaregiverHomeScreen(
-      isLinked: _linked,
-      onLinked: _onLinked,
-    );
+    return CaregiverHomeScreen(isLinked: _linked, onLinked: _onLinked);
   }
 }
