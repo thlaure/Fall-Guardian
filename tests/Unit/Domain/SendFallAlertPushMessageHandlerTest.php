@@ -15,7 +15,6 @@ use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use DateTimeImmutable;
-use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -31,8 +30,6 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
 
     private PushGatewayInterface&MockObject $pushGateway;
 
-    private EntityManagerInterface&MockObject $entityManager;
-
     private SendFallAlertPushMessageHandler $handler;
 
     protected function setUp(): void
@@ -41,14 +38,12 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $this->linkRepository = $this->createMock(CaregiverLinkRepositoryInterface::class);
         $this->pushTokenRepository = $this->createMock(CaregiverPushTokenRepositoryInterface::class);
         $this->pushGateway = $this->createMock(PushGatewayInterface::class);
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
 
         $this->handler = new SendFallAlertPushMessageHandler(
             $this->fallAlertRepository,
             $this->linkRepository,
             $this->pushTokenRepository,
             $this->pushGateway,
-            $this->entityManager,
         );
     }
 
@@ -85,7 +80,7 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([]);
 
         $this->pushGateway->expects($this->never())->method('send');
-        $this->entityManager->expects($this->never())->method('flush');
+        $this->fallAlertRepository->expects($this->never())->method('save');
 
         ($this->handler)(new SendFallAlertPushMessage('some-id'));
     }
@@ -118,8 +113,8 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $this->pushGateway->expects($this->once())->method('send')->willReturn(['providerMessageId' => 'push-001']);
 
         $alert->expects($this->once())->method('addPushAttempt');
-        $this->entityManager->expects($this->once())->method('persist');
-        $this->entityManager->expects($this->once())->method('flush');
+        $alert->expects($this->once())->method('markSent');
+        $this->fallAlertRepository->expects($this->once())->method('save')->with($alert);
 
         ($this->handler)(new SendFallAlertPushMessage('some-id'));
     }
@@ -143,7 +138,8 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $this->pushTokenRepository->method('findByDevice')->willReturn(null);
 
         $this->pushGateway->expects($this->never())->method('send');
-        $this->entityManager->expects($this->once())->method('flush');
+        $alert->expects($this->once())->method('markFailed');
+        $this->fallAlertRepository->expects($this->once())->method('save')->with($alert);
 
         ($this->handler)(new SendFallAlertPushMessage('some-id'));
     }

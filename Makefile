@@ -1,4 +1,4 @@
-.PHONY: help up down build rebuild shell logs logs-app logs-messenger ps composer-install composer-update lint lint-dry analyse rector rector-dry quality grumphp test-unit test-integration test test-behat migrate db-diff db-reset cache-clear routes console messenger-consume worker-failed worker-retry install
+.PHONY: help up down build rebuild shell logs logs-app logs-messenger ps composer-install composer-update lint lint-dry analyse rector rector-dry quality grumphp test-unit test-integration test test-behat coverage-text coverage-html migrate db-diff db-reset cache-clear routes console messenger-consume worker-failed worker-retry install
 
 .DEFAULT_GOAL := help
 
@@ -76,7 +76,12 @@ test-integration: ## Run integration tests
 	$(DOCKER_COMPOSE) exec app vendor/bin/phpunit --testsuite=integration
 
 test: ## Run all PHPUnit tests
-	$(DOCKER_COMPOSE) exec app vendor/bin/phpunit
+	$(DOCKER_COMPOSE) exec app vendor/bin/phpunit --coverage-text
+
+coverage-html: ## Generate HTML coverage report (var/reports/phpunit-coverage/index.html)
+	$(DOCKER_COMPOSE) exec app vendor/bin/phpunit --no-results --coverage-html var/reports/phpunit-coverage
+	@echo ""
+	@echo "Report: var/reports/phpunit-coverage/index.html"
 
 test-behat: ## Run Behat API tests
 	$(DOCKER_COMPOSE) exec app vendor/bin/behat --config behat.yaml.dist --colors

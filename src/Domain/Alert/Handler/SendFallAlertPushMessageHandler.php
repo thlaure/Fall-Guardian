@@ -9,11 +9,11 @@ use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface;
 use App\Domain\Push\Port\PushGatewayInterface;
+use App\Entity\CaregiverPushToken;
 use App\Entity\FallAlert;
 use App\Entity\PushAttempt;
 use DateTimeImmutable;
 use DateTimeInterface;
-use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Throwable;
 
@@ -25,7 +25,6 @@ final readonly class SendFallAlertPushMessageHandler
         private CaregiverLinkRepositoryInterface $caregiverLinkRepository,
         private CaregiverPushTokenRepositoryInterface $pushTokenRepository,
         private PushGatewayInterface $pushGateway,
-        private EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -45,19 +44,20 @@ final readonly class SendFallAlertPushMessageHandler
 
         $fallTimestamp = $alert->getFallDetectedAt()->format(DateTimeInterface::ATOM);
         $provider = $this->pushGateway->getProviderName();
+        $attempted = 0;
         $sentCount = 0;
 
         foreach ($links as $link) {
             $caregiverDevice = $link->getCaregiverDevice();
             $pushToken = $this->pushTokenRepository->findByDevice($caregiverDevice);
 
-            if (!$pushToken instanceof \App\Entity\CaregiverPushToken) {
+            if (!$pushToken instanceof CaregiverPushToken) {
                 continue;
             }
 
+            ++$attempted;
             $attempt = new PushAttempt($alert, $caregiverDevice, $provider);
             $alert->addPushAttempt($attempt);
-            $this->entityManager->persist($attempt);
 
             try {
                 $result = $this->pushGateway->send(
@@ -74,6 +74,14 @@ final readonly class SendFallAlertPushMessageHandler
             }
         }
 
-        $this->entityManager->flush();
+        if ($attempted === 0 || $sentCount === 0) {
+            $alert->markFailed();
+        } elseif ($sentCount < $attempted) {
+            $alert->markPartiallySent();
+        } else {
+            $alert->markSent();
+        }
+
+        $this->fallAlertRepository->save($alert);
     }
 }

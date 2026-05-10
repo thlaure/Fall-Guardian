@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Device\Service;
 
 use App\Domain\Device\Port\DeviceRepositoryInterface;
+use App\Domain\Device\Response\DeviceRegistrationOutputDTO;
 use App\Entity\Device;
 use App\Enum\DeviceType;
 use App\Infrastructure\Http\Security\DeviceTokenHasher;
@@ -18,8 +19,7 @@ final readonly class DeviceRegistrationService
     ) {
     }
 
-    /** @return array{deviceId: string, deviceToken: string} */
-    public function register(string $platform, string $appVersion, DeviceType $deviceType = DeviceType::ProtectedPerson): array
+    public function register(string $platform, string $appVersion, DeviceType $deviceType = DeviceType::ProtectedPerson): DeviceRegistrationOutputDTO
     {
         $plainToken = $this->tokenHasher->generatePlainToken();
         $device = new Device(Uuid::v7()->toRfc4122(), $this->tokenHasher->hash($plainToken), $platform, $appVersion);
@@ -27,9 +27,6 @@ final readonly class DeviceRegistrationService
 
         $this->deviceRepository->save($device);
 
-        return [
-            'deviceId' => $device->getPublicId(),
-            'deviceToken' => $plainToken,
-        ];
+        return new DeviceRegistrationOutputDTO($device->getPublicId(), $plainToken);
     }
 }

@@ -26,12 +26,10 @@ final readonly class DeviceRegistrationProcessor implements ProcessorInterface
     {
         assert($data instanceof DeviceRegistrationInputDTO);
 
-        $credentials = $this->deviceRegistrationService->register(
+        return $this->deviceRegistrationService->register(
             $data->platform,
             $data->appVersion,
             DeviceType::from($data->deviceType),
         );
-
-        return new DeviceRegistrationOutputDTO($credentials['deviceId'], $credentials['deviceToken']);
     }
 }

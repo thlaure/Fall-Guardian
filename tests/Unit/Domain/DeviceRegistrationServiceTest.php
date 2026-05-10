@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Domain;
 
 use App\Domain\Device\Port\DeviceRepositoryInterface;
+use App\Domain\Device\Response\DeviceRegistrationOutputDTO;
 use App\Domain\Device\Service\DeviceRegistrationService;
 use App\Enum\DeviceType;
 use App\Infrastructure\Http\Security\DeviceTokenHasher;
@@ -32,8 +33,9 @@ final class DeviceRegistrationServiceTest extends TestCase
 
         $result = $this->service->register('ios', '1.0.0');
 
-        self::assertIsString($result['deviceId']);
-        self::assertNotEmpty($result['deviceToken']);
+        self::assertInstanceOf(DeviceRegistrationOutputDTO::class, $result);
+        self::assertIsString($result->deviceId);
+        self::assertNotEmpty($result->deviceToken);
     }
 
     #[Test]
@@ -43,7 +45,8 @@ final class DeviceRegistrationServiceTest extends TestCase
 
         $result = $this->service->register('android', '1.0.0', DeviceType::Caregiver);
 
-        self::assertIsString($result['deviceId']);
-        self::assertNotEmpty($result['deviceToken']);
+        self::assertInstanceOf(DeviceRegistrationOutputDTO::class, $result);
+        self::assertIsString($result->deviceId);
+        self::assertNotEmpty($result->deviceToken);
     }
 }
