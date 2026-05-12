@@ -22,15 +22,64 @@ Canonical agent instructions for this repository live in this file.
 - Keep `AlertCoordinator` as the phone-side workflow owner
 - Keep Flutter widgets UI-only
 - Keep native bridges thin and focused on transport/runtime integration
-- Keep backend workflow in application services and Messenger handlers
+- Keep backend workflow in domain-local handlers, services, processors/providers, and Messenger handlers under `backend/src/Domain/...`
 - If a native framework or API Platform feature already solves the need cleanly, use it instead of forcing extra abstraction
 
 Current rule for this project:
 
 - phone alert flow stays explicit and coordinator-driven
 - watch implementations stay native
-- backend alert delivery stays service-driven, not controller-driven
+- backend alert delivery stays handler/service-driven, not controller-driven
 - cross-platform contracts must remain aligned across Flutter, Android, iOS, Wear OS, watchOS, and backend
+
+### Backend Architecture
+
+The backend follows a domain-first structure inspired by `enovacom/ris-back`.
+
+Use these principles pragmatically:
+
+- new backend business features belong in `backend/src/Domain/<Feature>/...`
+- keep API Platform resources, processors/providers, handlers, messages, ports, and controllers close to the domain they serve
+- keep controllers and API Platform processors/providers focused on HTTP/API Platform orchestration
+- keep handlers and focused services as the main place for application/business flow
+- keep repositories focused on persistence and data access
+- keep DTOs, request objects, response/view objects, and API resource classes free of business decisions
+- keep Doctrine entities focused on ORM mapping and simple state transitions
+- keep external integrations in infrastructure/adapters, behind explicit ports when replaceability or testability matters
+
+Current backend shape:
+
+```text
+backend/src/
+├── Domain/
+│   ├── Alert/{DTO,Handler,Message,Port,State}
+│   ├── Caregiver/{DTO,Handler,Port,State}
+│   ├── Contact/{DTO,Handler,Port,State}
+│   ├── Device/{DTO,Handler,Port,State}
+│   ├── Debug/Controller
+│   ├── Healthcheck/Controller
+│   ├── Push/Port
+│   └── Sms/{Controller,Port}
+├── Entity/
+├── Enum/
+└── Infrastructure/
+```
+
+Backend flow patterns:
+
+- API Platform write flow: `ApiResource DTO -> State Processor -> Handler/Service -> Port/Repository/Gateway -> View/Output DTO`
+- API Platform read flow: `ApiResource View -> State Provider -> Repository/Service -> View DTO`
+- Controller flow: `Controller -> request params/body -> Handler/Repository/Gateway -> Response`
+- Messenger flow: `Message -> MessageHandler -> Repository/Service/Gateway -> persisted audit`
+
+Rules:
+
+- preserve backend API prefix `/api/v1`
+- routes are discovered from `backend/src/Domain/`
+- do not reintroduce top-level backend `Application/`, `UI/`, or `Message/` layers
+- prefer extending the local domain folder pattern over introducing a new backend layout
+- if API Platform can solve a CRUD/read concern cleanly, use it directly instead of adding unnecessary layers
+- backend-owned escalation and caregiver delivery must remain service/handler-driven, not controller-driven
 
 ## Current Flow
 
@@ -159,6 +208,8 @@ Run when relevant:
 - `cd flutter_app && flutter test`
 - `cd backend && vendor/bin/phpstan analyse --no-progress --memory-limit=-1`
 - `cd backend && vendor/bin/phpunit --testsuite=Unit`
+- `cd backend && vendor/bin/phpunit --testsuite=Integration`
+- `cd backend && vendor/bin/behat --config behat.yaml.dist --colors`
 
 Preferred broader verification:
 
@@ -170,8 +221,10 @@ Preferred broader verification:
 
 - Flutter tests: `flutter_app/test`
 - Wear OS tests: `wear_os_app` Gradle test targets
-- Backend unit tests: `backend/tests/Unit`
+- Backend domain unit tests: `backend/tests/Unit/Domain`
+- Backend infrastructure unit tests: `backend/tests/Unit/Infrastructure`
 - Backend integration tests: `backend/tests/Integration`
+- Backend Behat API scenarios: `backend/features`
 - PHPUnit method names must stay camelCase
 
 ## Documentation Policy

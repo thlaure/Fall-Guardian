@@ -1,5 +1,0 @@
-services:
-    App\Tests\Behat\ApiContext:
-        public: true
-        autowire: true
-        autoconfigure: true
