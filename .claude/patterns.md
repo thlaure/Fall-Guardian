@@ -1,115 +1,129 @@
 # Fall Guardian Patterns
 
-Use these patterns as generic guidance. Always prefer nearby repository examples when they exist.
+These are patterns, not rigid templates. Match the surrounding domain before introducing a new structure.
 
-Design intent:
-- apply SOLID principles without adding unnecessary abstraction
-- keep clean architecture and hexagonal boundaries readable
-- use native API Platform features directly when they already solve the need cleanly
-- choose readability over premature optimization
-- write code that is easy for a human reviewer to understand
+## Design Heuristics
 
-## Flutter Coordinator-Owned Workflow
+- Prefer explicit, readable code over clever abstractions.
+- Keep one clear responsibility per class or helper.
+- Keep framework and persistence details at the edges when practical.
+- Prefer small typed objects when they clarify data flow better than arrays.
+- Open extension points only when real variation exists.
+- Do not force a pure architecture into a mixed area; improve the design without fighting the surrounding code.
+- Use native API Platform, Symfony, Flutter, Android, iOS, Wear OS, or watchOS behavior directly when it solves the need cleanly.
 
-- `AlertCoordinator` owns alert lifecycle, timeout, cancel propagation, and escalation
-- widgets render state and trigger actions; they do not own timers or delivery side effects
-- repositories own persistence; services/adapters own runtime integrations
+## Backend Domain Layout
 
-## Native Bridge Pattern
+New backend business features should live under `backend/src/Domain/<Feature>/...`.
 
-- native phone/watch code receives platform events
-- bridge validates and translates them into shared app events
-- platform adapters do not duplicate Flutter workflow decisions
+Current folder vocabulary:
 
-## Cross-Platform Contract Rule
+- `DTO/`: API input DTOs, output/view DTOs, and small domain data carriers.
+- `State/`: API Platform processors/providers.
+- `Handler/`: application/business orchestration and Messenger handlers.
+- `Message/`: Messenger messages for asynchronous workflows.
+- `Port/`: repository/gateway interfaces owned by the domain.
+- `Controller/`: thin HTTP controllers when API Platform is not the right entrypoint.
 
-- new event/method/key/config must be checked across Flutter, Android, iOS, Wear OS, watchOS, and backend when relevant
-- avoid adding local-only assumptions that break shared fall timestamp or cancel behavior
+Avoid reintroducing top-level backend `Application/`, `UI/`, or `Message/` directories.
 
----
-
-## API Platform Native Read Resource
-
-Use this pattern when the read side is served directly by API Platform without an extra application layer.
+## API Platform Write Resource
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-namespace App\Entity;
+namespace App\Domain\Feature\DTO;
 
-use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
-use ApiPlatform\Metadata\Get;
-use ApiPlatform\Metadata\GetCollection;
-use ApiPlatform\Doctrine\Orm\Filter\SearchFilter;
-use Doctrine\ORM\Mapping as ORM;
-use Symfony\Component\Serializer\Attribute\Groups;
+use ApiPlatform\Metadata\Post;
+use App\Domain\Feature\State\CreateFeatureProcessor;
+use Symfony\Component\Validator\Constraints as Assert;
 
-#[ORM\Entity]
-#[ApiResource(
-    operations: [
-        new GetCollection(),
-        new Get(),
-    ],
-    normalizationContext: ['groups' => ['feature:read']],
-    paginationEnabled: true,
-)]
-#[ApiFilter(SearchFilter::class, properties: ['name' => 'partial'])]
-class Feature
+#[ApiResource(operations: [
+    new Post(
+        uriTemplate: '/api/v1/features',
+        output: FeatureView::class,
+        read: false,
+        processor: CreateFeatureProcessor::class,
+    ),
+])]
+final class CreateFeatureInput
 {
-    #[ORM\Id]
-    #[ORM\GeneratedValue]
-    #[ORM\Column]
-    #[Groups(['feature:read'])]
-    private int $id;
+    #[Assert\NotBlank]
+    #[Assert\Length(max: 100)]
+    public string $name = '';
+}
+```
 
-    #[ORM\Column(length: 255)]
-    #[Groups(['feature:read'])]
-    private string $name;
+Rules:
 
-    public function getId(): int
+- Validate external input at the DTO boundary.
+- Keep DTOs logic-free.
+- Preserve `/api/v1` for backend public routes.
+
+## API Platform Processor
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Feature\State;
+
+use ApiPlatform\Metadata\Operation;
+use ApiPlatform\State\ProcessorInterface;
+use App\Domain\Feature\DTO\CreateFeatureInput;
+use App\Domain\Feature\DTO\FeatureView;
+use App\Domain\Feature\Handler\CreateFeatureHandler;
+
+use function assert;
+
+/**
+ * @implements ProcessorInterface<CreateFeatureInput, FeatureView>
+ */
+final readonly class CreateFeatureProcessor implements ProcessorInterface
+{
+    public function __construct(private CreateFeatureHandler $handler)
     {
-        return $this->id;
     }
 
-    public function getName(): string
+    public function process(mixed $data, Operation $operation, array $uriVariables = [], array $context = []): FeatureView
     {
-        return $this->name;
+        assert($data instanceof CreateFeatureInput);
+
+        return FeatureView::fromEntity(($this->handler)($data->name));
     }
 }
 ```
 
 Rules:
-- Use serialization groups to control exposed fields explicitly.
-- Add filters as `#[ApiFilter]` attributes rather than custom DQL.
-- Do not add an application handler for read-only API Platform operations unless the query logic genuinely belongs in the domain.
 
-## Handler / Use Case
+- Processors/providers translate API Platform input/output and delegate business decisions.
+- Do not put durable workflow logic in processors when a handler/service is the right owner.
+
+## Handler
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-namespace App\Application\Feature\Handler;
+namespace App\Domain\Feature\Handler;
 
-use App\Application\Feature\DTO\CreateFeatureInput;
-use App\Domain\Feature\Model\Feature;
 use App\Domain\Feature\Port\FeatureRepositoryInterface;
+use App\Entity\Feature;
 
 final readonly class CreateFeatureHandler
 {
-    public function __construct(
-        private FeatureRepositoryInterface $repository,
-    ) {
+    public function __construct(private FeatureRepositoryInterface $repository)
+    {
     }
 
-    public function __invoke(CreateFeatureInput $input): Feature
+    public function __invoke(string $name): Feature
     {
-        $feature = new Feature($input->name);
-
+        $feature = new Feature($name);
         $this->repository->save($feature);
 
         return $feature;
@@ -117,66 +131,47 @@ final readonly class CreateFeatureHandler
 }
 ```
 
-## Command / Query DTO
+Rules:
+
+- Handlers own business/application orchestration.
+- Depend on ports when persistence or external delivery is a boundary.
+- Keep behavior explicit; avoid hidden work in generic utilities.
+
+## Output View
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-namespace App\Application\Feature\DTO;
+namespace App\Domain\Feature\DTO;
 
-final readonly class GetFeatureQuery
-{
-    public function __construct(
-        public string $id,
-    ) {
-    }
-}
-```
+use App\Entity\Feature;
 
-## Input DTO Validation
-
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Feature\DTO;
-
-use Symfony\Component\Validator\Constraints as Assert;
-
-final readonly class CreateFeatureInput
-{
-    public function __construct(
-        #[Assert\NotBlank]
-        #[Assert\Length(max: 255)]
-        public string $name,
-    ) {
-    }
-}
-```
-
-## Output DTO / Resource Shape
-
-```php
-<?php
-
-declare(strict_types=1);
-
-namespace App\Application\Feature\DTO;
-
-final readonly class FeatureOutput
+final readonly class FeatureView
 {
     public function __construct(
         public string $id,
         public string $name,
     ) {
     }
+
+    public static function fromEntity(Feature $feature): self
+    {
+        return new self(
+            $feature->getId()->toRfc4122(),
+            $feature->getName(),
+        );
+    }
 }
 ```
 
-## Repository Interface
+Rules:
+
+- Expose only fields intended for clients.
+- Keep response/view fields stable and explicit.
+
+## Repository Port
 
 ```php
 <?php
@@ -185,37 +180,47 @@ declare(strict_types=1);
 
 namespace App\Domain\Feature\Port;
 
-use App\Domain\Feature\Model\Feature;
+use App\Entity\Feature;
 
 interface FeatureRepositoryInterface
 {
-    public function save(Feature $feature): void;
+    public function findById(string $id): ?Feature;
 
-    public function find(string $id): ?Feature;
+    public function save(Feature $feature): void;
 }
 ```
 
-## Domain Service
+Rules:
+
+- Repositories own persistence and data access only.
+- Domain handlers should not depend on concrete Doctrine repositories.
+
+## Messenger Handler
 
 ```php
 <?php
 
 declare(strict_types=1);
 
-namespace App\Domain\Feature\Service;
+namespace App\Domain\Feature\Handler;
 
-final readonly class ComputeFeatureStatusService
+use App\Domain\Feature\Message\SendFeatureMessage;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+
+#[AsMessageHandler]
+final readonly class SendFeatureMessageHandler
 {
-    public function compute(bool $enabled, ?string $code): string
+    public function __invoke(SendFeatureMessage $message): void
     {
-        if (!$enabled) {
-            return 'disabled';
-        }
-
-        return null === $code ? 'pending' : 'ready';
+        // Load state, apply explicit workflow, persist audit.
     }
 }
 ```
+
+Rules:
+
+- Asynchronous delivery workflows must be idempotent where practical.
+- Persist delivery attempts and failures when they affect alert/caregiver auditability.
 
 ## Unit Test
 
@@ -224,10 +229,9 @@ final readonly class ComputeFeatureStatusService
 
 declare(strict_types=1);
 
-namespace App\Tests\Unit\Application\Feature\Handler;
+namespace App\Tests\Unit\Domain;
 
-use App\Application\Feature\DTO\CreateFeatureInput;
-use App\Application\Feature\Handler\CreateFeatureHandler;
+use App\Domain\Feature\Handler\CreateFeatureHandler;
 use App\Domain\Feature\Port\FeatureRepositoryInterface;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -241,17 +245,31 @@ final class CreateFeatureHandlerTest extends TestCase
         $this->repository = $this->createMock(FeatureRepositoryInterface::class);
     }
 
-    public function testInvokeWithValidInputSavesFeature(): void
+    public function testInvokeWithValidNameSavesFeature(): void
     {
-        $this->repository
-            ->expects($this->once())
-            ->method('save');
+        $this->repository->expects($this->once())->method('save');
 
         $handler = new CreateFeatureHandler($this->repository);
+        $feature = $handler('Example');
 
-        $result = $handler(new CreateFeatureInput('Example'));
-
-        $this->assertSame('Example', $result->name());
+        self::assertSame('Example', $feature->getName());
     }
 }
 ```
+
+## Flutter Coordinator-Owned Workflow
+
+- `AlertCoordinator` owns protected-person alert lifecycle, timeout, cancel propagation, and escalation.
+- Widgets render state and trigger intents; they do not own workflow timers or delivery side effects.
+- Repositories own persistence; services/adapters own runtime integrations.
+
+## Native Bridge Pattern
+
+- Native phone/watch code receives platform events.
+- Bridges validate and translate platform events into shared app events.
+- Platform adapters do not duplicate Flutter/backend workflow decisions.
+
+## Cross-Platform Contract Rule
+
+- New event, method, route, key, DTO field, or config must be checked across Flutter, Android, iOS, Wear OS, watchOS, and backend when relevant.
+- Avoid local-only assumptions that break shared fall timestamp, cancellation, or backend escalation behavior.
