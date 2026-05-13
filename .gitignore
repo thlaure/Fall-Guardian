@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Logs
+firebase-debug.log
+
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins
