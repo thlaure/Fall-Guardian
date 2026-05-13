@@ -24,7 +24,7 @@ class BackendApiService implements AlertBackendGateway {
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
   // Update this to your dev machine's LAN IP when testing on a real device,
   // or pass --dart-define=BACKEND_BASE_URL=http://<lan-ip>:8002 at build time.
-  static const _devMachineLanIp = '192.168.1.20';
+  static const _devMachineLanIp = '172.16.20.73';
 
   String get _baseUrl {
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
