@@ -2,8 +2,6 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(docker compose:*)",
-      "Bash(rtk docker compose:*)",
       "Bash(make lint:*)",
       "Bash(rtk make lint:*)",
       "Bash(make lint-dry:*)",
@@ -44,8 +42,6 @@
       "Bash(rtk git branch:*)",
       "Bash(git add:*)",
       "Bash(rtk git add:*)",
-      "Bash(git checkout:*)",
-      "Bash(rtk git checkout:*)",
       "Bash(git fetch:*)",
       "Bash(rtk git fetch:*)",
       "Read",
@@ -93,7 +89,7 @@
         ]
       },
       {
-        "matcher": "Write",
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",

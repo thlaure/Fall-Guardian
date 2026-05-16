@@ -15,6 +15,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Uid\Uuid;
 
@@ -65,6 +66,20 @@ final class CancelFallAlertProcessorTest extends TestCase
         $this->expectException(NotFoundHttpException::class);
 
         $this->processor->process(null, $this->createMock(Operation::class), []);
+    }
+
+    #[Test]
+    public function itRejectsCaregiverDevices(): void
+    {
+        $device = $this->createMock(Device::class);
+        $device->method('isCaregiver')->willReturn(true);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->alertIngestionService->expects($this->never())->method('cancelAlert');
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->processor->process(null, $this->createMock(Operation::class), ['clientAlertId' => 'client-001']);
     }
 
     private function buildAlertMock(): FallAlert&MockObject

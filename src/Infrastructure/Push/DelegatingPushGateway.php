@@ -7,8 +7,6 @@ namespace App\Infrastructure\Push;
 use App\Domain\Push\Port\PushGatewayInterface;
 use InvalidArgumentException;
 
-use function sprintf;
-
 final readonly class DelegatingPushGateway implements PushGatewayInterface
 {
     public function __construct(

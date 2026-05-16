@@ -10,9 +10,7 @@ use App\Domain\Alert\Request\CancelFallAlertInputDTO;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
-
-use function is_string;
-
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -34,10 +32,13 @@ final readonly class CancelFallAlertProcessor implements ProcessorInterface
             throw new NotFoundHttpException('Alert not found.');
         }
 
-        $alert = $this->alertIngestionService->cancelAlert(
-            $this->currentDeviceProvider->requireDevice(),
-            $clientAlertId,
-        );
+        $device = $this->currentDeviceProvider->requireDevice();
+
+        if ($device->isCaregiver()) {
+            throw new AccessDeniedHttpException('Caregiver devices cannot cancel protected-person fall alerts.');
+        }
+
+        $alert = $this->alertIngestionService->cancelAlert($device, $clientAlertId);
 
         if (!$alert instanceof \App\Entity\FallAlert) {
             throw new NotFoundHttpException('Alert not found.');

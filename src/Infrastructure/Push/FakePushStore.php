@@ -8,16 +8,8 @@ use const DATE_ATOM;
 
 use DateTimeImmutable;
 
-use function dirname;
-
 use const FILE_APPEND;
-
-use function is_array;
-use function is_string;
-
 use const JSON_THROW_ON_ERROR;
-
-use function sprintf;
 
 final readonly class FakePushStore
 {

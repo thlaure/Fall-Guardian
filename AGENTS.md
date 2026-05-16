@@ -101,6 +101,7 @@ Always:
 - keep `declare(strict_types=1);` in PHP
 - prefer explicit naming
 - write tests for behavior changes
+- keep automated line coverage at or above 90%; coverage must come from useful behavior, contract, edge-case, and regression tests, not shallow line execution
 - run verification after changes
 - preserve API prefix `/api/v1`
 - prefer readability and reviewability over premature optimization
@@ -123,6 +124,16 @@ Never:
 - put workflow logic in State Processors, Controllers, or API resources
 - create duplicated instructions across `AGENTS.md` and `CLAUDE.md`
 - run `git commit` or `git push` silently; always ask for confirmation first
+
+## Guardrail Enforcement Priority
+
+Project rules should be enforced in this order:
+
+1. Deterministic tools: PHP CS Fixer, PHPStan, Rector, PHPUnit, Behat, GrumPHP, dependency security checks, Symfony compiler/container checks, and other repeatable project commands.
+2. Agent hooks: lightweight safety checks that must run around agent actions, such as credential detection, PHP syntax checks, protected branch checks, and write-scope checks.
+3. Skills and written guidance: architecture, Clean Architecture, SOLID, CQRS-style separation, testing strategy, review workflows, and other rules that need human/agent judgment.
+
+When a rule is repeatable and machine-checkable, encode it in a deterministic tool before documenting it as guidance. Use hooks for immediate action boundaries only. Use skills for judgment-heavy workflows and conventions that tools cannot check reliably.
 
 ## Shared `.claude` Assets
 
@@ -154,6 +165,9 @@ Use the matching workflow when the task fits:
 
 Guidance:
 
+- deterministic tools are the first source of enforcement; do not rely on skills for checks that can be automated
+- hooks are only the second layer, for fast local action guards and syntax/secret checks
+- skills are the third layer, for context-dependent decisions and review workflows
 - rules, patterns, and skills should remain consistent with each other
 - prefer skills when the user is speaking naturally or explicitly invokes a named workflow
 - use `AGENTS.md` as the index into `.claude/`; do not preload the full `.claude` tree
@@ -197,6 +211,7 @@ Current suites and locations:
 
 Endpoint test expectations:
 
+- maintain at least 90% line coverage for the repository when practical; if coverage drops below target, either add meaningful tests or explain why the uncovered path is not useful to test automatically
 - new or changed pure domain logic with no HTTP contract change: unit test required; add integration test when persistence or wiring is the real risk
 - new or changed API Platform endpoint: unit test for handler/service logic plus Behat scenario covering the happy path and key failure paths
 - Messenger handler changes: unit test required; add integration test when the full dispatch/consume cycle is the real risk

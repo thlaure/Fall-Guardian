@@ -10,10 +10,8 @@ use App\Domain\Alert\Request\CreateFallAlertInputDTO;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
-
-use function assert;
-
 use DateTimeImmutable;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * @implements ProcessorInterface<CreateFallAlertInputDTO, FallAlertOutputDTO>
@@ -30,8 +28,14 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
     {
         assert($data instanceof CreateFallAlertInputDTO);
 
+        $device = $this->currentDeviceProvider->requireDevice();
+
+        if ($device->isCaregiver()) {
+            throw new AccessDeniedHttpException('Caregiver devices cannot create fall alerts.');
+        }
+
         $alert = $this->alertIngestionService->createAlert(
-            $this->currentDeviceProvider->requireDevice(),
+            $device,
             $data->clientAlertId,
             $data->fallTimestamp ?? new DateTimeImmutable(),
             $data->locale,

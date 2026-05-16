@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Http\Security;
 
 use App\Entity\Device;
-
-use function sprintf;
-
 use Symfony\Component\Security\Core\User\UserInterface;
 
 final readonly class DeviceApiUser implements UserInterface

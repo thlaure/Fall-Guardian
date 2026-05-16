@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Push;
 
 use App\Domain\Push\Port\PushGatewayInterface;
-
-use function sprintf;
-
 use Symfony\Component\Uid\Uuid;
 
 final readonly class FakePushGateway implements PushGatewayInterface

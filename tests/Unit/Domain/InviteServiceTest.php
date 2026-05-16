@@ -18,8 +18,6 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
-use function strlen;
-
 final class InviteServiceTest extends TestCase
 {
     private CaregiverInviteRepositoryInterface&MockObject $inviteRepository;

@@ -1,4 +1,4 @@
-.PHONY: help up down build rebuild shell logs logs-app logs-messenger ps composer-install composer-update lint lint-dry analyse rector rector-dry quality grumphp test-db test-unit test-integration test test-behat coverage-text coverage-html migrate db-diff db-reset cache-clear routes console messenger-consume worker-failed worker-retry install
+.PHONY: help up down build rebuild shell logs logs-app logs-messenger ps composer-install composer-update lint lint-dry analyse rector rector-dry security-check quality grumphp test-db test-unit test-integration test test-behat coverage-text coverage-html migrate db-diff db-reset cache-clear routes console messenger-consume worker-failed worker-retry install
 
 .DEFAULT_GOAL := help
 
@@ -64,7 +64,10 @@ rector: ## Run Rector
 rector-dry: ## Run Rector in dry-run mode
 	$(DOCKER_COMPOSE) exec app vendor/bin/rector process --dry-run
 
-quality: lint-dry analyse rector-dry ## Run all quality tools
+security-check: ## Check Composer dependencies for known vulnerabilities
+	$(DOCKER_COMPOSE) exec app vendor/bin/security-checker security:check composer.lock
+
+quality: lint-dry analyse rector-dry security-check ## Run deterministic quality tools
 
 grumphp: ## Run GrumPHP
 	$(DOCKER_COMPOSE) exec app vendor/bin/grumphp run

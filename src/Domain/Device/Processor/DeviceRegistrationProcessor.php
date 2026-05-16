@@ -11,8 +11,6 @@ use App\Domain\Device\Response\DeviceRegistrationOutputDTO;
 use App\Domain\Device\Service\DeviceRegistrationService;
 use App\Enum\DeviceType;
 
-use function assert;
-
 /**
  * @implements ProcessorInterface<DeviceRegistrationInputDTO, DeviceRegistrationOutputDTO>
  */

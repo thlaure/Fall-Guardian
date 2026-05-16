@@ -10,7 +10,6 @@ parameters:
         - public/
         - src/
     excludePaths:
-        - src/Entity/
         - config/reference.php
     treatPhpDocTypesAsCertain: false
     symfony:

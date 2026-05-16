@@ -16,6 +16,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\Uid\Uuid;
 
 final class CreateFallAlertProcessorTest extends TestCase
@@ -69,6 +70,24 @@ final class CreateFallAlertProcessorTest extends TestCase
         $result = $this->processor->process($data, $this->createMock(Operation::class));
 
         $this->assertSame('client-002', $result->clientAlertId);
+    }
+
+    #[Test]
+    public function itRejectsCaregiverDevices(): void
+    {
+        $device = $this->createMock(Device::class);
+        $device->method('isCaregiver')->willReturn(true);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->alertIngestionService->expects($this->never())->method('createAlert');
+
+        $data = new CreateFallAlertInputDTO();
+        $data->clientAlertId = 'client-caregiver';
+        $data->locale = 'en';
+
+        $this->expectException(AccessDeniedHttpException::class);
+
+        $this->processor->process($data, $this->createMock(Operation::class));
     }
 
     private function buildAlertMock(string $clientAlertId): FallAlert&MockObject

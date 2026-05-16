@@ -6,6 +6,7 @@ namespace App\Domain\Debug\Controller;
 
 use App\Infrastructure\Push\FakePushStore;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 
@@ -17,10 +18,10 @@ final readonly class DebugFakePushController
     ) {
     }
 
-    #[Route('/debug/fake-push', name: 'app_debug_fake_push', methods: ['GET'])]
+    #[Route('/debug/fake-push', name: 'app_debug_fake_push', methods: [Request::METHOD_GET])]
     public function __invoke(): JsonResponse
     {
-        if ('prod' === $this->appEnv) {
+        if (!in_array($this->appEnv, ['dev', 'test'], true)) {
             throw new NotFoundHttpException();
         }
 

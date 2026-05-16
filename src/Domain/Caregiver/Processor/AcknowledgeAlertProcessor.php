@@ -13,9 +13,6 @@ use App\Domain\Caregiver\Request\AcknowledgeAlertInputDTO;
 use App\Entity\AlertAcknowledgement;
 use App\Entity\FallAlert;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
-
-use function is_string;
-
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 

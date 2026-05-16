@@ -9,9 +9,6 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Caregiver\Request\RegisterPushTokenInputDTO;
 use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
-
-use function assert;
-
 use DomainException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 

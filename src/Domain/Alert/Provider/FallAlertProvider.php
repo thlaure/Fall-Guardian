@@ -9,9 +9,6 @@ use ApiPlatform\State\ProviderInterface;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
-
-use function is_string;
-
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**

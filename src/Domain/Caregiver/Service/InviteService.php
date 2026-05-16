@@ -16,8 +16,6 @@ use DateTimeImmutable;
 use DomainException;
 use RuntimeException;
 
-use function sprintf;
-
 final readonly class InviteService implements InviteServiceInterface
 {
     private const int CODE_LENGTH = 8;

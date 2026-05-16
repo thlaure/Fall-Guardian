@@ -5,14 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Push;
 
 use App\Domain\Push\Port\PushGatewayInterface;
-
-use function is_array;
-use function is_string;
-
 use RuntimeException;
-
-use function sprintf;
-
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final readonly class FcmPushGateway implements PushGatewayInterface
@@ -68,7 +62,7 @@ final readonly class FcmPushGateway implements PushGatewayInterface
         ];
 
         $response = $this->httpClient->request(
-            'POST',
+            Request::METHOD_POST,
             sprintf(self::FCM_SEND_URL, $this->projectId),
             [
                 'headers' => [
@@ -124,17 +118,20 @@ final readonly class FcmPushGateway implements PushGatewayInterface
             throw new RuntimeException('Failed to encode JWT header or claims.');
         }
 
-        $signingInput = base64_encode($headerJson).'.'.base64_encode($claimsJson);
+        $signingInput = self::base64UrlEncode($headerJson).'.'.self::base64UrlEncode($claimsJson);
         $privateKey = openssl_pkey_get_private($privateKeyPem);
 
         if (false === $privateKey) {
             throw new RuntimeException('Failed to load FCM private key.');
         }
 
-        openssl_sign($signingInput, $signature, $privateKey, 'SHA256');
-        $jwt = $signingInput.'.'.base64_encode((string) $signature);
+        if (!openssl_sign($signingInput, $signature, $privateKey, 'SHA256')) {
+            throw new RuntimeException('Failed to sign FCM JWT.');
+        }
 
-        $response = $this->httpClient->request('POST', self::OAUTH_TOKEN_URL, [
+        $jwt = $signingInput.'.'.self::base64UrlEncode((string) $signature);
+
+        $response = $this->httpClient->request(Request::METHOD_POST, self::OAUTH_TOKEN_URL, [
             'body' => 'grant_type='.rawurlencode('urn:ietf:params:oauth:grant-type:jwt-bearer').'&assertion='.rawurlencode($jwt),
             'headers' => [
                 'Content-Type' => 'application/x-www-form-urlencoded',
@@ -149,5 +146,10 @@ final readonly class FcmPushGateway implements PushGatewayInterface
         }
 
         return $tokenData['access_token'];
+    }
+
+    private static function base64UrlEncode(string $value): string
+    {
+        return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
     }
 }

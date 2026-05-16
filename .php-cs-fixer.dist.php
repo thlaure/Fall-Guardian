@@ -34,12 +34,9 @@ return (new PhpCsFixer\Config())
         'global_namespace_import' => [
             'import_classes' => true,
             'import_constants' => true,
-            'import_functions' => true,
+            'import_functions' => false,
         ],
-        'native_function_invocation' => [
-            'include' => ['@compiler_optimized'],
-            'scope' => 'namespaced',
-        ],
+        'native_function_invocation' => false,
         'nullable_type_declaration_for_default_null_value' => true,
         'no_superfluous_phpdoc_tags' => [
             'allow_mixed' => true,

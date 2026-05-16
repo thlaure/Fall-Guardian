@@ -5,23 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Behat;
 
 use App\Infrastructure\Push\FakePushStore;
-
-use function array_key_exists;
-
 use Behat\Behat\Context\Context;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\PyStringNode;
 
-use function count;
-use function is_array;
-use function is_scalar;
-
 use const JSON_THROW_ON_ERROR;
 
 use RuntimeException;
-
-use function sprintf;
-
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpKernel\KernelInterface;
 

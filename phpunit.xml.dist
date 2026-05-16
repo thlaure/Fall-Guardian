@@ -27,7 +27,6 @@
             <directory suffix=".php">src/Entity/</directory>
             <directory suffix="Controller.php">src/Domain/*</directory>
             <directory suffix="DTO.php">src</directory>
-            <file>src/Infrastructure/Push/FcmPushGateway.php</file>
         </exclude>
     </source>
 

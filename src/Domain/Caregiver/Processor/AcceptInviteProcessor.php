@@ -10,9 +10,6 @@ use App\Domain\Caregiver\Request\AcceptInviteInputDTO;
 use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use DomainException;
-
-use function is_string;
-
 use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
