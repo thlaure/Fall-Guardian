@@ -89,7 +89,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
               FilledButton.icon(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  MaterialPageRoute<void>(
                     builder: (_) => LinkScreen(onLinked: _onLinked),
                   ),
                 ),
