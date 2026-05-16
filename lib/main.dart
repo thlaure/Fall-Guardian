@@ -153,22 +153,27 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     // created yet (should never happen in practice, but safe to guard).
     if (_isAlertScreenShowing) return;
 
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+
     _isAlertScreenShowing = true;
-    _navigatorKey.currentState
-        ?.push(
-      MaterialPageRoute(
-        builder: (_) => FallAlertScreen(
-          // Pass the original fall timestamp so FallAlertScreen can compute
-          // its remaining seconds relative to the same clock origin as the watch.
-          fallTimestamp: timestamp,
-          alertCoordinator: _alertCoordinator,
+    unawaited(
+      navigator
+          .push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FallAlertScreen(
+            // Pass the original fall timestamp so FallAlertScreen can compute
+            // its remaining seconds relative to the same clock origin as the watch.
+            fallTimestamp: timestamp,
+            alertCoordinator: _alertCoordinator,
+          ),
+          fullscreenDialog: true,
         ),
-        fullscreenDialog: true,
-      ),
-    )
-        .whenComplete(() {
-      _isAlertScreenShowing = false;
-    });
+      )
+          .whenComplete(() {
+        _isAlertScreenShowing = false;
+      }),
+    );
   }
 
   // dispose() is called when the widget is permanently removed from the tree

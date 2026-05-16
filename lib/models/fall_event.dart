@@ -26,12 +26,17 @@ class FallEvent {
         'notifiedContacts': notifiedContacts,
       };
 
-  factory FallEvent.fromJson(Map<String, dynamic> json) => FallEvent(
-        id: json['id'] as String,
-        timestamp: DateTime.parse(json['timestamp'] as String),
-        status: FallEventStatus.values.byName(json['status'] as String),
-        latitude: json['latitude'] as double?,
-        longitude: json['longitude'] as double?,
-        notifiedContacts: List<String>.from(json['notifiedContacts'] ?? []),
-      );
+  factory FallEvent.fromJson(Map<String, dynamic> json) {
+    final notifiedContacts =
+        json['notifiedContacts'] as List<dynamic>? ?? const <dynamic>[];
+
+    return FallEvent(
+      id: json['id'] as String,
+      timestamp: DateTime.parse(json['timestamp'] as String),
+      status: FallEventStatus.values.byName(json['status'] as String),
+      latitude: json['latitude'] as double?,
+      longitude: json['longitude'] as double?,
+      notifiedContacts: List<String>.from(notifiedContacts),
+    );
+  }
 }

@@ -24,7 +24,7 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
         ],
@@ -43,7 +43,7 @@ class HomeScreen extends StatelessWidget {
               subtitle: l10n.homeContactsSubtitle,
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ContactsScreen()),
+                MaterialPageRoute<void>(builder: (_) => const ContactsScreen()),
               ),
             ),
             const SizedBox(height: 16),
@@ -53,7 +53,7 @@ class HomeScreen extends StatelessWidget {
               subtitle: l10n.homeHistorySubtitle,
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const HistoryScreen()),
+                MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
               ),
             ),
             const Spacer(),

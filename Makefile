@@ -1,4 +1,4 @@
-.PHONY: help install format analyze test check build-android build-ios clean
+.PHONY: help install format format-check analyze test quality check build-android build-ios clean
 
 .DEFAULT_GOAL := help
 
@@ -13,13 +13,18 @@ install: ## Install Flutter dependencies
 format: ## Format Dart source and tests
 	dart format lib/ test/
 
+format-check: ## Check Dart formatting without modifying files
+	dart format --set-exit-if-changed lib/ test/
+
 analyze: ## Run Flutter static analysis
 	flutter analyze
 
 test: ## Run Flutter tests
 	flutter test
 
-check: format test analyze ## Format, test, and analyze
+quality: format-check analyze test ## Run deterministic quality checks
+
+check: quality ## Run the default verification set
 
 build-android: ## Build Android debug APK
 	flutter build apk --debug

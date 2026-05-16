@@ -69,9 +69,11 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders["debugAutomationEnabled"] = "true"
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
         release {
             manifestPlaceholders["debugAutomationEnabled"] = "false"
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }

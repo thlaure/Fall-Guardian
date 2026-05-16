@@ -18,6 +18,9 @@ Always:
 
 - keep cross-platform contracts aligned with the backend, Wear OS app, watchOS app, and caregiver app
 - keep generated Flutter/iOS/Android files out of Git unless they are intentionally source-controlled by Flutter
+- prefer readable, explicit code over clever Flutter/platform tricks
+- add concise comments for mobile/platform concepts, async flows, native bridges, permissions, background execution, and safety-critical alert behavior when they are not obvious to a non-mobile developer
+- keep automated line coverage at or above 90%; coverage must come from useful behavior, contract, edge-case, and regression tests, not shallow line execution
 - run `flutter analyze` after Dart changes when feasible
 - run `flutter test` for behavior changes when tests exist or are added
 
@@ -37,6 +40,7 @@ Never:
 Common commands:
 
 ```sh
-flutter analyze
-flutter test
+make quality
+make build-android
+make build-ios
 ```
