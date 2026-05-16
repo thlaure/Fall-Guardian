@@ -23,6 +23,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Add swap space
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
