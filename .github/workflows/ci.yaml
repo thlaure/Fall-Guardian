@@ -47,9 +47,6 @@ jobs:
         if: failure()
         run: docker compose -f compose.test.yaml logs
 
-      - name: Generate JWT keys
-        run: docker compose -f compose.test.yaml exec -T app php bin/console lexik:jwt:generate-keypair --overwrite --no-interaction
-
       - name: Create test database
         run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:database:create --if-not-exists
 
