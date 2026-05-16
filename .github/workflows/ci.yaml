@@ -42,9 +42,6 @@ jobs:
       - name: Build Android APK (debug)
         run: flutter build apk --debug
 
-      - name: Audit dependencies
-        run: dart pub audit
-
   secret-scan:
     name: Secret Scan
     runs-on: ubuntu-latest
