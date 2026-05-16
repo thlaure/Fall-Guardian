@@ -120,7 +120,7 @@ class _AppRootState extends State<_AppRoot> {
         _backend
             .registerPushToken(token)
             .catchError(
-              (e) => developer.log(
+              (Object e) => developer.log(
                 'Push token re-registration error: $e',
                 name: '_AppRootState',
               ),

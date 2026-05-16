@@ -2,19 +2,25 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 class CaregiverBackendService {
-  CaregiverBackendService({FlutterSecureStorage? storage, http.Client? client})
-    : _storage = storage ?? const FlutterSecureStorage(),
-      _client = client ?? http.Client();
+  CaregiverBackendService({
+    FlutterSecureStorage? storage,
+    http.Client? client,
+    String? baseUrl,
+  }) : _storage = storage ?? const FlutterSecureStorage(),
+       _client = client ?? http.Client(),
+       _baseUrlOverride = baseUrl;
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
 
   final FlutterSecureStorage _storage;
   final http.Client _client;
+  final String? _baseUrlOverride;
 
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
   // Update this to your dev machine's LAN IP when testing on a real device,
@@ -22,9 +28,17 @@ class CaregiverBackendService {
   static const _devMachineLanIp = '172.16.20.73';
 
   String get _baseUrl {
+    if (_baseUrlOverride case final override? when override.isNotEmpty) {
+      return override;
+    }
+
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
     if (defined.isNotEmpty) {
       return defined;
+    }
+
+    if (kReleaseMode) {
+      throw StateError('BACKEND_BASE_URL must be set for release builds.');
     }
 
     return 'http://$_devMachineLanIp:8002';
@@ -82,13 +96,7 @@ class CaregiverBackendService {
     }
 
     final decoded = jsonDecode(response.body);
-    if (decoded is List) {
-      return decoded.cast<Map<String, dynamic>>();
-    }
-    // API Platform wraps collections in hydra:member
-    final wrapped = decoded as Map<String, dynamic>;
-    final members = wrapped['hydra:member'] as List<dynamic>? ?? [];
-    return members.cast<Map<String, dynamic>>();
+    return _decodeAlertCollection(decoded);
   }
 
   Future<void> registerPushToken(String fcmToken) async {
@@ -154,6 +162,26 @@ class CaregiverBackendService {
     );
 
     return credentials;
+  }
+
+  /// Normalizes the two collection shapes the API can return.
+  ///
+  /// Some test/dev endpoints return a plain JSON array. API Platform collection
+  /// endpoints usually wrap items in a `hydra:member` field. The UI should not
+  /// need to know which wire shape was used, so this service converts both into
+  /// a single `List<Map<String, dynamic>>`.
+  List<Map<String, dynamic>> _decodeAlertCollection(Object? decoded) {
+    final items = switch (decoded) {
+      final List<dynamic> list => list,
+      final Map<String, dynamic> wrapper =>
+        wrapper['hydra:member'] as List<dynamic>? ?? const <dynamic>[],
+      _ => throw const FormatException('Unexpected caregiver alerts response'),
+    };
+
+    return [
+      for (final item in items)
+        if (item is Map<String, dynamic>) item,
+    ];
   }
 
   Map<String, String> _jsonHeaders({String? token}) {
