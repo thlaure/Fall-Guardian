@@ -169,7 +169,7 @@ void main() {
             builder: (context) => ElevatedButton(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => _screen(timestamp, coordinator),
                 ),
               ),
@@ -216,7 +216,7 @@ void main() {
             builder: (context) => ElevatedButton(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => _screen(timestamp, coordinator),
                 ),
               ),

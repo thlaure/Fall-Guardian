@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
@@ -32,6 +33,10 @@ class BackendApiService implements AlertBackendGateway {
       return defined;
     }
 
+    if (kReleaseMode) {
+      throw StateError('BACKEND_BASE_URL must be set for release builds.');
+    }
+
     return 'http://$_devMachineLanIp:8002';
   }
 
@@ -42,28 +47,7 @@ class BackendApiService implements AlertBackendGateway {
 
   @override
   Future<void> syncContacts(List<Contact> contacts) async {
-    final credentials = await _credentials();
-    final response = await _client.put(
-      Uri.parse('$_baseUrl/api/v1/emergency-contacts'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
-      body: jsonEncode({
-        'contacts': contacts
-            .map((contact) => {
-                  'id': contact.id,
-                  'name': contact.name,
-                  'phone': contact.phone,
-                })
-            .toList(),
-      }),
-    );
-
-    if (!_isSuccess(response.statusCode)) {
-      throw BackendApiException(
-        'Failed to sync contacts',
-        statusCode: response.statusCode,
-        body: response.body,
-      );
-    }
+    await _credentials();
   }
 
   @override
@@ -76,7 +60,6 @@ class BackendApiService implements AlertBackendGateway {
     required List<Contact> contacts,
   }) async {
     final credentials = await _credentials();
-    await syncContacts(contacts);
 
     final response = await _client.post(
       Uri.parse('$_baseUrl/api/v1/fall-alerts'),

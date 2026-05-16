@@ -60,7 +60,7 @@ void main() {
     expect(store.data['backend_device_token'], 'token-1');
   });
 
-  test('submitFallAlert syncs contacts before posting alert', () async {
+  test('submitFallAlert posts alert without remote contact sync', () async {
     final requests = <String>[];
     final client = MockClient((request) async {
       requests.add('${request.method} ${request.url.path}');
@@ -72,17 +72,6 @@ void main() {
             'deviceToken': 'token-1',
           }),
           201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/emergency-contacts') {
-        final payload = jsonDecode(request.body) as Map<String, dynamic>;
-        expect((payload['contacts'] as List<dynamic>).length, 2);
-        expect(request.headers['authorization'], 'Bearer token-1');
-        return http.Response(
-          jsonEncode({'storedContacts': 2}),
-          200,
           headers: {'content-type': 'application/json'},
         );
       }
@@ -124,7 +113,6 @@ void main() {
     expect(notified, ['Alice', 'Bob']);
     expect(requests, [
       'POST /api/v1/devices/register',
-      'PUT /api/v1/emergency-contacts',
       'POST /api/v1/fall-alerts',
     ]);
   });
