@@ -20,7 +20,7 @@ jobs:
     env:
       PROJECT: FallGuardian/FallGuardian.xcodeproj
       SCHEME: FallGuardian Watch App
-      DESTINATION: platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)
+      DESTINATION: generic/platform=watchOS Simulator
     steps:
       - name: Checkout
         uses: actions/checkout@v5
