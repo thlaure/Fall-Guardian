@@ -28,13 +28,17 @@ final class FcmPushGatewayTest extends TestCase
         openssl_pkey_export($privateKey, $privateKeyPem);
 
         $assertion = null;
-        $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$assertion): MockResponse {
+        $fcmPayload = null;
+        $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$assertion, &$fcmPayload): MockResponse {
             if ('https://oauth2.googleapis.com/token' === $url) {
                 parse_str((string) $options['body'], $body);
                 $assertion = is_string($body['assertion'] ?? null) ? $body['assertion'] : null;
 
                 return new MockResponse(json_encode(['access_token' => 'access-token']) ?: '{}');
             }
+
+            $decodedPayload = json_decode((string) $options['body'], true);
+            $fcmPayload = is_array($decodedPayload) ? $decodedPayload : null;
 
             return new MockResponse(json_encode(['name' => 'projects/project-id/messages/message-id']) ?: '{}');
         });
@@ -57,5 +61,19 @@ final class FcmPushGatewayTest extends TestCase
         foreach ($segments as $segment) {
             self::assertDoesNotMatchRegularExpression('/[+=\/]/', $segment);
         }
+
+        self::assertIsArray($fcmPayload);
+        self::assertSame(
+            'Fall detected',
+            $fcmPayload['message']['notification']['title'] ?? null,
+        );
+        self::assertSame(
+            'high',
+            $fcmPayload['message']['android']['priority'] ?? null,
+        );
+        self::assertSame(
+            'FLUTTER_NOTIFICATION_CLICK',
+            $fcmPayload['message']['android']['notification']['click_action'] ?? null,
+        );
     }
 }

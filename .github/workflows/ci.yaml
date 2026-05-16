@@ -3,16 +3,14 @@ name: CI
 on:
   push:
     branches:
-      - master
       - main
   pull_request:
     branches:
-      - master
       - main
   workflow_dispatch: ~
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -57,9 +55,9 @@ jobs:
         run: docker compose -f compose.test.yaml exec -T app vendor/bin/phpunit
 
       - name: Run PHPUnit with coverage
-        run: docker compose -f compose.test.yaml exec -T app php -d pcov.enabled=1 vendor/bin/phpunit --testsuite=unit --coverage-clover var/coverage/clover.xml --coverage-text
+        run: docker compose -f compose.test.yaml exec -T app php -d pcov.enabled=1 vendor/bin/phpunit --coverage-clover var/coverage/clover.xml --coverage-text
 
-      - name: Check coverage threshold (80%)
+      - name: Check coverage threshold (90%)
         run: |
           COVERAGE=$(docker compose -f compose.test.yaml exec -T app php -r "
             \$xml = simplexml_load_file('var/coverage/clover.xml');
@@ -69,8 +67,8 @@ jobs:
             echo \$statements > 0 ? round((\$covered / \$statements) * 100, 2) : 0;
           ")
           echo "Line coverage: ${COVERAGE}%"
-          if [ "$(echo "${COVERAGE} < 80" | bc)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below the 80% threshold"
+          if [ "$(echo "${COVERAGE} < 90" | bc)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below the 90% threshold"
             exit 1
           fi
 

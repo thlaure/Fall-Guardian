@@ -13,6 +13,7 @@ use const JSON_THROW_ON_ERROR;
 
 use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 final class ApiContext implements Context
@@ -62,7 +63,7 @@ final class ApiContext implements Context
      */
     public function iRegisterAProtectedPersonDevice(): void
     {
-        $this->sendRequest('POST', '/api/v1/devices/register', [
+        $this->sendRequest(Request::METHOD_POST, '/api/v1/devices/register', [
             'platform' => 'ios',
             'appVersion' => '1.0.0',
         ]);
@@ -75,7 +76,7 @@ final class ApiContext implements Context
      */
     public function iRegisterACaregiverDevice(): void
     {
-        $this->sendRequest('POST', '/api/v1/devices/register', [
+        $this->sendRequest(Request::METHOD_POST, '/api/v1/devices/register', [
             'platform' => 'android',
             'appVersion' => '1.0.0',
             'deviceType' => 'caregiver',
@@ -109,7 +110,7 @@ final class ApiContext implements Context
      */
     public function iSendAPostRequestTo(string $path): void
     {
-        $this->sendRequest('POST', $this->interpolate($path), []);
+        $this->sendRequest(Request::METHOD_POST, $this->interpolate($path), []);
     }
 
     /**
@@ -119,7 +120,7 @@ final class ApiContext implements Context
     {
         /** @var array<mixed> $data */
         $data = json_decode($body->getRaw(), true, 512, JSON_THROW_ON_ERROR);
-        $this->sendRequest('POST', $this->interpolate($path), $data);
+        $this->sendRequest(Request::METHOD_POST, $this->interpolate($path), $data);
     }
 
     /**
@@ -129,7 +130,7 @@ final class ApiContext implements Context
     {
         /** @var array<mixed> $data */
         $data = json_decode($body->getRaw(), true, 512, JSON_THROW_ON_ERROR);
-        $this->sendRequest('PUT', $this->interpolate($path), $data);
+        $this->sendRequest(Request::METHOD_PUT, $this->interpolate($path), $data);
     }
 
     /**
@@ -137,7 +138,7 @@ final class ApiContext implements Context
      */
     public function iSendAGetRequestTo(string $path): void
     {
-        $this->sendRequest('GET', $this->interpolate($path), null);
+        $this->sendRequest(Request::METHOD_GET, $this->interpolate($path), null);
     }
 
     // ─── Then ──────────────────────────────────────────────────────────────────

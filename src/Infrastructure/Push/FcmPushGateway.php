@@ -49,13 +49,30 @@ final readonly class FcmPushGateway implements PushGatewayInterface
         $payload = [
             'message' => [
                 'token' => $fcmToken,
+                'notification' => [
+                    'title' => 'Fall detected',
+                    'body' => 'Tap to view and acknowledge the alert.',
+                ],
                 'data' => $data,
                 'android' => [
                     'priority' => 'high',
+                    'notification' => [
+                        'channel_id' => 'fall_alerts',
+                        'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                    ],
                 ],
                 'apns' => [
                     'headers' => [
                         'apns-priority' => '10',
+                    ],
+                    'payload' => [
+                        'aps' => [
+                            'alert' => [
+                                'title' => 'Fall detected',
+                                'body' => 'Tap to view and acknowledge the alert.',
+                            ],
+                            'sound' => 'default',
+                        ],
                     ],
                 ],
             ],
