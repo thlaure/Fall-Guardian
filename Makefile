@@ -1,4 +1,4 @@
-.PHONY: help install format format-check analyze test coverage quality check build-android build-ios clean
+.PHONY: help install format format-check analyze test coverage coverage-check quality check build-android build-ios clean
 
 .DEFAULT_GOAL := help
 
@@ -25,7 +25,10 @@ test: ## Run Flutter tests
 coverage: ## Run Flutter tests with coverage output
 	flutter test --coverage
 
-quality: format-check analyze coverage ## Run deterministic quality checks
+coverage-check: coverage ## Require at least 90% line coverage
+	dart run tool/check_lcov.dart coverage/lcov.info 90 lib/l10n/ lib/screens/ lib/services/watch_communication_service.dart lib/services/notification_service.dart lib/services/sms_service.dart lib/services/secure_store.dart lib/services/location_service.dart
+
+quality: format-check analyze coverage-check ## Run deterministic quality checks
 
 check: quality ## Run the default verification set
 

@@ -112,6 +112,7 @@ class WearDataListenerService : WearableListenerService() {
         )
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
+            `package` = packageName
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("fall_timestamp", timestamp)
         }

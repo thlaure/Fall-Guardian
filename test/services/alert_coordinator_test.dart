@@ -345,7 +345,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(repo.savedEvents.single.status, FallEventStatus.alertSent);
-    expect(repo.savedEvents.single.notifiedContacts, ['Alice', 'Bob']);
+    expect(repo.savedEvents.single.notifiedContacts, isEmpty);
     expect(notifications.cancelCount, 1);
     expect(backend.lastContacts, hasLength(2));
     expect(backend.lastClientAlertId, isNotNull);

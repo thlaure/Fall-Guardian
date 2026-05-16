@@ -78,8 +78,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get smsFailed =>
       '⚠️ Échec de la soumission de l’alerte. Contactez vos aidants manuellement.';
   @override
-  String alertSentCount(int count) =>
-      'Alerte soumise à $count aidant${count == 1 ? '' : 's'}.';
+  String get alertSubmitted =>
+      'Alerte soumise. Les aidants liés seront prévenus par le backend.';
   @override
   String get cancelAlert => 'Je vais bien — Annuler l\'alerte';
 
@@ -104,7 +104,7 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get statusTimedOut => 'Délai expiré';
   @override
-  String notifiedLabel(String names) => 'Aidants prévenus : $names';
+  String notifiedLabel(String names) => 'Destinataires de l’alerte : $names';
   @override
   String locationLabel(String coords) => 'Position : $coords';
 

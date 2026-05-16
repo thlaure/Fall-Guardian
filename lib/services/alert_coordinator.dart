@@ -214,7 +214,7 @@ class AlertCoordinator {
       contacts: contacts,
       locale: _localeResolver.languageCode(),
       alertFailedMessage: l10n.smsFailed,
-      alertSubmittedMessage: l10n.alertSentCount(contacts.length),
+      alertSubmittedMessage: l10n.alertSubmitted,
     );
     if (outcome == null || !_isCurrentAlert(timestamp)) return;
 
@@ -285,7 +285,6 @@ class AlertCoordinator {
         status: FallEventStatus.alertSent,
         latitude: position?.latitude,
         longitude: position?.longitude,
-        notifiedContacts: contacts.map((contact) => contact.name).toList(),
       ),
       phase: AlertPhase.alertSent,
       message: alertSubmittedMessage,
