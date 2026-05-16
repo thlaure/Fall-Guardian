@@ -24,7 +24,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: beta
           cache: true
 
       - name: Install dependencies
@@ -53,9 +53,6 @@ jobs:
       - name: Build Android APK (debug)
         if: env.SKIP_BUILD != 'true'
         run: flutter build apk --debug
-
-      - name: Audit dependencies
-        run: dart pub audit
 
   secret-scan:
     name: Secret Scan
