@@ -106,6 +106,20 @@ class CaregiverBackendService {
     return _decodeAlertCollection(decoded);
   }
 
+  Future<Map<String, dynamic>?> getLatestActiveAlertData() async {
+    final activeAlerts =
+        (await getCaregiverAlerts())
+            .where(_isActiveUnacknowledgedAlert)
+            .toList()
+          ..sort(_newestAlertFirst);
+
+    if (activeAlerts.isEmpty) {
+      return null;
+    }
+
+    return _toPushAlertData(activeAlerts.first);
+  }
+
   Future<void> registerPushToken(String fcmToken) async {
     final credentials = await _credentials();
     final response = await _client.post(
@@ -200,6 +214,28 @@ class CaregiverBackendService {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
+    return alert['acknowledged'] != true && alert['status'] != 'cancelled';
+  }
+
+  int _newestAlertFirst(Map<String, dynamic> left, Map<String, dynamic> right) {
+    final leftDate = DateTime.tryParse('${left['fallDetectedAt']}');
+    final rightDate = DateTime.tryParse('${right['fallDetectedAt']}');
+    if (leftDate == null && rightDate == null) return 0;
+    if (leftDate == null) return 1;
+    if (rightDate == null) return -1;
+    return rightDate.compareTo(leftDate);
+  }
+
+  Map<String, dynamic> _toPushAlertData(Map<String, dynamic> alert) {
+    return {
+      'alertId': '${alert['id']}',
+      'fallTimestamp': '${alert['fallDetectedAt']}',
+      if (alert['latitude'] != null) 'latitude': '${alert['latitude']}',
+      if (alert['longitude'] != null) 'longitude': '${alert['longitude']}',
+    };
+  }
 }
 
 class CaregiverApiException implements Exception {
