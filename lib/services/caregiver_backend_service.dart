@@ -17,6 +17,7 @@ class CaregiverBackendService {
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
+  static const _linkedKey = 'caregiver_linked';
 
   final FlutterSecureStorage _storage;
   final http.Client _client;
@@ -48,6 +49,10 @@ class CaregiverBackendService {
     await _credentials();
   }
 
+  Future<bool> isLinked() async {
+    return await _storage.read(key: _linkedKey) == 'true';
+  }
+
   Future<void> acceptInvite(String code) async {
     final credentials = await _credentials();
     final response = await _client.post(
@@ -62,6 +67,8 @@ class CaregiverBackendService {
         body: response.body,
       );
     }
+
+    await _storage.write(key: _linkedKey, value: 'true');
   }
 
   Future<void> acknowledgeFallAlert(String alertId) async {

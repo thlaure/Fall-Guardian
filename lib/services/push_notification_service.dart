@@ -2,6 +2,8 @@ import 'dart:developer' as developer;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import 'pending_alert_store.dart';
+
 /// Top-level handler required by FCM for background/terminated state.
 /// Must be a top-level function (not a class method).
 @pragma('vm:entry-point')
@@ -10,15 +12,18 @@ Future<void> _onBackgroundMessage(RemoteMessage message) async {
     'FCM background message: ${message.messageId}',
     name: 'PushNotificationService',
   );
-  // Actual UI is shown by the foreground handler when the app opens.
-  // For background/killed state, store the alert data for display on launch.
+  await PendingAlertStore().save(message.data);
 }
 
 class PushNotificationService {
-  PushNotificationService({required this.onAlertReceived});
+  PushNotificationService({
+    required this.onAlertReceived,
+    PendingAlertStore? pendingAlertStore,
+  }) : _pendingAlertStore = pendingAlertStore ?? PendingAlertStore();
 
   /// Called whenever a fall alert data message arrives (foreground or opened-from-notification).
   final void Function(Map<String, dynamic> data) onAlertReceived;
+  final PendingAlertStore _pendingAlertStore;
 
   FirebaseMessaging get _messaging => FirebaseMessaging.instance;
 
@@ -49,12 +54,13 @@ class PushNotificationService {
     });
 
     // Opened from notification (background → foreground)
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+    FirebaseMessaging.onMessageOpenedApp.listen((message) async {
       developer.log(
         'FCM opened from notification: ${message.messageId}',
         name: 'PushNotificationService',
       );
       if (message.data.isNotEmpty) {
+        await _pendingAlertStore.take();
         onAlertReceived(message.data);
       }
     });
@@ -62,7 +68,13 @@ class PushNotificationService {
     // Launched from terminated state via notification tap
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null && initialMessage.data.isNotEmpty) {
+      await _pendingAlertStore.take();
       onAlertReceived(initialMessage.data);
+    } else {
+      final pendingAlert = await _pendingAlertStore.take();
+      if (pendingAlert != null) {
+        onAlertReceived(pendingAlert);
+      }
     }
   }
 

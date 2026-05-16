@@ -83,8 +83,10 @@ class _AppRootState extends State<_AppRoot> {
   }
 
   Future<void> _bootstrap() async {
+    var linked = false;
     try {
       await _backend.ensureRegistered();
+      linked = await _backend.isLinked();
       await _pushService.initialize();
       final token = await _pushService.getFcmToken();
       if (token != null) {
@@ -103,7 +105,12 @@ class _AppRootState extends State<_AppRoot> {
     } catch (e) {
       developer.log('Bootstrap error: $e', name: '_AppRootState');
     } finally {
-      if (mounted) setState(() => _ready = true);
+      if (mounted) {
+        setState(() {
+          _linked = _linked || linked;
+          _ready = true;
+        });
+      }
     }
   }
 

@@ -61,6 +61,7 @@ void main() {
     expect(capturedRequest.method, 'POST');
     expect(capturedRequest.url.path, '/api/v1/invites/ABC12345/accept');
     expect(capturedRequest.headers['Authorization'], 'Bearer token-1');
+    expect(await service.isLinked(), isTrue);
   });
 
   test('getCaregiverAlerts accepts API Platform hydra collection', () async {
