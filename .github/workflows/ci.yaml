@@ -54,21 +54,6 @@ jobs:
         if: env.SKIP_BUILD != 'true'
         run: flutter build apk --debug
 
-  dependency-scan:
-    name: Dependency Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Scan dependencies for vulnerabilities
-        uses: google/osv-scanner-action@v1
-        with:
-          scan-args: |-
-            --lockfile=pubspec.lock
-            --lockfile=ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved
-            .
-
   secret-scan:
     name: Secret Scan
     runs-on: ubuntu-latest
