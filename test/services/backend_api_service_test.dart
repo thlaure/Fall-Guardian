@@ -98,7 +98,7 @@ void main() {
     });
 
     final service = BackendApiService(store: store, client: client);
-    final notified = await service.submitFallAlert(
+    await service.submitFallAlert(
       clientAlertId: 'alert-1',
       fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
       locale: 'en',
@@ -110,10 +110,124 @@ void main() {
       ],
     );
 
-    expect(notified, ['Alice', 'Bob']);
     expect(requests, [
       'POST /api/v1/devices/register',
       'POST /api/v1/fall-alerts',
     ]);
+  });
+
+  test('createInvite posts with stored bearer token', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(request.url.path, '/api/v1/invites');
+      expect(request.headers['authorization'], 'Bearer token-1');
+      return http.Response(
+        jsonEncode(
+            {'code': 'ABC12345', 'expiresAt': '2026-05-16T10:00:00+00:00'}),
+        201,
+      );
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    final invite = await service.createInvite();
+
+    expect(invite['code'], 'ABC12345');
+  });
+
+  test('createInvite throws typed exception on API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('forbidden', 403)),
+    );
+
+    await expectLater(
+      service.createInvite(),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having((error) => error.body, 'body', 'forbidden'),
+      ),
+    );
+  });
+
+  test('submitFallAlert throws typed exception on API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('bad request', 400)),
+    );
+
+    await expectLater(
+      service.submitFallAlert(
+        clientAlertId: 'alert-1',
+        fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+        locale: 'en',
+        latitude: null,
+        longitude: null,
+        contacts: const [],
+      ),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 400)
+            .having((error) => error.body, 'body', 'bad request'),
+      ),
+    );
+  });
+
+  test('cancelFallAlert skips API call when no token is stored', () async {
+    var called = false;
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        called = true;
+        return http.Response('', 204);
+      }),
+    );
+
+    await service.cancelFallAlert(clientAlertId: 'alert-1');
+
+    expect(called, isFalse);
+  });
+
+  test('cancelFallAlert ignores already missing backend alert', () async {
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/v1/fall-alerts/alert-1/cancel');
+        expect(request.headers['authorization'], 'Bearer token-1');
+        return http.Response('missing', 404);
+      }),
+    );
+
+    await service.cancelFallAlert(clientAlertId: 'alert-1');
+  });
+
+  test('cancelFallAlert throws typed exception on API failure', () async {
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('server error', 500)),
+    );
+
+    await expectLater(
+      service.cancelFallAlert(clientAlertId: 'alert-1'),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 500)
+            .having((error) => error.body, 'body', 'server error'),
+      ),
+    );
   });
 }

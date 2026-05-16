@@ -75,10 +75,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendingAlert => 'Sending alert…';
   @override
   String get smsFailed =>
-      '⚠️ Alert delivery failed. Contact your caregivers manually.';
+      '⚠️ Alert submission failed. Contact your caregivers manually.';
   @override
-  String alertSentCount(int count) =>
-      'Alert sent to $count caregiver${count == 1 ? '' : 's'}.';
+  String get alertSubmitted =>
+      'Alert submitted. Linked caregivers will be notified by the backend.';
   @override
   String get cancelAlert => "I'm OK — Cancel Alert";
 
@@ -103,7 +103,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get statusTimedOut => 'Timed Out';
   @override
-  String notifiedLabel(String names) => 'Caregivers alerted: $names';
+  String notifiedLabel(String names) => 'Alert recipients: $names';
   @override
   String locationLabel(String coords) => 'Location: $coords';
 

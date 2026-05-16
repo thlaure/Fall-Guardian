@@ -8,6 +8,9 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.tasks.Tasks
+import com.google.android.gms.wearable.DataEvent
+import com.google.android.gms.wearable.DataEventBuffer
+import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
@@ -36,6 +39,32 @@ class WearDataListenerService : WearableListenerService() {
         // Same channel ID as flutter_local_notifications so the user sees one
         // "Fall Alerts" entry in system notification settings.
         private const val CHANNEL_ID = "fall_guardian_alerts"
+        private const val DATA_EVENT_TTL_MS = 2 * 60 * 1000L
+    }
+
+    override fun onDataChanged(dataEvents: DataEventBuffer) {
+        dataEvents.forEach { event ->
+            if (event.type != DataEvent.TYPE_CHANGED) return@forEach
+            if (!isTrustedDataItem(event)) {
+                deleteDataItem(event)
+                return@forEach
+            }
+
+            when (event.dataItem.uri.path) {
+                "/fall_event" -> {
+                    val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    val timestamp = dataMap.getLong("timestamp", System.currentTimeMillis())
+                    val updatedAt = dataMap.getLong("updatedAt", timestamp)
+                    if (isStaleDataEvent(updatedAt)) {
+                        deleteDataItem(event)
+                        return@forEach
+                    }
+                    handleFallDetected(timestamp)
+                }
+                "/cancel_alert" -> handleCancelAlert()
+            }
+            deleteDataItem(event)
+        }
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
@@ -53,6 +82,25 @@ class WearDataListenerService : WearableListenerService() {
         if (connectedNodes.none { it.id == messageEvent.sourceNodeId }) return
         val timestamp = ByteBuffer.wrap(messageEvent.data).long
         handleFallDetected(timestamp)
+    }
+
+    private fun isTrustedDataItem(event: DataEvent): Boolean {
+        val sourceNodeId = event.dataItem.uri.host ?: return false
+        val connectedNodes = try {
+            Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+        } catch (_: Exception) {
+            return false
+        }
+
+        return connectedNodes.any { it.id == sourceNodeId }
+    }
+
+    private fun isStaleDataEvent(updatedAt: Long): Boolean {
+        return System.currentTimeMillis() - updatedAt > DATA_EVENT_TTL_MS
+    }
+
+    private fun deleteDataItem(event: DataEvent) {
+        Wearable.getDataClient(this).deleteDataItems(event.dataItem.uri)
     }
 
     private fun handleFallDetected(timestamp: Long) {
@@ -94,6 +142,7 @@ class WearDataListenerService : WearableListenerService() {
         )
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
+            `package` = packageName
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("fall_timestamp", timestamp)
         }
