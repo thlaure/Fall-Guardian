@@ -67,7 +67,7 @@ class _AppRoot extends StatefulWidget {
   State<_AppRoot> createState() => _AppRootState();
 }
 
-class _AppRootState extends State<_AppRoot> {
+class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   final _backend = CaregiverBackendService();
   late PushNotificationService _pushService;
 
@@ -78,13 +78,29 @@ class _AppRootState extends State<_AppRoot> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pushService = PushNotificationService(onAlertReceived: _handleAlert);
     _bootstrap();
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _recoverActiveAlert();
+    }
+  }
+
   Future<void> _bootstrap() async {
+    var linked = false;
     try {
       await _backend.ensureRegistered();
+      linked = await _backend.isLinked();
       await _pushService.initialize();
       final token = await _pushService.getFcmToken();
       if (token != null) {
@@ -100,10 +116,27 @@ class _AppRootState extends State<_AppRoot> {
           );
         }
       }
+      await _recoverActiveAlert();
     } catch (e) {
       developer.log('Bootstrap error: $e', name: '_AppRootState');
     } finally {
-      if (mounted) setState(() => _ready = true);
+      if (mounted) {
+        setState(() {
+          _linked = _linked || linked;
+          _ready = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _recoverActiveAlert() async {
+    try {
+      final alert = await _backend.getLatestActiveAlertData();
+      if (alert != null) {
+        _handleAlert(alert);
+      }
+    } catch (e) {
+      developer.log('Active alert recovery skipped: $e', name: '_AppRootState');
     }
   }
 

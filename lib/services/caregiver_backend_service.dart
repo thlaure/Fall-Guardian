@@ -17,6 +17,7 @@ class CaregiverBackendService {
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
+  static const _linkedKey = 'caregiver_linked';
 
   final FlutterSecureStorage _storage;
   final http.Client _client;
@@ -48,6 +49,10 @@ class CaregiverBackendService {
     await _credentials();
   }
 
+  Future<bool> isLinked() async {
+    return await _storage.read(key: _linkedKey) == 'true';
+  }
+
   Future<void> acceptInvite(String code) async {
     final credentials = await _credentials();
     final response = await _client.post(
@@ -62,6 +67,8 @@ class CaregiverBackendService {
         body: response.body,
       );
     }
+
+    await _storage.write(key: _linkedKey, value: 'true');
   }
 
   Future<void> acknowledgeFallAlert(String alertId) async {
@@ -97,6 +104,20 @@ class CaregiverBackendService {
 
     final decoded = jsonDecode(response.body);
     return _decodeAlertCollection(decoded);
+  }
+
+  Future<Map<String, dynamic>?> getLatestActiveAlertData() async {
+    final activeAlerts =
+        (await getCaregiverAlerts())
+            .where(_isActiveUnacknowledgedAlert)
+            .toList()
+          ..sort(_newestAlertFirst);
+
+    if (activeAlerts.isEmpty) {
+      return null;
+    }
+
+    return _toPushAlertData(activeAlerts.first);
   }
 
   Future<void> registerPushToken(String fcmToken) async {
@@ -193,6 +214,28 @@ class CaregiverBackendService {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
+    return alert['acknowledged'] != true && alert['status'] != 'cancelled';
+  }
+
+  int _newestAlertFirst(Map<String, dynamic> left, Map<String, dynamic> right) {
+    final leftDate = DateTime.tryParse('${left['fallDetectedAt']}');
+    final rightDate = DateTime.tryParse('${right['fallDetectedAt']}');
+    if (leftDate == null && rightDate == null) return 0;
+    if (leftDate == null) return 1;
+    if (rightDate == null) return -1;
+    return rightDate.compareTo(leftDate);
+  }
+
+  Map<String, dynamic> _toPushAlertData(Map<String, dynamic> alert) {
+    return {
+      'alertId': '${alert['id']}',
+      'fallTimestamp': '${alert['fallDetectedAt']}',
+      if (alert['latitude'] != null) 'latitude': '${alert['latitude']}',
+      if (alert['longitude'] != null) 'longitude': '${alert['longitude']}',
+    };
+  }
 }
 
 class CaregiverApiException implements Exception {

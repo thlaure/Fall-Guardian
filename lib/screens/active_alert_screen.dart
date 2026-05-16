@@ -46,16 +46,23 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
   Future<void> _acknowledge() async {
     setState(() => _acknowledging = true);
     try {
-      if (_alertId.isNotEmpty) {
-        await _api.acknowledgeFallAlert(_alertId);
+      if (_alertId.isEmpty) {
+        throw StateError('Cannot acknowledge alert without alertId');
       }
+      await _api.acknowledgeFallAlert(_alertId);
+      if (mounted) widget.onDismiss();
     } catch (e) {
       developer.log(
         'Failed to acknowledge alert: $e',
         name: '_ActiveAlertScreenState',
       );
+      if (mounted) {
+        setState(() => _acknowledging = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).connectionError)),
+        );
+      }
     }
-    if (mounted) widget.onDismiss();
   }
 
   @override

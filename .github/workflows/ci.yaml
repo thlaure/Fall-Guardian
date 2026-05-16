@@ -10,7 +10,7 @@ on:
   workflow_dispatch: ~
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,14 +30,8 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check formatting
-        run: dart format --set-exit-if-changed lib/ test/
-
-      - name: Analyze
-        run: flutter analyze
-
-      - name: Run tests
-        run: flutter test
+      - name: Run deterministic quality checks
+        run: make quality
 
       - name: Restore google-services.json
         env:
@@ -52,7 +46,7 @@ jobs:
 
       - name: Build Android APK (debug)
         if: env.SKIP_BUILD != 'true'
-        run: flutter build apk --debug
+        run: make build-android
 
   secret-scan:
     name: Secret Scan
