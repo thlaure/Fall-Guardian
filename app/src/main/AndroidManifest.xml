@@ -68,7 +68,7 @@
         <receiver
             android:name=".DebugAutomationReceiver"
             android:enabled="${debugAutomationEnabled}"
-            android:exported="true"/>
+            android:exported="false"/>
 
     </application>
 </manifest>
