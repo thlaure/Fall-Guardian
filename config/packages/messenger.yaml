@@ -4,7 +4,7 @@ framework:
 
         transports:
             async: '%env(MESSENGER_TRANSPORT_DSN)%'
-            failed: 'in-memory://'
+            failed: '%env(MESSENGER_FAILED_TRANSPORT_DSN)%'
 
         routing:
             App\Domain\Alert\Message\SendFallAlertPushMessage: async

@@ -13,8 +13,11 @@ services:
             APP_ENV: ${APP_ENV:-dev}
             APP_DEBUG: ${APP_DEBUG:-1}
             APP_SECRET: ${APP_SECRET:-changeme}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
             REDIS_URL: redis://redis:6379
             PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
             FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
@@ -61,8 +64,11 @@ services:
             APP_ENV: ${APP_ENV:-dev}
             APP_DEBUG: ${APP_DEBUG:-1}
             APP_SECRET: ${APP_SECRET:-changeme}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
             REDIS_URL: redis://redis:6379
             PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
             FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}

@@ -11,8 +11,11 @@ services:
         environment:
             APP_ENV: test
             APP_SECRET: ${APP_SECRET:-test-secret}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-test-secret}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian_test}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: in-memory://
+            MESSENGER_FAILED_TRANSPORT_DSN: in-memory://
             REDIS_URL: redis://redis:6379
             PUSH_PROVIDER: fake
         volumes:

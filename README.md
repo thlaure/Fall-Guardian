@@ -108,8 +108,11 @@ vendor/bin/php-cs-fixer fix --dry-run --diff --verbose --sequential
 Core environment variables:
 
 - `APP_SECRET`
+- `DEVICE_TOKEN_HASH_SECRET`
 - `DATABASE_URL`
 - `MESSENGER_TRANSPORT_DSN`
+- `MESSENGER_FAILED_TRANSPORT_DSN`
+- `TRUSTED_PROXIES`
 - `APP_SHARE_DIR`
 - `PUSH_PROVIDER` (`fake` or `fcm`)
 - `FCM_PROJECT_ID`
