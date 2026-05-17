@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
@@ -13,14 +14,17 @@ class BackendApiService implements AlertBackendGateway {
   BackendApiService({
     KeyValueStore? store,
     http.Client? client,
+    Duration? requestTimeout,
   })  : _store = store ?? SecureKeyValueStore(),
-        _client = client ?? http.Client();
+        _client = client ?? http.Client(),
+        _requestTimeout = requestTimeout ?? const Duration(seconds: 10);
 
   static const _deviceIdKey = 'backend_device_id';
   static const _deviceTokenKey = 'backend_device_token';
 
   final KeyValueStore _store;
   final http.Client _client;
+  final Duration _requestTimeout;
 
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
   // Update this to your dev machine's LAN IP when testing on a real device,
@@ -61,18 +65,21 @@ class BackendApiService implements AlertBackendGateway {
   }) async {
     final credentials = await _credentials();
 
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/fall-alerts'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
-      body: jsonEncode({
-        'clientAlertId': clientAlertId,
-        'fallTimestamp':
-            DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
-                .toIso8601String(),
-        'locale': locale,
-        'latitude': latitude,
-        'longitude': longitude,
-      }),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode({
+          'clientAlertId': clientAlertId,
+          'fallTimestamp':
+              DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
+                  .toIso8601String(),
+          'locale': locale,
+          'latitude': latitude,
+          'longitude': longitude,
+        }),
+      ),
+      'Fall alert submission timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -89,9 +96,12 @@ class BackendApiService implements AlertBackendGateway {
 
   Future<Map<String, dynamic>> createInvite() async {
     final credentials = await _credentials();
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/invites'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/invites'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Invite creation timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -112,9 +122,12 @@ class BackendApiService implements AlertBackendGateway {
       return;
     }
 
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
-      headers: _jsonHeaders(token: token),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
+        headers: _jsonHeaders(token: token),
+      ),
+      'Fall alert cancellation timed out',
     );
 
     if (response.statusCode == 404) {
@@ -140,13 +153,16 @@ class BackendApiService implements AlertBackendGateway {
       return _BackendCredentials(deviceId: deviceId, deviceToken: deviceToken);
     }
 
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/devices/register'),
-      headers: _jsonHeaders(),
-      body: jsonEncode({
-        'platform': Platform.isAndroid ? 'android' : 'ios',
-        'appVersion': '1.0.0',
-      }),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/devices/register'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({
+          'platform': Platform.isAndroid ? 'android' : 'ios',
+          'appVersion': '1.0.0',
+        }),
+      ),
+      'Device registration timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -181,6 +197,17 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  Future<http.Response> _send(
+    Future<http.Response> request,
+    String timeoutMessage,
+  ) async {
+    try {
+      return await request.timeout(_requestTimeout);
+    } on TimeoutException {
+      throw BackendApiException(timeoutMessage);
+    }
+  }
 }
 
 class BackendApiException implements Exception {
