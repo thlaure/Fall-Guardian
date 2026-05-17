@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -179,6 +180,35 @@ void main() {
         isA<BackendApiException>()
             .having((error) => error.statusCode, 'statusCode', 400)
             .having((error) => error.body, 'body', 'bad request'),
+      ),
+    );
+  });
+
+  test('submitFallAlert throws typed exception when backend hangs', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      requestTimeout: const Duration(milliseconds: 1),
+      client: MockClient((request) => Completer<http.Response>().future),
+    );
+
+    await expectLater(
+      service.submitFallAlert(
+        clientAlertId: 'alert-1',
+        fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+        locale: 'en',
+        latitude: null,
+        longitude: null,
+        contacts: const [],
+      ),
+      throwsA(
+        isA<BackendApiException>().having(
+          (error) => error.message,
+          'message',
+          contains('timed out'),
+        ),
       ),
     );
   });
