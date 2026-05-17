@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
@@ -11,9 +12,11 @@ class CaregiverBackendService {
     FlutterSecureStorage? storage,
     http.Client? client,
     String? baseUrl,
+    Duration? requestTimeout,
   }) : _storage = storage ?? const FlutterSecureStorage(),
        _client = client ?? http.Client(),
-       _baseUrlOverride = baseUrl;
+       _baseUrlOverride = baseUrl,
+       _requestTimeout = requestTimeout ?? const Duration(seconds: 10);
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
@@ -22,6 +25,7 @@ class CaregiverBackendService {
   final FlutterSecureStorage _storage;
   final http.Client _client;
   final String? _baseUrlOverride;
+  final Duration _requestTimeout;
 
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
   // Update this to your dev machine's LAN IP when testing on a real device,
@@ -55,9 +59,12 @@ class CaregiverBackendService {
 
   Future<void> acceptInvite(String code) async {
     final credentials = await _credentials();
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/invites/$code/accept'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/invites/$code/accept'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Invite acceptance timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -73,9 +80,12 @@ class CaregiverBackendService {
 
   Future<void> acknowledgeFallAlert(String alertId) async {
     final credentials = await _credentials();
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/fall-alerts/$alertId/acknowledge'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts/$alertId/acknowledge'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Fall alert acknowledgement timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -89,9 +99,12 @@ class CaregiverBackendService {
 
   Future<List<Map<String, dynamic>>> getCaregiverAlerts() async {
     final credentials = await _credentials();
-    final response = await _client.get(
-      Uri.parse('$_baseUrl/api/v1/caregiver/alerts'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
+    final response = await _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/caregiver/alerts'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Caregiver alerts fetch timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -122,10 +135,13 @@ class CaregiverBackendService {
 
   Future<void> registerPushToken(String fcmToken) async {
     final credentials = await _credentials();
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/caregiver/push-token'),
-      headers: _jsonHeaders(token: credentials.deviceToken),
-      body: jsonEncode({'fcmToken': fcmToken}),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/caregiver/push-token'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode({'fcmToken': fcmToken}),
+      ),
+      'Push token registration timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -151,14 +167,17 @@ class CaregiverBackendService {
       );
     }
 
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/v1/devices/register'),
-      headers: _jsonHeaders(),
-      body: jsonEncode({
-        'platform': Platform.isAndroid ? 'android' : 'ios',
-        'appVersion': '1.0.0',
-        'deviceType': 'caregiver',
-      }),
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/devices/register'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({
+          'platform': Platform.isAndroid ? 'android' : 'ios',
+          'appVersion': '1.0.0',
+          'deviceType': 'caregiver',
+        }),
+      ),
+      'Caregiver device registration timed out',
     );
 
     if (!_isSuccess(response.statusCode)) {
@@ -214,6 +233,17 @@ class CaregiverBackendService {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  Future<http.Response> _send(
+    Future<http.Response> request,
+    String timeoutMessage,
+  ) async {
+    try {
+      return await request.timeout(_requestTimeout);
+    } on TimeoutException {
+      throw CaregiverApiException(timeoutMessage);
+    }
+  }
 
   bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
     return alert['acknowledged'] != true && alert['status'] != 'cancelled';

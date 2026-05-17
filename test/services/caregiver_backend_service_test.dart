@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:caregiver_app/services/caregiver_backend_service.dart';
@@ -157,6 +158,33 @@ void main() {
       ),
     );
   });
+
+  test(
+    'getCaregiverAlerts throws typed exception when backend hangs',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        requestTimeout: const Duration(milliseconds: 1),
+        client: MockClient((request) => Completer<http.Response>().future),
+      );
+
+      await expectLater(
+        service.getCaregiverAlerts(),
+        throwsA(
+          isA<CaregiverApiException>().having(
+            (error) => error.message,
+            'message',
+            contains('timed out'),
+          ),
+        ),
+      );
+    },
+  );
 
   test(
     'getLatestActiveAlertData returns newest unacknowledged active alert',
