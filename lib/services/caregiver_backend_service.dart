@@ -12,10 +12,12 @@ class CaregiverBackendService {
     FlutterSecureStorage? storage,
     http.Client? client,
     String? baseUrl,
+    bool? releaseMode,
     Duration? requestTimeout,
   }) : _storage = storage ?? const FlutterSecureStorage(),
        _client = client ?? http.Client(),
        _baseUrlOverride = baseUrl,
+       _releaseMode = releaseMode ?? kReleaseMode,
        _requestTimeout = requestTimeout ?? const Duration(seconds: 10);
 
   static const _deviceIdKey = 'caregiver_device_id';
@@ -25,6 +27,7 @@ class CaregiverBackendService {
   final FlutterSecureStorage _storage;
   final http.Client _client;
   final String? _baseUrlOverride;
+  final bool _releaseMode;
   final Duration _requestTimeout;
 
   // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
@@ -34,19 +37,27 @@ class CaregiverBackendService {
 
   String get _baseUrl {
     if (_baseUrlOverride case final override? when override.isNotEmpty) {
-      return override;
+      return _validateBaseUrl(override);
     }
 
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
     if (defined.isNotEmpty) {
-      return defined;
+      return _validateBaseUrl(defined);
     }
 
-    if (kReleaseMode) {
+    if (_releaseMode) {
       throw StateError('BACKEND_BASE_URL must be set for release builds.');
     }
 
     return 'http://$_devMachineLanIp:8002';
+  }
+
+  String _validateBaseUrl(String baseUrl) {
+    if (_releaseMode && Uri.tryParse(baseUrl)?.scheme != 'https') {
+      throw StateError('BACKEND_BASE_URL must use HTTPS for release builds.');
+    }
+
+    return baseUrl;
   }
 
   Future<void> ensureRegistered() async {

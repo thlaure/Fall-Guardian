@@ -1,4 +1,5 @@
 import 'package:caregiver_app/services/pending_alert_store.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,6 +7,7 @@ void main() {
   late PendingAlertStore store;
 
   setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
     store = PendingAlertStore();
   });
@@ -30,4 +32,21 @@ void main() {
 
     expect(await store.take(), isNull);
   });
+
+  test(
+    'take migrates one pending plaintext alert and deletes legacy storage',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'pending_fall_alert':
+            '{"alertId":"alert-legacy","fallTimestamp":"2026-05-16T08:30:00+00:00"}',
+      });
+
+      final alert = await store.take();
+      final prefs = await SharedPreferences.getInstance();
+
+      expect(alert?['alertId'], 'alert-legacy');
+      expect(prefs.getString('pending_fall_alert'), isNull);
+      expect(await store.take(), isNull);
+    },
+  );
 }

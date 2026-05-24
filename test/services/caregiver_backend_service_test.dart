@@ -63,6 +63,43 @@ void main() {
     },
   );
 
+  test(
+    'ensureRegistered rejects insecure backend URL in release mode',
+    () async {
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        releaseMode: true,
+        client: MockClient((request) async {
+          fail(
+            'Release configuration must be rejected before an HTTP request.',
+          );
+        }),
+      );
+
+      await expectLater(service.ensureRegistered(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test(
+    'ensureRegistered accepts an HTTPS backend URL in release mode',
+    () async {
+      final service = CaregiverBackendService(
+        baseUrl: 'https://api.example.test',
+        releaseMode: true,
+        client: MockClient((request) async {
+          expect(request.url.scheme, 'https');
+          expect(request.url.path, '/api/v1/devices/register');
+          return http.Response(
+            jsonEncode({'deviceId': 'device-1', 'deviceToken': 'token-1'}),
+            201,
+          );
+        }),
+      );
+
+      await service.ensureRegistered();
+    },
+  );
+
   test('acceptInvite reuses stored device token as bearer auth', () async {
     FlutterSecureStorage.setMockInitialValues({
       'caregiver_device_id': 'device-1',
