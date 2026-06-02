@@ -40,7 +40,7 @@ grumphp:
 
         phpstan:
             level: 9
-            configuration: phpstan.dist.neon
+            configuration: phpstan.neon.dist
             memory_limit: "-1"
             use_grumphp_paths: false
 
