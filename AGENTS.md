@@ -225,6 +225,12 @@ Preferred verification commands:
 - `make test`
 - `make test-behat`
 
+Container runtime:
+
+- use Makefile targets instead of calling `docker compose` or `podman compose` directly when a target exists
+- the Makefile selects `podman compose` when Podman is installed and falls back to `docker compose`
+- override the runtime explicitly with `COMPOSE="docker compose"` or `COMPOSE="podman compose"` only when needed
+
 ## Documentation Policy
 
 Use this split:
