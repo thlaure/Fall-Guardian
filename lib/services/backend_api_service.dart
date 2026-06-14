@@ -113,14 +113,12 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   Future<Map<String, dynamic>> createInvite() async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.post(
-        Uri.parse('$_baseUrl/api/v1/invites'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Invite creation timed out',
-    );
+    var credentials = await _credentials();
+    var response = await _createInvite(credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _createInvite(credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -131,6 +129,16 @@ class BackendApiService implements AlertBackendGateway {
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<http.Response> _createInvite(_BackendCredentials credentials) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/invites'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Invite creation timed out',
+    );
   }
 
   @override
@@ -161,14 +169,40 @@ class BackendApiService implements AlertBackendGateway {
     }
   }
 
-  Future<_BackendCredentials> _credentials() async {
-    final deviceId = await _store.read(_deviceIdKey);
-    final deviceToken = await _store.read(_deviceTokenKey);
-    if (deviceId != null &&
-        deviceId.isNotEmpty &&
-        deviceToken != null &&
-        deviceToken.isNotEmpty) {
-      return _BackendCredentials(deviceId: deviceId, deviceToken: deviceToken);
+  Future<List<Map<String, dynamic>>> getLinkedCaregivers() async {
+    final credentials = await _credentials();
+    final response = await _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Linked caregivers request timed out',
+    );
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to fetch linked caregivers',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<_BackendCredentials> _credentials({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final deviceId = await _store.read(_deviceIdKey);
+      final deviceToken = await _store.read(_deviceTokenKey);
+      if (deviceId != null &&
+          deviceId.isNotEmpty &&
+          deviceToken != null &&
+          deviceToken.isNotEmpty) {
+        return _BackendCredentials(
+          deviceId: deviceId,
+          deviceToken: deviceToken,
+        );
+      }
     }
 
     final response = await _send(
@@ -178,6 +212,7 @@ class BackendApiService implements AlertBackendGateway {
         body: jsonEncode({
           'platform': Platform.isAndroid ? 'android' : 'ios',
           'appVersion': '1.0.0',
+          'deviceType': 'protected_person',
         }),
       ),
       'Device registration timed out',

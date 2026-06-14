@@ -17,6 +17,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
   final _repo = ContactsRepository();
   final _api = BackendApiService();
   List<Contact> _contacts = [];
+  List<Map<String, dynamic>> _linkedCaregivers = [];
   bool _loading = true;
   ContactsSyncState _syncState = ContactsSyncState.unknown;
   String? _inviteCode;
@@ -45,9 +46,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
   Future<void> _load() async {
     try {
-      final contacts = await _repo.getAll();
+      final results = await Future.wait([
+        _repo.getAll(),
+        _api.getLinkedCaregivers().catchError((_) => <Map<String, dynamic>>[]),
+      ]);
       setState(() {
-        _contacts = contacts;
+        _contacts = results[0] as List<Contact>;
+        _linkedCaregivers = results[1] as List<Map<String, dynamic>>;
         _loading = false;
       });
     } catch (_) {
@@ -157,6 +162,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
+                if (_linkedCaregivers.isNotEmpty)
+                  _LinkedCaregiversSection(caregivers: _linkedCaregivers),
                 _InviteCaregiverSection(
                   inviteCode: _inviteCode,
                   expiresAt: _inviteExpiresAt,
@@ -185,6 +192,87 @@ class _ContactsScreenState extends State<ContactsScreen> {
   }
 }
 
+class _LinkedCaregiversSection extends StatelessWidget {
+  const _LinkedCaregiversSection({required this.caregivers});
+
+  final List<Map<String, dynamic>> caregivers;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cs.secondaryContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.verified_user,
+                  color: cs.onSecondaryContainer, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '${caregivers.length} caregiver${caregivers.length > 1 ? 's' : ''} linked',
+                style: TextStyle(
+                  color: cs.onSecondaryContainer,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...caregivers.map((c) {
+            final platform = c['platform'] as String? ?? 'unknown';
+            final linkedAt = c['linkedAt'] as String?;
+            final date = linkedAt != null
+                ? DateTime.tryParse(linkedAt)?.toLocal()
+                : null;
+            final dateStr = date != null
+                ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'
+                : '';
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    platform == 'ios'
+                        ? Icons.phone_iphone
+                        : Icons.phone_android,
+                    size: 16,
+                    color: cs.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    platform.toUpperCase(),
+                    style:
+                        TextStyle(color: cs.onSecondaryContainer, fontSize: 13),
+                  ),
+                  if (dateStr.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      'since $dateStr',
+                      style: TextStyle(
+                        color: cs.onSecondaryContainer.withValues(alpha: 0.7),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
 class _InviteCaregiverSection extends StatelessWidget {
   const _InviteCaregiverSection({
     required this.inviteCode,
@@ -201,6 +289,10 @@ class _InviteCaregiverSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final formattedInviteCode = inviteCode == null
+        ? null
+        : RegExp('.{1,4}').allMatches(inviteCode!).map((m) => m[0]!).join(' ');
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       padding: const EdgeInsets.all(16),
@@ -238,19 +330,17 @@ class _InviteCaregiverSection extends StatelessWidget {
                 color: cs.surface,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    inviteCode!,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 6,
-                      color: cs.primary,
-                    ),
-                  ),
-                ],
+              child: SelectableText(
+                formattedInviteCode!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                  color: cs.primary,
+                  height: 1.35,
+                ),
               ),
             ),
             if (expiresAt != null)

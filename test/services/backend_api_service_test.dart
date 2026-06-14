@@ -179,6 +179,61 @@ void main() {
     expect(invite['code'], 'ABC12345');
   });
 
+  test('createInvite refreshes stale credentials after unauthorized response',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+
+      if (request.url.path == '/api/v1/invites' &&
+          request.headers['authorization'] == 'Bearer stale-token') {
+        return http.Response('unauthorized', 401);
+      }
+
+      if (request.url.path == '/api/v1/devices/register') {
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload['deviceType'], 'protected_person');
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/invites' &&
+          request.headers['authorization'] == 'Bearer fresh-token') {
+        return http.Response(
+          jsonEncode({
+            'code': 'FRESH123',
+            'expiresAt': '2026-05-16T10:00:00+00:00',
+          }),
+          201,
+        );
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    final invite = await service.createInvite();
+
+    expect(invite['code'], 'FRESH123');
+    expect(store.data['backend_device_id'], 'fresh-device');
+    expect(store.data['backend_device_token'], 'fresh-token');
+    expect(requests, [
+      'POST /api/v1/invites',
+      'POST /api/v1/devices/register',
+      'POST /api/v1/invites',
+    ]);
+  });
+
   test('createInvite throws typed exception on API failure', () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
@@ -297,6 +352,51 @@ void main() {
         isA<BackendApiException>()
             .having((error) => error.statusCode, 'statusCode', 500)
             .having((error) => error.body, 'body', 'server error'),
+      ),
+    );
+  });
+
+  test('getLinkedCaregivers returns parsed list', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/v1/protected/linked-caregivers');
+        expect(request.headers['authorization'], 'Bearer token-1');
+        return http.Response(
+          jsonEncode([
+            {'linkedAt': '2025-01-15T10:00:00+00:00', 'platform': 'android'},
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final result = await service.getLinkedCaregivers();
+
+    expect(result, hasLength(1));
+    expect(result.first['platform'], 'android');
+    expect(result.first['linkedAt'], '2025-01-15T10:00:00+00:00');
+  });
+
+  test('getLinkedCaregivers throws typed exception on API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('forbidden', 403)),
+    );
+
+    await expectLater(
+      service.getLinkedCaregivers(),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having((error) => error.body, 'body', 'forbidden'),
       ),
     );
   });
