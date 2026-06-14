@@ -72,6 +72,9 @@ final class CaregiverAlertsProviderTest extends TestCase
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getLatitude')->willReturn(null);
         $alert->method('getLongitude')->willReturn(null);
+        $alert->method('getDevice')->willReturn($protectedDevice);
+        $protectedDevice->method('getPublicId')->willReturn('device-abc');
+        $protectedDevice->method('getPlatform')->willReturn('ios');
 
         $link = $this->createMock(CaregiverLink::class);
         $link->method('getProtectedDevice')->willReturn($protectedDevice);
@@ -87,6 +90,8 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertTrue($result[0]->acknowledged);
+        $this->assertSame('device-abc', $result[0]->protectedDeviceId);
+        $this->assertSame('ios', $result[0]->protectedDevicePlatform);
     }
 
     #[Test]
@@ -101,6 +106,9 @@ final class CaregiverAlertsProviderTest extends TestCase
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getLatitude')->willReturn(48.8);
         $alert->method('getLongitude')->willReturn(2.3);
+        $alert->method('getDevice')->willReturn($protectedDevice);
+        $protectedDevice->method('getPublicId')->willReturn('device-xyz');
+        $protectedDevice->method('getPlatform')->willReturn('android');
 
         $link = $this->createMock(CaregiverLink::class);
         $link->method('getProtectedDevice')->willReturn($protectedDevice);
@@ -114,5 +122,7 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertFalse($result[0]->acknowledged);
+        $this->assertSame('device-xyz', $result[0]->protectedDeviceId);
+        $this->assertSame('android', $result[0]->protectedDevicePlatform);
     }
 }

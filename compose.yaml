@@ -9,7 +9,7 @@ services:
         container_name: fall-guardian-api
         restart: unless-stopped
         environment:
-            SERVER_NAME: http://localhost, http://app
+            SERVER_NAME: :80
             APP_ENV: ${APP_ENV:-dev}
             APP_DEBUG: ${APP_DEBUG:-1}
             APP_SECRET: ${APP_SECRET:-changeme}
