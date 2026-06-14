@@ -64,9 +64,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get inviteCodeInstructions =>
       'Demandez à la personne protégée de générer un code dans son application Fall Guardian.';
   @override
-  String get codeFieldLabel => 'Code à 8 caractères';
+  String get codeFieldLabel => 'Code d\'invitation à 32 caractères';
   @override
-  String get codeFieldValidation => 'Entrez le code complet à 8 caractères';
+  String get codeFieldValidation => 'Entrez le code complet à 32 caractères';
   @override
   String get codeNotFound =>
       'Code introuvable ou expiré. Demandez un nouveau code.';

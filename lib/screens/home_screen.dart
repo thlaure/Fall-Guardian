@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import 'alert_history_screen.dart';
 import 'link_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
@@ -19,6 +20,14 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
   void initState() {
     super.initState();
     _linked = widget.isLinked;
+  }
+
+  @override
+  void didUpdateWidget(covariant CaregiverHomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isLinked != widget.isLinked) {
+      _linked = widget.isLinked;
+    }
   }
 
   void _onLinked() {
@@ -41,6 +50,19 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
           l10n.appTitle,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: [
+          if (_linked)
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: 'Fall history',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const AlertHistoryScreen(),
+                ),
+              ),
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),

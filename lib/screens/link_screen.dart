@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 
-/// Screen where the caregiver enters the 8-character invite code generated
+/// Screen where the caregiver enters the 32-character invite code generated
 /// by the protected-person's device.
 class LinkScreen extends StatefulWidget {
   const LinkScreen({super.key, required this.onLinked});
@@ -14,6 +15,8 @@ class LinkScreen extends StatefulWidget {
 }
 
 class _LinkScreenState extends State<LinkScreen> {
+  static final _inviteCodePattern = RegExp(r'^[A-F0-9]{32}$');
+
   final _codeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _api = CaregiverBackendService();
@@ -29,6 +32,7 @@ class _LinkScreenState extends State<LinkScreen> {
   Future<void> _accept() async {
     if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
+    final code = _normalizeInviteCode(_codeController.text);
 
     setState(() {
       _loading = true;
@@ -36,8 +40,11 @@ class _LinkScreenState extends State<LinkScreen> {
     });
 
     try {
-      await _api.acceptInvite(_codeController.text.trim().toUpperCase());
-      if (mounted) widget.onLinked();
+      await _api.acceptInvite(code);
+      if (mounted) {
+        widget.onLinked();
+        Navigator.pop(context);
+      }
     } on CaregiverApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -52,6 +59,9 @@ class _LinkScreenState extends State<LinkScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
+
+  String _normalizeInviteCode(String value) =>
+      value.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +112,11 @@ class _LinkScreenState extends State<LinkScreen> {
               child: TextFormField(
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
-                maxLength: 8,
+                maxLength: 39,
+                maxLines: 2,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp('[a-fA-F0-9\\s-]')),
+                ],
                 decoration: InputDecoration(
                   labelText: l10n.codeFieldLabel,
                   prefixIcon: const Icon(Icons.vpn_key),
@@ -111,12 +125,14 @@ class _LinkScreenState extends State<LinkScreen> {
                   ),
                 ),
                 style: const TextStyle(
-                  fontSize: 24,
-                  letterSpacing: 6,
+                  fontFamily: 'monospace',
+                  fontSize: 20,
+                  letterSpacing: 1.5,
                   fontWeight: FontWeight.bold,
                 ),
                 validator: (v) {
-                  if (v == null || v.trim().length != 8) {
+                  if (v == null ||
+                      !_inviteCodePattern.hasMatch(_normalizeInviteCode(v))) {
                     return l10n.codeFieldValidation;
                   }
                   return null;

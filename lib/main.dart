@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
@@ -17,9 +18,9 @@ Future<void> main() async {
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
-    );
+    ).timeout(const Duration(seconds: 5));
   } catch (e) {
-    developer.log('Firebase init skipped (no config): $e', name: 'main');
+    developer.log('Firebase init skipped: $e', name: 'main');
   }
   runApp(const CaregiverApp());
 }
@@ -72,7 +73,6 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   late PushNotificationService _pushService;
 
   Map<String, dynamic>? _activeAlert;
-  bool _ready = false;
   bool _linked = false;
 
   @override
@@ -92,15 +92,30 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _recoverActiveAlert();
+      unawaited(_recoverActiveAlert());
     }
   }
 
-  Future<void> _bootstrap() async {
-    var linked = false;
+  void _bootstrap() {
+    unawaited(_loadLinkState());
+    unawaited(_initializePushNotifications());
+    unawaited(_recoverActiveAlert());
+  }
+
+  Future<void> _loadLinkState() async {
     try {
       await _backend.ensureRegistered();
-      linked = await _backend.isLinked();
+      final linked = await _backend.isLinked();
+      if (mounted) {
+        setState(() => _linked = _linked || linked);
+      }
+    } catch (e) {
+      developer.log('Device bootstrap skipped: $e', name: '_AppRootState');
+    }
+  }
+
+  Future<void> _initializePushNotifications() async {
+    try {
       await _pushService.initialize();
       final token = await _pushService.getFcmToken();
       if (token != null) {
@@ -116,16 +131,8 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
           );
         }
       }
-      await _recoverActiveAlert();
     } catch (e) {
-      developer.log('Bootstrap error: $e', name: '_AppRootState');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _linked = _linked || linked;
-          _ready = true;
-        });
-      }
+      developer.log('Push bootstrap skipped: $e', name: '_AppRootState');
     }
   }
 
@@ -164,10 +171,6 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (!_ready) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
     if (_activeAlert != null) {
       return ActiveAlertScreen(
         alertData: _activeAlert!,

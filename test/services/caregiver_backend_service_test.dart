@@ -115,13 +115,67 @@ void main() {
       }),
     );
 
-    await service.acceptInvite('ABC12345');
+    const inviteCode = '669CBEC261CDDF65DD21F4D2A2452689';
+
+    await service.acceptInvite(inviteCode);
 
     expect(capturedRequest.method, 'POST');
-    expect(capturedRequest.url.path, '/api/v1/invites/ABC12345/accept');
+    expect(capturedRequest.url.path, '/api/v1/invites/$inviteCode/accept');
     expect(capturedRequest.headers['Authorization'], 'Bearer token-1');
     expect(await service.isLinked(), isTrue);
   });
+
+  test(
+    'acceptInvite refreshes stale credentials after unauthorized response',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'stale-device',
+        'caregiver_device_token': 'stale-token',
+      });
+
+      const inviteCode = '669CBEC261CDDF65DD21F4D2A2452689';
+      final requests = <String>[];
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+
+          if (request.url.path == '/api/v1/invites/$inviteCode/accept' &&
+              request.headers['Authorization'] == 'Bearer stale-token') {
+            return http.Response('unauthorized', 401);
+          }
+
+          if (request.url.path == '/api/v1/devices/register') {
+            final payload = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(payload['deviceType'], 'caregiver');
+            return http.Response(
+              jsonEncode({
+                'deviceId': 'fresh-device',
+                'deviceToken': 'fresh-token',
+              }),
+              201,
+            );
+          }
+
+          if (request.url.path == '/api/v1/invites/$inviteCode/accept' &&
+              request.headers['Authorization'] == 'Bearer fresh-token') {
+            return http.Response('', 204);
+          }
+
+          fail('Unexpected request: ${request.method} ${request.url}');
+        }),
+      );
+
+      await service.acceptInvite(inviteCode);
+
+      expect(requests, [
+        'POST /api/v1/invites/$inviteCode/accept',
+        'POST /api/v1/devices/register',
+        'POST /api/v1/invites/$inviteCode/accept',
+      ]);
+      expect(await service.isLinked(), isTrue);
+    },
+  );
 
   test('getCaregiverAlerts accepts API Platform hydra collection', () async {
     FlutterSecureStorage.setMockInitialValues({

@@ -69,14 +69,12 @@ class CaregiverBackendService {
   }
 
   Future<void> acceptInvite(String code) async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.post(
-        Uri.parse('$_baseUrl/api/v1/invites/$code/accept'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Invite acceptance timed out',
-    );
+    var credentials = await _credentials();
+    var response = await _acceptInvite(code, credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _acceptInvite(code, credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw CaregiverApiException(
@@ -87,6 +85,19 @@ class CaregiverBackendService {
     }
 
     await _storage.write(key: _linkedKey, value: 'true');
+  }
+
+  Future<http.Response> _acceptInvite(
+    String code,
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/invites/$code/accept'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Invite acceptance timed out',
+    );
   }
 
   Future<void> acknowledgeFallAlert(String alertId) async {
@@ -164,18 +175,22 @@ class CaregiverBackendService {
     }
   }
 
-  Future<_CaregiverCredentials> _credentials() async {
-    final deviceId = await _storage.read(key: _deviceIdKey);
-    final deviceToken = await _storage.read(key: _deviceTokenKey);
+  Future<_CaregiverCredentials> _credentials({
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh) {
+      final deviceId = await _storage.read(key: _deviceIdKey);
+      final deviceToken = await _storage.read(key: _deviceTokenKey);
 
-    if (deviceId != null &&
-        deviceId.isNotEmpty &&
-        deviceToken != null &&
-        deviceToken.isNotEmpty) {
-      return _CaregiverCredentials(
-        deviceId: deviceId,
-        deviceToken: deviceToken,
-      );
+      if (deviceId != null &&
+          deviceId.isNotEmpty &&
+          deviceToken != null &&
+          deviceToken.isNotEmpty) {
+        return _CaregiverCredentials(
+          deviceId: deviceId,
+          deviceToken: deviceToken,
+        );
+      }
     }
 
     final response = await _send(
