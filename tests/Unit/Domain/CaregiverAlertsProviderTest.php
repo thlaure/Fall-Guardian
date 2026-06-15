@@ -15,6 +15,9 @@ use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+
+use const DATE_ATOM;
+
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -124,5 +127,39 @@ final class CaregiverAlertsProviderTest extends TestCase
         $this->assertFalse($result[0]->acknowledged);
         $this->assertSame('device-xyz', $result[0]->protectedDeviceId);
         $this->assertSame('android', $result[0]->protectedDevicePlatform);
+    }
+
+    #[Test]
+    public function itExposesCancelledAtForCancelledAlerts(): void
+    {
+        $caregiverDevice = $this->createMock(Device::class);
+        $protectedDevice = $this->createMock(Device::class);
+        $cancelledAt = new DateTimeImmutable('2026-06-15T20:30:00+00:00');
+
+        $alert = $this->createMock(FallAlert::class);
+        $alert->method('getId')->willReturn(Uuid::v7());
+        $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
+        $alert->method('getCancelledAt')->willReturn($cancelledAt);
+        $alert->method('getLatitude')->willReturn(null);
+        $alert->method('getLongitude')->willReturn(null);
+        $alert->method('getDevice')->willReturn($protectedDevice);
+        $protectedDevice->method('getPublicId')->willReturn('device-cancelled');
+        $protectedDevice->method('getPlatform')->willReturn('android');
+
+        $link = $this->createMock(CaregiverLink::class);
+        $link->method('getProtectedDevice')->willReturn($protectedDevice);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($caregiverDevice);
+        $this->caregiverLinkRepository->method('findByCaregiverDevice')->willReturn([$link]);
+        $this->fallAlertRepository->method('findByDevice')->willReturn([$alert]);
+        $this->acknowledgementRepository->method('findByCaregiverAndAlert')->willReturn(null);
+
+        $result = $this->provider->provide($this->createMock(Operation::class));
+
+        $this->assertCount(1, $result);
+        $this->assertFalse($result[0]->acknowledged);
+        $this->assertSame('cancelled', $result[0]->status);
+        $this->assertSame($cancelledAt->format(DATE_ATOM), $result[0]->cancelledAt);
     }
 }

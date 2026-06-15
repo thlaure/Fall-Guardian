@@ -28,4 +28,15 @@ final readonly class FakePushGateway implements PushGatewayInterface
             'status' => 'sent',
         ];
     }
+
+    public function sendLinkRevoked(string $fcmToken): array
+    {
+        $providerMessageId = sprintf('fake-push-revoked-%s', Uuid::v7()->toRfc4122());
+        $this->store->appendLinkRevoked($providerMessageId, $fcmToken);
+
+        return [
+            'providerMessageId' => $providerMessageId,
+            'status' => 'sent',
+        ];
+    }
 }

@@ -57,9 +57,10 @@ final readonly class FallGuardianOpenApiFactory implements OpenApiFactoryInterfa
                 'locale' => 'en',
                 'latitude' => 48.8566,
                 'longitude' => 2.3522,
+                'cancelled' => false,
             ],
-            requestDescription: 'Detected fall event and optional location.',
-            successDescriptions: [201 => 'Fall alert accepted and queued for caregiver delivery.'],
+            requestDescription: 'Detected fall event and optional location. Set `cancelled` to true when the protected person stopped the alert before caregiver notification; the fall is stored for caregiver history without urgent push dispatch.',
+            successDescriptions: [201 => 'Fall alert accepted. Non-cancelled alerts are queued for caregiver delivery.'],
         );
         $this->documentPost($openApi, '/api/v1/fall-alerts/{clientAlertId}/cancel', [
             '401' => 'Missing or invalid device bearer token.',

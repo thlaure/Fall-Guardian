@@ -9,6 +9,8 @@ use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use InvalidArgumentException;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<CaregiverPushToken>
@@ -24,6 +26,25 @@ final class DoctrineCaregiverPushTokenRepository extends ServiceEntityRepository
     {
         /** @var CaregiverPushToken|null $token */
         $token = $this->findOneBy(['device' => $device]);
+
+        return $token;
+    }
+
+    public function findByDeviceId(string $deviceId): ?CaregiverPushToken
+    {
+        try {
+            $uuid = Uuid::fromString($deviceId);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        /** @var CaregiverPushToken|null $token */
+        $token = $this->createQueryBuilder('t')
+            ->join('t.device', 'd')
+            ->andWhere('d.id = :id')
+            ->setParameter('id', $uuid, 'uuid')
+            ->getQuery()
+            ->getOneOrNullResult();
 
         return $token;
     }

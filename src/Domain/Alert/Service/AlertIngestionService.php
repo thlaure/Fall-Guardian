@@ -8,6 +8,7 @@ use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Enum\FallAlertStatus;
 use DateTimeImmutable;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -31,6 +32,26 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
         $this->fallAlertRepository->save($alert);
 
         $this->messageBus->dispatch(new SendFallAlertPushMessage($alert->getId()->toRfc4122()));
+
+        return $alert;
+    }
+
+    public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
+    {
+        $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
+
+        if ($existing instanceof FallAlert) {
+            if (FallAlertStatus::Cancelled !== $existing->getStatus()) {
+                $existing->cancel();
+                $this->fallAlertRepository->save($existing);
+            }
+
+            return $existing;
+        }
+
+        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude);
+        $alert->cancel();
+        $this->fallAlertRepository->save($alert);
 
         return $alert;
     }

@@ -8,6 +8,7 @@ framework:
 
         routing:
             App\Domain\Alert\Message\SendFallAlertPushMessage: async
+            App\Domain\Caregiver\Message\NotifyCaregiverLinkRevokedMessage: async
 
 when@test:
     framework:

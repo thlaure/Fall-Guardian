@@ -81,6 +81,8 @@ final class DoctrineRepositoryTest extends KernelTestCase
         $linkRepository->save($link);
 
         self::assertSame([$link], $linkRepository->findActiveByProtectedDevice($protectedDevice));
+        self::assertSame($link, $linkRepository->findActiveByIdAndProtectedDevice($link->getId()->toRfc4122(), $protectedDevice));
+        self::assertNull($linkRepository->findActiveByIdAndProtectedDevice('not-a-uuid', $protectedDevice));
         self::assertSame($link, $linkRepository->findExistingPair($protectedDevice, $caregiverDevice));
         self::assertSame([$link], $linkRepository->findByCaregiverDevice($caregiverDevice));
 
@@ -88,6 +90,16 @@ final class DoctrineRepositoryTest extends KernelTestCase
         $tokenRepository->save($token);
 
         self::assertSame($token, $tokenRepository->findByDevice($caregiverDevice));
+        self::assertSame($token, $tokenRepository->findByDeviceId($caregiverDevice->getId()->toRfc4122()));
+        self::assertNull($tokenRepository->findByDeviceId('not-a-uuid'));
+
+        $link->revoke();
+        $linkRepository->save($link);
+
+        self::assertNull($linkRepository->findActiveByIdAndProtectedDevice($link->getId()->toRfc4122(), $protectedDevice));
+        self::assertSame([], $linkRepository->findActiveByProtectedDevice($protectedDevice));
+        $link->reactivate();
+        $linkRepository->save($link);
 
         $alert = new FallAlert($protectedDevice, 'client-'.$this->suffix(), new DateTimeImmutable(), 'en', null, null);
         $alertRepository->save($alert);

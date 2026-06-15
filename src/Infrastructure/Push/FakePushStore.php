@@ -88,16 +88,20 @@ final readonly class FakePushStore
         }
     }
 
+    public function appendLinkRevoked(string $providerMessageId, string $fcmToken): void
+    {
+        $this->write([
+            'type' => 'caregiver_revoked',
+            'providerMessageId' => $providerMessageId,
+            'fcmToken' => $fcmToken,
+            'createdAt' => new DateTimeImmutable()->format(DATE_ATOM),
+        ]);
+    }
+
     public function append(string $providerMessageId, string $fcmToken, string $alertId, string $fallTimestamp, ?float $latitude, ?float $longitude): void
     {
-        $path = $this->path();
-        $directory = dirname($path);
-
-        if (!is_dir($directory)) {
-            mkdir($directory, 0777, true);
-        }
-
-        $entry = [
+        $this->write([
+            'type' => 'fall_alert',
             'providerMessageId' => $providerMessageId,
             'fcmToken' => $fcmToken,
             'alertId' => $alertId,
@@ -105,7 +109,18 @@ final readonly class FakePushStore
             'latitude' => null !== $latitude ? (string) $latitude : null,
             'longitude' => null !== $longitude ? (string) $longitude : null,
             'createdAt' => new DateTimeImmutable()->format(DATE_ATOM),
-        ];
+        ]);
+    }
+
+    /** @param array<string, mixed> $entry */
+    private function write(array $entry): void
+    {
+        $path = $this->path();
+        $directory = dirname($path);
+
+        if (!is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
 
         file_put_contents(
             $path,

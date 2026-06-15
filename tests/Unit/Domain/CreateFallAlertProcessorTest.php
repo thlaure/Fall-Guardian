@@ -61,6 +61,30 @@ final class CreateFallAlertProcessorTest extends TestCase
     }
 
     #[Test]
+    public function itCreatesCancelledAlertWhenPayloadMarksItCancelled(): void
+    {
+        $device = $this->createMock(Device::class);
+        $device->method('getPublicId')->willReturn('device-1');
+        $alert = $this->buildAlertMock('client-cancelled-001', FallAlertStatus::Cancelled);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->rateLimiter->expects($this->once())->method('consume')->with('fall_alert_create', 6, 60, 'device-1');
+        $this->alertIngestionService->expects($this->never())->method('createAlert');
+        $this->alertIngestionService->expects($this->once())->method('createCancelledAlert')->willReturn($alert);
+
+        $data = new CreateFallAlertInputDTO();
+        $data->clientAlertId = 'client-cancelled-001';
+        $data->locale = 'en';
+        $data->fallTimestamp = new DateTimeImmutable();
+        $data->cancelled = true;
+
+        $result = $this->processor->process($data, $this->createMock(Operation::class));
+
+        $this->assertSame('client-cancelled-001', $result->clientAlertId);
+        $this->assertSame('cancelled', $result->status);
+    }
+
+    #[Test]
     public function itFallsBackToNowWhenTimestampAbsent(): void
     {
         $device = $this->createMock(Device::class);
@@ -97,14 +121,16 @@ final class CreateFallAlertProcessorTest extends TestCase
         $this->processor->process($data, $this->createMock(Operation::class));
     }
 
-    private function buildAlertMock(string $clientAlertId): FallAlert&MockObject
+    private function buildAlertMock(string $clientAlertId, FallAlertStatus $status = FallAlertStatus::Received): FallAlert&MockObject
     {
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getClientAlertId')->willReturn($clientAlertId);
-        $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
+        $alert->method('getStatus')->willReturn($status);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
-        $alert->method('getCancelledAt')->willReturn(null);
+        $alert->method('getCancelledAt')->willReturn(
+            FallAlertStatus::Cancelled === $status ? new DateTimeImmutable() : null,
+        );
 
         return $alert;
     }

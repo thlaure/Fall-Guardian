@@ -8,6 +8,7 @@ use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Domain\Alert\Service\AlertIngestionService;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Enum\FallAlertStatus;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -57,6 +58,45 @@ final class AlertIngestionServiceTest extends TestCase
         $this->bus->expects($this->never())->method('dispatch');
 
         $result = $this->service->createAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
+
+        self::assertSame($existing, $result);
+    }
+
+    #[Test]
+    public function itCreatesCancelledAlertWithoutDispatchingPushMessage(): void
+    {
+        $device = new Device('device-1', 'hash', 'android', '1.0.0');
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn(null);
+        $this->repository->expects($this->once())->method('save');
+        $this->bus->expects($this->never())->method('dispatch');
+
+        $alert = $this->service->createCancelledAlert(
+            $device,
+            'client-cancelled-001',
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+        );
+
+        self::assertSame('client-cancelled-001', $alert->getClientAlertId());
+        self::assertSame(FallAlertStatus::Cancelled, $alert->getStatus());
+        self::assertInstanceOf(DateTimeImmutable::class, $alert->getCancelledAt());
+    }
+
+    #[Test]
+    public function itCancelsExistingAlertWhenCreatingCancelledAlertIdempotently(): void
+    {
+        $device = $this->createMock(Device::class);
+        $existing = $this->createMock(FallAlert::class);
+        $existing->method('getStatus')->willReturn(FallAlertStatus::Received);
+        $existing->expects($this->once())->method('cancel');
+
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($existing);
+        $this->repository->expects($this->once())->method('save')->with($existing);
+        $this->bus->expects($this->never())->method('dispatch');
+
+        $result = $this->service->createCancelledAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
 
         self::assertSame($existing, $result);
     }

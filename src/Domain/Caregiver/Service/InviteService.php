@@ -62,7 +62,12 @@ final readonly class InviteService implements InviteServiceInterface
 
         if ($existing instanceof CaregiverLink) {
             if (CaregiverLinkStatus::Revoked === $existing->getStatus()) {
-                throw new DomainException('This link has been revoked.');
+                $existing->reactivate();
+                $invite->markUsed();
+                $this->inviteRepository->save($invite);
+                $this->linkRepository->save($existing);
+
+                return $existing;
             }
             $invite->markUsed();
             $this->inviteRepository->save($invite);

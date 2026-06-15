@@ -12,6 +12,8 @@ interface AlertIngestionServiceInterface
 {
     public function createAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert;
 
+    public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert;
+
     public function cancelAlert(Device $device, string $clientAlertId): ?FallAlert;
 
     public function getAlertForDevice(Device $device, string $alertId): ?FallAlert;

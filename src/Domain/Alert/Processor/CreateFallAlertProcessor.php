@@ -41,14 +41,24 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
 
         $this->rateLimiter->consume('fall_alert_create', 6, 60, $device->getPublicId());
 
-        $alert = $this->alertIngestionService->createAlert(
-            $device,
-            $data->clientAlertId,
-            $data->fallTimestamp ?? new DateTimeImmutable(),
-            $data->locale,
-            $data->latitude,
-            $data->longitude,
-        );
+        $fallTimestamp = $data->fallTimestamp ?? new DateTimeImmutable();
+        $alert = $data->cancelled
+            ? $this->alertIngestionService->createCancelledAlert(
+                $device,
+                $data->clientAlertId,
+                $fallTimestamp,
+                $data->locale,
+                $data->latitude,
+                $data->longitude,
+            )
+            : $this->alertIngestionService->createAlert(
+                $device,
+                $data->clientAlertId,
+                $fallTimestamp,
+                $data->locale,
+                $data->latitude,
+                $data->longitude,
+            );
 
         return FallAlertOutputDTO::fromEntity($alert);
     }

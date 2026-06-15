@@ -33,6 +33,7 @@ final readonly class CaregiverAlertOutputDTO
         public ?float $latitude,
         public ?float $longitude,
         public bool $acknowledged,
+        public ?string $cancelledAt,
         public string $protectedDeviceId,
         public string $protectedDevicePlatform,
     ) {
@@ -47,6 +48,7 @@ final readonly class CaregiverAlertOutputDTO
             $alert->getLatitude(),
             $alert->getLongitude(),
             $acknowledged,
+            $alert->getCancelledAt()?->format(DateTimeInterface::ATOM),
             $alert->getDevice()->getPublicId(),
             $alert->getDevice()->getPlatform(),
         );

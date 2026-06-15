@@ -44,4 +44,7 @@ final class CreateFallAlertInputDTO
 
     #[Assert\Range(min: -180, max: 180)]
     public ?float $longitude = null;
+
+    #[Assert\Type('bool')]
+    public bool $cancelled = false;
 }

@@ -32,12 +32,15 @@ final class OpenApiDocumentationTest extends WebTestCase
             48.8566,
             $documentation['paths']['/api/v1/fall-alerts']['post']['requestBody']['content']['application/json']['example']['latitude'],
         );
+        self::assertFalse(
+            $documentation['paths']['/api/v1/fall-alerts']['post']['requestBody']['content']['application/json']['example']['cancelled'],
+        );
         self::assertSame(
-            'Detected fall event and optional location.',
+            'Detected fall event and optional location. Set `cancelled` to true when the protected person stopped the alert before caregiver notification; the fall is stored for caregiver history without urgent push dispatch.',
             $documentation['paths']['/api/v1/fall-alerts']['post']['requestBody']['description'],
         );
         self::assertSame(
-            'Fall alert accepted and queued for caregiver delivery.',
+            'Fall alert accepted. Non-cancelled alerts are queued for caregiver delivery.',
             $documentation['paths']['/api/v1/fall-alerts']['post']['responses']['201']['description'],
         );
         self::assertArrayNotHasKey(

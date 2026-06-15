@@ -26,6 +26,11 @@ final readonly class DelegatingPushGateway implements PushGatewayInterface
         return $this->inner()->send($fcmToken, $alertId, $fallTimestamp, $latitude, $longitude);
     }
 
+    public function sendLinkRevoked(string $fcmToken): array
+    {
+        return $this->inner()->sendLinkRevoked($fcmToken);
+    }
+
     private function inner(): PushGatewayInterface
     {
         return match ($this->provider) {

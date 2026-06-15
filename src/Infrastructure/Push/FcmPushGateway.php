@@ -42,6 +42,7 @@ final class FcmPushGateway implements PushGatewayInterface
         $accessToken = $this->getAccessToken();
 
         $data = [
+            'type' => 'fall_alert',
             'alertId' => $alertId,
             'fallTimestamp' => $fallTimestamp,
         ];
@@ -78,6 +79,76 @@ final class FcmPushGateway implements PushGatewayInterface
                             'alert' => [
                                 'title' => 'Fall detected',
                                 'body' => 'Tap to view and acknowledge the alert.',
+                            ],
+                            'sound' => 'default',
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $response = $this->httpClient->request(
+            Request::METHOD_POST,
+            sprintf(self::FCM_SEND_URL, $this->projectId),
+            [
+                'headers' => [
+                    'Authorization' => 'Bearer '.$accessToken,
+                    'Content-Type' => 'application/json',
+                ],
+                'body' => json_encode($payload),
+                'timeout' => self::HTTP_TIMEOUT_SECONDS,
+            ],
+        );
+
+        $statusCode = $response->getStatusCode();
+        $responseBody = $response->getContent(false);
+        /** @var array<string, mixed>|null $body */
+        $body = json_decode($responseBody, true);
+
+        if ($statusCode < 200 || $statusCode >= 300) {
+            throw new RuntimeException(sprintf('FCM send failed (HTTP %d).', $statusCode));
+        }
+
+        $providerMessageId = is_array($body) && isset($body['name']) && is_string($body['name'])
+            ? $body['name']
+            : null;
+
+        return [
+            'providerMessageId' => $providerMessageId,
+            'status' => 'sent',
+        ];
+    }
+
+    public function sendLinkRevoked(string $fcmToken): array
+    {
+        $accessToken = $this->getAccessToken();
+
+        $payload = [
+            'message' => [
+                'token' => $fcmToken,
+                'notification' => [
+                    'title' => 'Caregiver link removed',
+                    'body' => 'You have been removed as a caregiver.',
+                ],
+                'data' => [
+                    'type' => 'caregiver_revoked',
+                ],
+                'android' => [
+                    'priority' => 'high',
+                    'notification' => [
+                        'channel_id' => 'fall_alerts',
+                        'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                    ],
+                ],
+                'apns' => [
+                    'headers' => [
+                        'apns-priority' => '10',
+                    ],
+                    'payload' => [
+                        'aps' => [
+                            'alert' => [
+                                'title' => 'Caregiver link removed',
+                                'body' => 'You have been removed as a caregiver.',
                             ],
                             'sound' => 'default',
                         ],

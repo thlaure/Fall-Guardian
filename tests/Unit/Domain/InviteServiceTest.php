@@ -150,7 +150,7 @@ final class InviteServiceTest extends TestCase
     }
 
     #[Test]
-    public function itThrowsWhenExistingLinkIsRevoked(): void
+    public function itReactivatesExistingRevokedLink(): void
     {
         $protectedDevice = $this->createMock(Device::class);
         $caregiverDevice = $this->createMock(Device::class);
@@ -158,15 +158,20 @@ final class InviteServiceTest extends TestCase
 
         $invite = $this->createMock(CaregiverInvite::class);
         $invite->method('getDevice')->willReturn($protectedDevice);
+        $invite->expects($this->once())->method('markUsed');
 
         $existing = $this->createMock(CaregiverLink::class);
         $existing->method('getStatus')->willReturn(\App\Enum\CaregiverLinkStatus::Revoked);
+        $existing->expects($this->once())->method('reactivate');
 
         $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
+        $this->inviteRepository->expects($this->once())->method('save')->with($invite);
+        $this->linkRepository->expects($this->once())->method('save')->with($existing);
 
-        $this->expectException(DomainException::class);
-        $this->service->acceptInvite('ABCD1234', $caregiverDevice);
+        $result = $this->service->acceptInvite('ABCD1234', $caregiverDevice);
+
+        $this->assertSame($existing, $result);
     }
 
     #[Test]

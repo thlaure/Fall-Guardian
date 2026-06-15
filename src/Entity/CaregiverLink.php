@@ -80,4 +80,10 @@ class CaregiverLink
         $this->status = CaregiverLinkStatus::Revoked;
         $this->updatedAt = new DateTimeImmutable();
     }
+
+    public function reactivate(): void
+    {
+        $this->status = CaregiverLinkStatus::Active;
+        $this->updatedAt = new DateTimeImmutable();
+    }
 }

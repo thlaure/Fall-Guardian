@@ -11,5 +11,7 @@ interface CaregiverPushTokenRepositoryInterface
 {
     public function findByDevice(Device $device): ?CaregiverPushToken;
 
+    public function findByDeviceId(string $deviceId): ?CaregiverPushToken;
+
     public function save(CaregiverPushToken $token): void;
 }

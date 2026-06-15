@@ -10,4 +10,7 @@ interface PushGatewayInterface
 
     /** @return array{providerMessageId: ?string, status: string} */
     public function send(string $fcmToken, string $alertId, string $fallTimestamp, ?float $latitude, ?float $longitude): array;
+
+    /** @return array{providerMessageId: ?string, status: string} */
+    public function sendLinkRevoked(string $fcmToken): array;
 }
