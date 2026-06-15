@@ -47,6 +47,15 @@ class _FakeBackendGateway implements AlertBackendGateway {
   Future<void> cancelFallAlert({required String clientAlertId}) async {}
 
   @override
+  Future<void> recordCancelledFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {}
+
+  @override
   Future<void> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,

@@ -44,6 +44,18 @@ class _ContactsScreenState extends State<ContactsScreen> {
     });
   }
 
+  Future<void> _revokeCaregiver(String linkId) async {
+    try {
+      await _api.deleteLinkedCaregiver(linkId);
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to remove caregiver.')),
+      );
+    }
+  }
+
   Future<void> _load() async {
     try {
       final results = await Future.wait([
@@ -163,7 +175,10 @@ class _ContactsScreenState extends State<ContactsScreen> {
           : Column(
               children: [
                 if (_linkedCaregivers.isNotEmpty)
-                  _LinkedCaregiversSection(caregivers: _linkedCaregivers),
+                  _LinkedCaregiversSection(
+                    caregivers: _linkedCaregivers,
+                    onRevoke: _revokeCaregiver,
+                  ),
                 _InviteCaregiverSection(
                   inviteCode: _inviteCode,
                   expiresAt: _inviteExpiresAt,
@@ -193,9 +208,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
 }
 
 class _LinkedCaregiversSection extends StatelessWidget {
-  const _LinkedCaregiversSection({required this.caregivers});
+  const _LinkedCaregiversSection({
+    required this.caregivers,
+    required this.onRevoke,
+  });
 
   final List<Map<String, dynamic>> caregivers;
+  final void Function(String linkId) onRevoke;
 
   @override
   Widget build(BuildContext context) {
@@ -236,6 +255,7 @@ class _LinkedCaregiversSection extends StatelessWidget {
             final dateStr = date != null
                 ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'
                 : '';
+            final linkId = c['id'] as String? ?? '';
             return Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Row(
@@ -263,6 +283,15 @@ class _LinkedCaregiversSection extends StatelessWidget {
                       ),
                     ),
                   ],
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.link_off,
+                        size: 18, color: cs.onSecondaryContainer),
+                    tooltip: 'Remove caregiver',
+                    onPressed: linkId.isEmpty ? null : () => onRevoke(linkId),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  ),
                 ],
               ),
             );

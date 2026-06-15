@@ -157,6 +157,59 @@ void main() {
     ]);
   });
 
+  test('recordCancelledFallAlert posts cancelled alert audit', () async {
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'device-1',
+            'deviceToken': 'token-1',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/fall-alerts') {
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload['clientAlertId'], 'cancelled-alert-1');
+        expect(payload['locale'], 'fr');
+        expect(payload['cancelled'], isTrue);
+        expect(request.headers['authorization'], 'Bearer token-1');
+        return http.Response(
+          jsonEncode({
+            'id': 'server-alert-1',
+            'clientAlertId': 'cancelled-alert-1',
+            'status': 'cancelled',
+            'fallTimestamp': '2026-04-09T10:00:00+00:00',
+            'cancelledAt': '2026-04-09T10:00:05+00:00',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+    await service.recordCancelledFallAlert(
+      clientAlertId: 'cancelled-alert-1',
+      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+      locale: 'fr',
+      latitude: null,
+      longitude: null,
+    );
+
+    expect(requests, [
+      'POST /api/v1/devices/register',
+      'POST /api/v1/fall-alerts',
+    ]);
+  });
+
   test('createInvite posts with stored bearer token', () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
@@ -397,6 +450,43 @@ void main() {
         isA<BackendApiException>()
             .having((error) => error.statusCode, 'statusCode', 403)
             .having((error) => error.body, 'body', 'forbidden'),
+      ),
+    );
+  });
+
+  test('deleteLinkedCaregiver sends DELETE and succeeds on 204', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    const linkId = 'some-link-uuid';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        expect(request.method, 'DELETE');
+        expect(request.url.path, '/api/v1/protected/linked-caregivers/$linkId');
+        expect(request.headers['authorization'], 'Bearer token-1');
+        return http.Response('', 204);
+      }),
+    );
+
+    await expectLater(service.deleteLinkedCaregiver(linkId), completes);
+  });
+
+  test('deleteLinkedCaregiver throws typed exception on API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('not found', 404)),
+    );
+
+    await expectLater(
+      service.deleteLinkedCaregiver('missing-id'),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 404)
+            .having((error) => error.body, 'body', 'not found'),
       ),
     );
   });

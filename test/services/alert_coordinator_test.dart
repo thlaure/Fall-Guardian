@@ -52,6 +52,7 @@ class _FakeBackendGateway implements AlertBackendGateway {
   double? lastLongitude;
   int cancelCount = 0;
   int callCount = 0;
+  int cancelledRecordCount = 0;
 
   @override
   Future<void> ensureReady() async {}
@@ -78,6 +79,22 @@ class _FakeBackendGateway implements AlertBackendGateway {
     if (shouldFail) {
       throw Exception('backend unavailable');
     }
+  }
+
+  @override
+  Future<void> recordCancelledFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {
+    cancelledRecordCount++;
+    lastClientAlertId = clientAlertId;
+    lastLocale = locale;
+    lastTimestamp = fallTimestamp;
+    lastLatitude = latitude;
+    lastLongitude = longitude;
   }
 
   @override
@@ -202,6 +219,7 @@ void main() {
     expect(coordinator.currentState, isNull);
     expect(notifications.cancelCount, 1);
     expect(backend.cancelCount, 0);
+    expect(backend.cancelledRecordCount, 1);
 
     coordinator.dispose();
   });
@@ -244,6 +262,8 @@ void main() {
     expect(notifications.cancelCount, 1);
     expect(coordinator.currentState, isNull);
     expect(backend.cancelCount, 0);
+    expect(backend.cancelledRecordCount, 1);
+    expect(backend.lastClientAlertId, 'id-0');
 
     coordinator.dispose();
   });

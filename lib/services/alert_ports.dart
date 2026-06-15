@@ -36,6 +36,14 @@ abstract class AlertBackendGateway {
     required List<Contact> contacts,
   });
 
+  Future<void> recordCancelledFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  });
+
   Future<void> cancelFallAlert({required String clientAlertId});
 }
 

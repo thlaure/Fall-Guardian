@@ -87,15 +87,13 @@ class BackendApiService implements AlertBackendGateway {
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode({
-          'clientAlertId': clientAlertId,
-          'fallTimestamp':
-              DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
-                  .toIso8601String(),
-          'locale': locale,
-          'latitude': latitude,
-          'longitude': longitude,
-        }),
+        body: jsonEncode(_fallAlertPayload(
+          clientAlertId: clientAlertId,
+          fallTimestamp: fallTimestamp,
+          locale: locale,
+          latitude: latitude,
+          longitude: longitude,
+        )),
       ),
       'Fall alert submission timed out',
     );
@@ -110,6 +108,41 @@ class BackendApiService implements AlertBackendGateway {
 
     // The API acknowledges that the alert was accepted for dispatch. Actual
     // caregiver push delivery happens asynchronously on the backend worker.
+  }
+
+  @override
+  Future<void> recordCancelledFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {
+    final credentials = await _credentials();
+
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode(_fallAlertPayload(
+          clientAlertId: clientAlertId,
+          fallTimestamp: fallTimestamp,
+          locale: locale,
+          latitude: latitude,
+          longitude: longitude,
+          cancelled: true,
+        )),
+      ),
+      'Cancelled fall alert recording timed out',
+    );
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to record cancelled fall alert',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
   }
 
   Future<Map<String, dynamic>> createInvite() async {
@@ -190,6 +223,25 @@ class BackendApiService implements AlertBackendGateway {
     return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
   }
 
+  Future<void> deleteLinkedCaregiver(String linkId) async {
+    final credentials = await _credentials();
+    final response = await _send(
+      _client.delete(
+        Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers/$linkId'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Remove caregiver request timed out',
+    );
+
+    if (response.statusCode != 204) {
+      throw BackendApiException(
+        'Failed to remove caregiver link',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  }
+
   Future<_BackendCredentials> _credentials({bool forceRefresh = false}) async {
     if (!forceRefresh) {
       final deviceId = await _store.read(_deviceIdKey);
@@ -239,6 +291,26 @@ class BackendApiService implements AlertBackendGateway {
       name: 'BackendApiService',
     );
     return credentials;
+  }
+
+  Map<String, dynamic> _fallAlertPayload({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+    bool cancelled = false,
+  }) {
+    return {
+      'clientAlertId': clientAlertId,
+      'fallTimestamp':
+          DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
+              .toIso8601String(),
+      'locale': locale,
+      'latitude': latitude,
+      'longitude': longitude,
+      if (cancelled) 'cancelled': true,
+    };
   }
 
   Map<String, String> _jsonHeaders({String? token}) {
