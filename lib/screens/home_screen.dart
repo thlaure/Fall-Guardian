@@ -107,22 +107,34 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            if (!_linked) ...[
-              FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => LinkScreen(onLinked: _onLinked),
+            _linked
+                ? OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => LinkScreen(onLinked: _onLinked),
+                      ),
+                    ),
+                    icon: const Icon(Icons.swap_horiz),
+                    label: Text(l10n.relinkButton),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                  )
+                : FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => LinkScreen(onLinked: _onLinked),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_link),
+                    label: Text(l10n.linkButton),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
                   ),
-                ),
-                icon: const Icon(Icons.add_link),
-                label: Text(l10n.linkButton),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
+            const SizedBox(height: 16),
             _InfoCard(
               title: _linked ? l10n.statusCardTitle : l10n.howItWorksTitle,
               body: _linked ? l10n.statusCardBody : l10n.howItWorksBody,

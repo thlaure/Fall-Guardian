@@ -68,6 +68,34 @@ class CaregiverBackendService {
     return await _storage.read(key: _linkedKey) == 'true';
   }
 
+  Future<void> markUnlinked() async {
+    await _storage.write(key: _linkedKey, value: 'false');
+  }
+
+  Future<bool> refreshLinkedProtectedPersons() async {
+    final credentials = await _credentials();
+    final response = await _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/caregiver/protected-persons'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Linked protected persons fetch timed out',
+    );
+
+    if (!_isSuccess(response.statusCode)) {
+      throw CaregiverApiException(
+        'Failed to fetch linked protected persons',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    final linked = _decodeCollection(jsonDecode(response.body)).isNotEmpty;
+    await _storage.write(key: _linkedKey, value: linked ? 'true' : 'false');
+
+    return linked;
+  }
+
   Future<void> acceptInvite(String code) async {
     var credentials = await _credentials();
     var response = await _acceptInvite(code, credentials);
@@ -237,6 +265,10 @@ class CaregiverBackendService {
   /// need to know which wire shape was used, so this service converts both into
   /// a single `List<Map<String, dynamic>>`.
   List<Map<String, dynamic>> _decodeAlertCollection(Object? decoded) {
+    return _decodeCollection(decoded);
+  }
+
+  List<Map<String, dynamic>> _decodeCollection(Object? decoded) {
     final items = switch (decoded) {
       final List<dynamic> list => list,
       final Map<String, dynamic> wrapper =>

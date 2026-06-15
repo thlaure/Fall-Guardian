@@ -19,7 +19,7 @@ void main() {
 
     expect(find.text('Fall Guardian Caregiver'), findsOneWidget);
     expect(find.text('Not Linked Yet'), findsOneWidget);
-    expect(find.text('Link with Protected Person'), findsOneWidget);
+    expect(find.text('Add protected person'), findsOneWidget);
     expect(find.text('How it works'), findsOneWidget);
   });
 
@@ -44,7 +44,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Monitoring Active'), findsOneWidget);
-    expect(find.text('Link with Protected Person'), findsNothing);
+    expect(find.text('Add another protected person'), findsOneWidget);
   });
 
   testWidgets('link screen accepts the grouped 32-character invite format', (
@@ -82,7 +82,7 @@ void main() {
     await tester.pump();
 
     await tester.enterText(find.byType(TextFormField), 'ABC12345');
-    await tester.tap(find.text('Link as Caregiver'));
+    await tester.tap(find.text('Add as Caregiver'));
     await tester.pump();
 
     expect(find.text('Enter the full 32-character code'), findsOneWidget);

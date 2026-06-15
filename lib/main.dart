@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
@@ -15,13 +16,6 @@ import 'services/push_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    ).timeout(const Duration(seconds: 5));
-  } catch (e) {
-    developer.log('Firebase init skipped: $e', name: 'main');
-  }
   runApp(const CaregiverApp());
 }
 
@@ -69,8 +63,12 @@ class _AppRoot extends StatefulWidget {
 }
 
 class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
+  static const _activeAlertPollInterval = Duration(seconds: 5);
+
   final _backend = CaregiverBackendService();
   late PushNotificationService _pushService;
+  Timer? _activeAlertPoller;
+  bool _recoveringActiveAlert = false;
 
   Map<String, dynamic>? _activeAlert;
   bool _linked = false;
@@ -79,12 +77,16 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _pushService = PushNotificationService(onAlertReceived: _handleAlert);
+    _pushService = PushNotificationService(
+      onAlertReceived: _handleAlert,
+      onLinkRevoked: _handleLinkRevoked,
+    );
     _bootstrap();
   }
 
   @override
   void dispose() {
+    _stopActiveAlertPolling();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -92,51 +94,69 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startActiveAlertPolling();
       unawaited(_recoverActiveAlert());
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _stopActiveAlertPolling();
     }
   }
 
   void _bootstrap() {
-    unawaited(_loadLinkState());
+    unawaited(_refreshLinkState());
     unawaited(_initializePushNotifications());
     unawaited(_recoverActiveAlert());
+    _startActiveAlertPolling();
   }
 
-  Future<void> _loadLinkState() async {
+  Future<void> _refreshLinkState() async {
     try {
       await _backend.ensureRegistered();
+      final linked = await _backend.refreshLinkedProtectedPersons();
+      if (mounted) {
+        setState(() => _linked = linked);
+      }
+    } catch (e) {
       final linked = await _backend.isLinked();
       if (mounted) {
         setState(() => _linked = _linked || linked);
       }
-    } catch (e) {
       developer.log('Device bootstrap skipped: $e', name: '_AppRootState');
     }
   }
 
   Future<void> _initializePushNotifications() async {
     try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       await _pushService.initialize();
-      final token = await _pushService.getFcmToken();
-      if (token != null) {
-        try {
-          await _backend.registerPushToken(token);
-          developer.log('FCM token registered', name: '_AppRootState');
-        } catch (e) {
-          // Not yet linked — token registration will fail if device is not caregiver type.
-          // This is fine; we'll retry after linking.
-          developer.log(
-            'FCM token registration skipped: $e',
-            name: '_AppRootState',
-          );
-        }
-      }
+      await _registerFcmToken(await _pushService.getFcmToken());
+      FirebaseMessaging.instance.onTokenRefresh.listen(_registerFcmToken);
     } catch (e) {
       developer.log('Push bootstrap skipped: $e', name: '_AppRootState');
     }
   }
 
+  Future<void> _registerFcmToken(String? token) async {
+    if (token == null) return;
+    try {
+      await _backend.registerPushToken(token);
+      developer.log('FCM token registered', name: '_AppRootState');
+    } catch (e) {
+      // Not yet linked — token registration will fail if device is not caregiver type.
+      // This is fine; we'll retry after linking.
+      developer.log(
+        'FCM token registration skipped: $e',
+        name: '_AppRootState',
+      );
+    }
+  }
+
   Future<void> _recoverActiveAlert() async {
+    if (_recoveringActiveAlert) return;
+    _recoveringActiveAlert = true;
     try {
       final alert = await _backend.getLatestActiveAlertData();
       if (alert != null) {
@@ -144,7 +164,21 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       }
     } catch (e) {
       developer.log('Active alert recovery skipped: $e', name: '_AppRootState');
+    } finally {
+      _recoveringActiveAlert = false;
     }
+  }
+
+  void _startActiveAlertPolling() {
+    _activeAlertPoller ??= Timer.periodic(
+      _activeAlertPollInterval,
+      (_) => unawaited(_recoverActiveAlert()),
+    );
+  }
+
+  void _stopActiveAlertPolling() {
+    _activeAlertPoller?.cancel();
+    _activeAlertPoller = null;
   }
 
   void _handleAlert(Map<String, dynamic> data) {
@@ -152,21 +186,22 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     setState(() => _activeAlert = data);
   }
 
+  void _handleLinkRevoked() {
+    if (!mounted) return;
+    unawaited(_refreshLinkState());
+  }
+
   void _onLinked() {
     setState(() => _linked = true);
-    // Re-register the FCM token now that we are linked
-    _pushService.getFcmToken().then((token) {
-      if (token != null) {
-        _backend
-            .registerPushToken(token)
-            .catchError(
-              (Object e) => developer.log(
-                'Push token re-registration error: $e',
-                name: '_AppRootState',
-              ),
-            );
-      }
-    });
+    _pushService
+        .getFcmToken()
+        .then(_registerFcmToken)
+        .catchError(
+          (Object e) => developer.log(
+            'Push token re-registration error: $e',
+            name: '_AppRootState',
+          ),
+        );
   }
 
   @override

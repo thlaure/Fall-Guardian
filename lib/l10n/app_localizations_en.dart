@@ -12,7 +12,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusUnlinkedTitle => 'Not Linked Yet';
   @override
   String get statusLinkedBody =>
-      'You will receive push alerts if a fall is detected on the protected person\'s device.';
+      'You will receive push alerts if a fall is detected on a linked protected person\'s device.';
   @override
   String get statusUnlinkedBody =>
       'Link with a protected person to start receiving fall alerts.';
@@ -20,7 +20,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get linkedSnackbar =>
       'Linked successfully! You will now receive fall alerts.';
   @override
-  String get linkButton => 'Link with Protected Person';
+  String get linkButton => 'Add protected person';
+  @override
+  String get relinkButton => 'Add another protected person';
   @override
   String get statusCardTitle => 'Status';
   @override
@@ -30,8 +32,8 @@ class AppLocalizationsEn extends AppLocalizations {
       'Push notifications are active. Keep this app installed.';
   @override
   String get howItWorksBody =>
-      '1. Ask the protected person to generate a code in their Fall Guardian app.\n'
-      '2. Tap "Link" above and enter the code.\n'
+      '1. Ask each protected person to generate a code in their Fall Guardian app.\n'
+      '2. Tap "Add protected person" above and enter the code.\n'
       '3. You\'ll receive push alerts on every detected fall.';
   @override
   String get importantTitle => 'Important';
@@ -58,12 +60,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   // ── Link ──────────────────────────────────────────────────────────────────
   @override
-  String get linkScreenTitle => 'Link with Protected Person';
+  String get linkScreenTitle => 'Add Protected Person';
   @override
   String get enterInviteCodeTitle => 'Enter Invite Code';
   @override
   String get inviteCodeInstructions =>
-      'Ask the protected person to generate a code in their Fall Guardian app.';
+      'Ask the protected person to generate a code in their Fall Guardian app. You can repeat this for multiple people.';
   @override
   String get codeFieldLabel => '32-character invite code';
   @override
@@ -75,5 +77,5 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get connectionError => 'Connection error. Check the backend.';
   @override
-  String get linkAsCaregiverButton => 'Link as Caregiver';
+  String get linkAsCaregiverButton => 'Add as Caregiver';
 }

@@ -27,6 +27,7 @@ abstract class AppLocalizations {
   String get statusUnlinkedBody;
   String get linkedSnackbar;
   String get linkButton;
+  String get relinkButton;
   String get statusCardTitle;
   String get howItWorksTitle;
   String get statusCardBody;

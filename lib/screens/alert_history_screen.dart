@@ -230,7 +230,7 @@ class _AlertTile extends StatelessWidget {
     if (isCancelled) {
       statusColor = cs.onSurfaceVariant;
       statusIcon = Icons.cancel_outlined;
-      statusLabel = 'Cancelled';
+      statusLabel = 'Stopped by protected person';
     } else if (acknowledged) {
       statusColor = Colors.green;
       statusIcon = Icons.check_circle_outline;

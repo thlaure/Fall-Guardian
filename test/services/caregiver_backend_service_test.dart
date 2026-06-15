@@ -125,6 +125,81 @@ void main() {
     expect(await service.isLinked(), isTrue);
   });
 
+  test('markUnlinked clears the persisted caregiver link state', () async {
+    FlutterSecureStorage.setMockInitialValues({'caregiver_linked': 'true'});
+
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        fail('markUnlinked must not call the backend.');
+      }),
+    );
+
+    await service.markUnlinked();
+
+    expect(await service.isLinked(), isFalse);
+  });
+
+  test(
+    'refreshLinkedProtectedPersons stores true when at least one link exists',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+        'caregiver_linked': 'false',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/v1/caregiver/protected-persons');
+          expect(request.headers['Authorization'], 'Bearer token-1');
+
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {'protectedDeviceId': 'protected-1'},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final linked = await service.refreshLinkedProtectedPersons();
+
+      expect(linked, isTrue);
+      expect(await service.isLinked(), isTrue);
+    },
+  );
+
+  test(
+    'refreshLinkedProtectedPersons stores false when no link remains',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+        'caregiver_linked': 'true',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode({'hydra:member': <Map<String, dynamic>>[]}),
+            200,
+          );
+        }),
+      );
+
+      final linked = await service.refreshLinkedProtectedPersons();
+
+      expect(linked, isFalse);
+      expect(await service.isLinked(), isFalse);
+    },
+  );
+
   test(
     'acceptInvite refreshes stale credentials after unauthorized response',
     () async {

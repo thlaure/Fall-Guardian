@@ -12,17 +12,30 @@ Future<void> _onBackgroundMessage(RemoteMessage message) async {
     'FCM background message: ${message.messageId}',
     name: 'PushNotificationService',
   );
-  await PendingAlertStore().save(message.data);
+  if (_isFallAlert(message.data)) {
+    await PendingAlertStore().save(message.data);
+  }
+  // caregiver_revoked in background: _loadLinkState() on next resume handles it.
+}
+
+bool _isFallAlert(Map<String, dynamic> data) {
+  final type = data['type'] as String?;
+  return type == null || type == 'fall_alert';
 }
 
 class PushNotificationService {
   PushNotificationService({
     required this.onAlertReceived,
+    required this.onLinkRevoked,
     PendingAlertStore? pendingAlertStore,
   }) : _pendingAlertStore = pendingAlertStore ?? PendingAlertStore();
 
   /// Called whenever a fall alert data message arrives (foreground or opened-from-notification).
   final void Function(Map<String, dynamic> data) onAlertReceived;
+
+  /// Called when a caregiver_revoked notification is received in the foreground.
+  final void Function() onLinkRevoked;
+
   final PendingAlertStore _pendingAlertStore;
 
   FirebaseMessaging get _messaging => FirebaseMessaging.instance;
@@ -49,7 +62,7 @@ class PushNotificationService {
         name: 'PushNotificationService',
       );
       if (message.data.isNotEmpty) {
-        onAlertReceived(message.data);
+        _route(message.data);
       }
     });
 
@@ -60,21 +73,34 @@ class PushNotificationService {
         name: 'PushNotificationService',
       );
       if (message.data.isNotEmpty) {
-        await _pendingAlertStore.take();
-        onAlertReceived(message.data);
+        if (_isFallAlert(message.data)) {
+          await _pendingAlertStore.take();
+        }
+        _route(message.data);
       }
     });
 
     // Launched from terminated state via notification tap
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null && initialMessage.data.isNotEmpty) {
-      await _pendingAlertStore.take();
-      onAlertReceived(initialMessage.data);
+      if (_isFallAlert(initialMessage.data)) {
+        await _pendingAlertStore.take();
+      }
+      _route(initialMessage.data);
     } else {
       final pendingAlert = await _pendingAlertStore.take();
       if (pendingAlert != null) {
         onAlertReceived(pendingAlert);
       }
+    }
+  }
+
+  void _route(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    if (type == 'caregiver_revoked') {
+      onLinkRevoked();
+    } else {
+      onAlertReceived(data);
     }
   }
 
