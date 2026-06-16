@@ -32,8 +32,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (_) {
       setState(() => _loading = false);
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load history.')),
+          SnackBar(content: Text(l10n.historyLoadFailed)),
         );
       }
     }

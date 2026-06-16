@@ -69,17 +69,17 @@ class AppLocalizationsFr extends AppLocalizations {
   String get fallAlertTitle => 'Chute détectée !';
   @override
   String get fallAlertBody =>
-      'Vos aidants seront prévenus sauf si vous annulez.';
+      'Annulez si vous allez bien. L’événement restera visible dans l’historique.';
   @override
   String get gettingLocation => 'Récupération de votre position…';
   @override
   String get sendingAlert => "Envoi de l’alerte\u2026";
   @override
   String get smsFailed =>
-      '⚠️ Échec de la soumission de l’alerte. Contactez vos aidants manuellement.';
+      'Échec de l’envoi de l’alerte. Contactez vos aidants manuellement maintenant.';
   @override
   String get alertSubmitted =>
-      'Alerte soumise. Les aidants liés seront prévenus par le backend.';
+      'Alerte envoyée. Les aidants liés peuvent la voir et l’acquitter.';
   @override
   String get cancelAlert => 'Je vais bien — Annuler l\'alerte';
 
@@ -96,11 +96,14 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get historyEmpty => 'Aucune chute enregistrée';
   @override
-  String get statusAlertSent => 'Alerte envoyée';
+  String get historyLoadFailed =>
+      'Impossible de charger l’historique des chutes.';
+  @override
+  String get statusAlertSent => 'Alerte envoyée aux aidants';
   @override
   String get statusAlertFailed => 'Alerte échouée';
   @override
-  String get statusCancelled => 'Annulée';
+  String get statusCancelled => 'Annulée par la personne protégée';
   @override
   String get statusTimedOut => 'Délai expiré';
   @override

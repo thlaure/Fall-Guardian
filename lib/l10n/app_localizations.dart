@@ -65,6 +65,7 @@ abstract class AppLocalizations {
   String get clearHistoryBody;
   String get clear;
   String get historyEmpty;
+  String get historyLoadFailed;
   String get statusAlertSent;
   String get statusAlertFailed;
   String get statusCancelled;

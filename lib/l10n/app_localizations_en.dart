@@ -68,17 +68,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fallAlertTitle => 'Fall Detected!';
   @override
   String get fallAlertBody =>
-      'Your caregivers will be notified unless you cancel.';
+      'Cancel if you are OK. The event will still be saved in history.';
   @override
   String get gettingLocation => 'Getting your location…';
   @override
   String get sendingAlert => 'Sending alert…';
   @override
   String get smsFailed =>
-      '⚠️ Alert submission failed. Contact your caregivers manually.';
+      'Alert submission failed. Contact your caregivers manually now.';
   @override
   String get alertSubmitted =>
-      'Alert submitted. Linked caregivers will be notified by the backend.';
+      'Alert sent. Linked caregivers can see and acknowledge it.';
   @override
   String get cancelAlert => "I'm OK — Cancel Alert";
 
@@ -95,11 +95,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get historyEmpty => 'No fall events recorded';
   @override
-  String get statusAlertSent => 'Alert Sent';
+  String get historyLoadFailed => 'Failed to load fall history.';
+  @override
+  String get statusAlertSent => 'Alert sent to caregivers';
   @override
   String get statusAlertFailed => 'Alert Failed';
   @override
-  String get statusCancelled => 'Cancelled';
+  String get statusCancelled => 'Cancelled by protected person';
   @override
   String get statusTimedOut => 'Timed Out';
   @override
