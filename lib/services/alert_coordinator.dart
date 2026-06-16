@@ -158,16 +158,21 @@ class AlertCoordinator {
     }
 
     final clientAlertId = _activeClientAlertId;
-    if (_submittedToBackend && clientAlertId != null) {
-      unawaited(_backendGateway.cancelFallAlert(clientAlertId: clientAlertId));
+    final wasSubmittedToBackend = _submittedToBackend;
+    _transition(timestamp, AlertPhase.cancelled);
+    _activeTimestamp = null;
+    _activeClientAlertId = null;
+    _submittedToBackend = false;
+    _currentState = null;
+
+    if (wasSubmittedToBackend && clientAlertId != null) {
+      await _cancelSubmittedFallAlert(clientAlertId: clientAlertId);
     } else if (clientAlertId != null) {
-      unawaited(_recordCancelledFallAlert(
+      await _recordCancelledFallAlert(
         clientAlertId: clientAlertId,
         timestamp: timestamp,
-      ));
+      );
     }
-
-    _transition(timestamp, AlertPhase.cancelled);
 
     final event = FallEvent(
       id: _idGenerator.newId(),
@@ -176,11 +181,18 @@ class AlertCoordinator {
     );
     await _eventRecorder.add(event);
     await _notificationGateway.cancelAll();
-    _activeTimestamp = null;
-    _activeClientAlertId = null;
-    _submittedToBackend = false;
-    _currentState = null;
     _dismissController.add(null);
+  }
+
+  Future<void> _cancelSubmittedFallAlert({
+    required String clientAlertId,
+  }) async {
+    try {
+      await _backendGateway.cancelFallAlert(clientAlertId: clientAlertId);
+    } catch (_) {
+      // The local cancellation must not be rolled back by a transient backend
+      // failure; local history still records the cancelled fall.
+    }
   }
 
   Future<void> _recordCancelledFallAlert({

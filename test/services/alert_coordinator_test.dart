@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
@@ -41,9 +43,15 @@ class _FakeNotificationService implements AlertNotificationGateway {
 }
 
 class _FakeBackendGateway implements AlertBackendGateway {
-  _FakeBackendGateway({this.shouldFail = false});
+  _FakeBackendGateway({
+    this.shouldFail = false,
+    this.recordCancelledCompleter,
+    this.cancelCompleter,
+  });
 
   final bool shouldFail;
+  final Completer<void>? recordCancelledCompleter;
+  final Completer<void>? cancelCompleter;
   String? lastClientAlertId;
   String? lastLocale;
   List<Contact>? lastContacts;
@@ -95,11 +103,13 @@ class _FakeBackendGateway implements AlertBackendGateway {
     lastTimestamp = fallTimestamp;
     lastLatitude = latitude;
     lastLongitude = longitude;
+    await recordCancelledCompleter?.future;
   }
 
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
     cancelCount++;
+    await cancelCompleter?.future;
   }
 }
 
@@ -264,6 +274,93 @@ void main() {
     expect(backend.cancelCount, 0);
     expect(backend.cancelledRecordCount, 1);
     expect(backend.lastClientAlertId, 'id-0');
+
+    coordinator.dispose();
+  });
+
+  test('cancelFromPhone waits for backend cancellation record before finishing',
+      () async {
+    final backendCompleter = Completer<void>();
+    final backend = _FakeBackendGateway(
+      recordCancelledCompleter: backendCompleter,
+    );
+    final coordinator = _coordinator(backendGateway: backend);
+
+    await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
+
+    var completed = false;
+    final cancelFuture = coordinator.cancelFromPhone().then((_) {
+      completed = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backend.cancelledRecordCount, 1);
+    expect(completed, isFalse);
+
+    backendCompleter.complete();
+    await cancelFuture;
+
+    expect(completed, isTrue);
+
+    coordinator.dispose();
+  });
+
+  test('cancelFromPhone invalidates alert before backend cancellation finishes',
+      () async {
+    final backendCompleter = Completer<void>();
+    final backend = _FakeBackendGateway(
+      recordCancelledCompleter: backendCompleter,
+    );
+    final clock = _FakeClock(DateTime(2026, 6, 16, 9, 45));
+    final coordinator = _coordinator(
+      backendGateway: backend,
+      clock: clock,
+    );
+
+    final timestamp = clock.now().millisecondsSinceEpoch;
+    await coordinator.startAlert(timestamp);
+
+    final cancelFuture = coordinator.cancelFromPhone();
+    await Future<void>.delayed(Duration.zero);
+
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
+
+    expect(backend.callCount, 0);
+    expect(backend.cancelledRecordCount, 1);
+
+    backendCompleter.complete();
+    await cancelFuture;
+
+    coordinator.dispose();
+  });
+
+  test(
+      'cancelFromPhone waits for submitted backend cancellation before finishing',
+      () async {
+    final backendCompleter = Completer<void>();
+    final backend = _FakeBackendGateway(cancelCompleter: backendCompleter);
+    final coordinator = _coordinator(backendGateway: backend);
+
+    await coordinator.startAlert(
+      DateTime.now().millisecondsSinceEpoch -
+          const Duration(seconds: 31).inMilliseconds,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    var completed = false;
+    final cancelFuture = coordinator.cancelFromPhone().then((_) {
+      completed = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backend.cancelCount, 1);
+    expect(completed, isFalse);
+
+    backendCompleter.complete();
+    await cancelFuture;
+
+    expect(completed, isTrue);
 
     coordinator.dispose();
   });
