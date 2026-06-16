@@ -59,6 +59,22 @@ Feature: Fall alert management
     Then the response status code is 201
     And the response JSON field "status" equals "cancelled"
 
+  Scenario: Protected person can record a cancelled fall before caregiver notification
+    Given I register a protected person device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "fa-behat-cancelled-before-dispatch",
+        "fallTimestamp": "2025-01-01T12:00:00+00:00",
+        "locale": "en",
+        "cancelled": true
+      }
+      """
+    Then the response status code is 201
+    And the response JSON field "status" equals "cancelled"
+    And the response JSON field "clientAlertId" equals "fa-behat-cancelled-before-dispatch"
+
   Scenario: Fall alert coordinates must be geographically valid
     Given I register a protected person device
     And I am authenticated as the protected person
