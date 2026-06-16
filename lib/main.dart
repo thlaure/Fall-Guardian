@@ -11,6 +11,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_localizations.dart';
 import 'screens/active_alert_screen.dart';
 import 'screens/home_screen.dart';
+import 'services/active_alert_presentation_state.dart';
 import 'services/caregiver_backend_service.dart';
 import 'services/push_notification_service.dart';
 
@@ -70,7 +71,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   Timer? _activeAlertPoller;
   bool _recoveringActiveAlert = false;
 
-  Map<String, dynamic>? _activeAlert;
+  final _activeAlertPresentation = ActiveAlertPresentationState();
   bool _linked = false;
 
   @override
@@ -183,7 +184,9 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
 
   void _handleAlert(Map<String, dynamic> data) {
     if (!mounted) return;
-    setState(() => _activeAlert = data);
+    if (_activeAlertPresentation.show(data)) {
+      setState(() {});
+    }
   }
 
   void _handleLinkRevoked() {
@@ -206,10 +209,13 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (_activeAlert != null) {
+    final activeAlert = _activeAlertPresentation.activeAlert;
+    if (activeAlert != null) {
       return ActiveAlertScreen(
-        alertData: _activeAlert!,
-        onDismiss: () => setState(() => _activeAlert = null),
+        alertData: activeAlert,
+        onDismiss: () {
+          setState(_activeAlertPresentation.dismissActive);
+        },
       );
     }
 
