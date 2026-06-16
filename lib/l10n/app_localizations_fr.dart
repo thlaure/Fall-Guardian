@@ -56,6 +56,17 @@ class AppLocalizationsFr extends AppLocalizations {
   String get alertIdTitle => 'ID alerte';
   @override
   String get acknowledge => 'Acquitter';
+  @override
+  String get activeAlertGuidanceWithLocation =>
+      'Acquittez quand vous avez vu cette alerte. Si vous n’arrivez pas à joindre la personne protégée, utilisez la position ci-dessous et appelez les secours.';
+  @override
+  String get activeAlertGuidanceWithoutLocation =>
+      'Acquittez quand vous avez vu cette alerte. Si vous n’arrivez pas à joindre la personne protégée, appelez les secours et indiquez qu’aucune position n’a été fournie.';
+  @override
+  String get activeAlertEmergencyTitle => 'Actions d’urgence';
+  @override
+  String get activeAlertEmergencyBody =>
+      'Appelez d’abord la personne protégée si possible. Sans réponse ou si la situation semble grave, appelez les secours.';
 
   // ── Link ──────────────────────────────────────────────────────────────────
   @override
@@ -75,7 +86,35 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String inviteFailed(int code) => 'Échec de l\'invitation ($code).';
   @override
-  String get connectionError => 'Erreur de connexion. Vérifiez le backend.';
+  String get connectionError =>
+      'Erreur de connexion. Vérifiez le réseau et que le backend est joignable.';
   @override
   String get linkAsCaregiverButton => 'Ajouter en tant qu\'aidant';
+
+  // ── History ───────────────────────────────────────────────────────────────
+  @override
+  String get historyTitle => 'Historique des chutes';
+  @override
+  String get historyLoadFailed => 'Impossible de charger l’historique';
+  @override
+  String get retry => 'Réessayer';
+  @override
+  String get historyEmpty => 'Aucune alerte de chute';
+  @override
+  String protectedPersonLabel(int number) => 'Personne protégée $number';
+  @override
+  String protectedPersonSubtitle(String platform, String shortId) =>
+      'Appareil ${platform.toUpperCase()} $shortId';
+  @override
+  String alertCountLabel(int count) =>
+      count == 1 ? '1 alerte' : '$count alertes';
+  @override
+  String get statusStoppedByProtectedPerson =>
+      'Annulée par la personne protégée';
+  @override
+  String get statusAcknowledged => 'Acquittée par un aidant';
+  @override
+  String get statusUnacknowledged => 'À acquitter par un aidant';
+  @override
+  String get unknownDate => 'Date inconnue';
 }

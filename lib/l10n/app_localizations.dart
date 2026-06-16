@@ -42,6 +42,10 @@ abstract class AppLocalizations {
   String get locationTitle;
   String get alertIdTitle;
   String get acknowledge;
+  String get activeAlertGuidanceWithLocation;
+  String get activeAlertGuidanceWithoutLocation;
+  String get activeAlertEmergencyTitle;
+  String get activeAlertEmergencyBody;
 
   // ── Link ──────────────────────────────────────────────────────────────────
   String get linkScreenTitle;
@@ -53,6 +57,19 @@ abstract class AppLocalizations {
   String inviteFailed(int code);
   String get connectionError;
   String get linkAsCaregiverButton;
+
+  // ── History ───────────────────────────────────────────────────────────────
+  String get historyTitle;
+  String get historyLoadFailed;
+  String get retry;
+  String get historyEmpty;
+  String protectedPersonLabel(int number);
+  String protectedPersonSubtitle(String platform, String shortId);
+  String alertCountLabel(int count);
+  String get statusStoppedByProtectedPerson;
+  String get statusAcknowledged;
+  String get statusUnacknowledged;
+  String get unknownDate;
 }
 
 class _AppLocalizationsDelegate

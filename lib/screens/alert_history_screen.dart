@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 
 class AlertHistoryScreen extends StatefulWidget {
@@ -65,10 +66,11 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fall History'),
+        title: Text(l10n.historyTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -91,9 +93,9 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                 children: [
                   Icon(Icons.cloud_off, size: 48, color: cs.error),
                   const SizedBox(height: 12),
-                  const Text('Failed to load history'),
+                  Text(l10n.historyLoadFailed),
                   const SizedBox(height: 16),
-                  FilledButton(onPressed: _load, child: const Text('Retry')),
+                  FilledButton(onPressed: _load, child: Text(l10n.retry)),
                 ],
               ),
             )
@@ -109,17 +111,17 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No fall alerts yet',
+                    l10n.historyEmpty,
                     style: TextStyle(color: cs.onSurfaceVariant, fontSize: 18),
                   ),
                 ],
               ),
             )
-          : _buildGroupedList(cs),
+          : _buildGroupedList(cs, l10n),
     );
   }
 
-  Widget _buildGroupedList(ColorScheme cs) {
+  Widget _buildGroupedList(ColorScheme cs, AppLocalizations l10n) {
     final groups = _groupByDevice();
     final deviceIds = groups.keys.toList();
 
@@ -132,19 +134,25 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         final platform =
             '${deviceAlerts.first['protectedDevicePlatform'] ?? 'unknown'}';
         final deviceNumber = index + 1;
+        final shortDeviceId = deviceId.length <= 8
+            ? deviceId
+            : deviceId.substring(0, 8);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (index > 0) const SizedBox(height: 24),
             _DeviceHeader(
-              label: 'Device $deviceNumber',
+              label: l10n.protectedPersonLabel(deviceNumber),
+              subtitle: l10n.protectedPersonSubtitle(platform, shortDeviceId),
               platform: platform,
-              alertCount: deviceAlerts.length,
+              alertCountLabel: l10n.alertCountLabel(deviceAlerts.length),
               cs: cs,
             ),
             const SizedBox(height: 8),
-            ...deviceAlerts.map((alert) => _AlertTile(alert: alert, cs: cs)),
+            ...deviceAlerts.map(
+              (alert) => _AlertTile(alert: alert, cs: cs, l10n: l10n),
+            ),
           ],
         );
       },
@@ -155,14 +163,16 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
 class _DeviceHeader extends StatelessWidget {
   const _DeviceHeader({
     required this.label,
+    required this.subtitle,
     required this.platform,
-    required this.alertCount,
+    required this.alertCountLabel,
     required this.cs,
   });
 
   final String label;
+  final String subtitle;
   final String platform;
-  final int alertCount;
+  final String alertCountLabel;
   final ColorScheme cs;
 
   @override
@@ -175,15 +185,25 @@ class _DeviceHeader extends StatelessWidget {
           color: cs.primary,
         ),
         const SizedBox(width: 6),
-        Text(
-          '$label (${platform.toUpperCase()})',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: cs.onSurface,
-            fontSize: 15,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: cs.onSurface,
+                  fontSize: 15,
+                ),
+              ),
+              Text(
+                subtitle,
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
@@ -191,7 +211,7 @@ class _DeviceHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            '$alertCount',
+            alertCountLabel,
             style: TextStyle(
               color: cs.onPrimaryContainer,
               fontSize: 12,
@@ -205,10 +225,11 @@ class _DeviceHeader extends StatelessWidget {
 }
 
 class _AlertTile extends StatelessWidget {
-  const _AlertTile({required this.alert, required this.cs});
+  const _AlertTile({required this.alert, required this.cs, required this.l10n});
 
   final Map<String, dynamic> alert;
   final ColorScheme cs;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +242,7 @@ class _AlertTile extends StatelessWidget {
     )?.toLocal();
     final dateStr = date != null
         ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}  ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
-        : 'Unknown date';
+        : l10n.unknownDate;
 
     final Color statusColor;
     final IconData statusIcon;
@@ -230,15 +251,15 @@ class _AlertTile extends StatelessWidget {
     if (isCancelled) {
       statusColor = cs.onSurfaceVariant;
       statusIcon = Icons.cancel_outlined;
-      statusLabel = 'Stopped by protected person';
+      statusLabel = l10n.statusStoppedByProtectedPerson;
     } else if (acknowledged) {
       statusColor = Colors.green;
       statusIcon = Icons.check_circle_outline;
-      statusLabel = 'Acknowledged';
+      statusLabel = l10n.statusAcknowledged;
     } else {
       statusColor = cs.error;
       statusIcon = Icons.warning_amber_rounded;
-      statusLabel = 'Unacknowledged';
+      statusLabel = l10n.statusUnacknowledged;
     }
 
     return Card(

@@ -75,42 +75,74 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.warning_rounded, color: Colors.white, size: 96),
-              const SizedBox(height: 24),
-              Text(
-                l10n.fallDetectedTitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Icon(
+                        Icons.warning_rounded,
+                        color: Colors.white,
+                        size: 96,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        l10n.fallDetectedTitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        l10n.detectedAt(_formattedTime),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _hasLocation
+                            ? l10n.activeAlertGuidanceWithLocation
+                            : l10n.activeAlertGuidanceWithoutLocation,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+                      if (_hasLocation) ...[
+                        _InfoCard(
+                          icon: Icons.location_on,
+                          title: l10n.locationTitle,
+                          body: 'Lat: $_latitude\nLng: $_longitude',
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      _InfoCard(
+                        icon: Icons.info_outline,
+                        title: l10n.alertIdTitle,
+                        body: _alertId,
+                      ),
+                      const SizedBox(height: 16),
+                      _InfoCard(
+                        icon: Icons.health_and_safety_outlined,
+                        title: l10n.activeAlertEmergencyTitle,
+                        body: l10n.activeAlertEmergencyBody,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                l10n.detectedAt(_formattedTime),
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white70, fontSize: 18),
-              ),
-              const SizedBox(height: 32),
-              if (_hasLocation) ...[
-                _InfoCard(
-                  icon: Icons.location_on,
-                  title: l10n.locationTitle,
-                  body: 'Lat: $_latitude\nLng: $_longitude',
-                ),
-                const SizedBox(height: 16),
-              ],
-              _InfoCard(
-                icon: Icons.info_outline,
-                title: l10n.alertIdTitle,
-                body: _alertId,
-              ),
-              const Spacer(),
+              const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: _acknowledging ? null : _acknowledge,
                 icon: _acknowledging

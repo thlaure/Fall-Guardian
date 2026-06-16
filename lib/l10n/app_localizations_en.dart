@@ -57,6 +57,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get alertIdTitle => 'Alert ID';
   @override
   String get acknowledge => 'Acknowledge';
+  @override
+  String get activeAlertGuidanceWithLocation =>
+      'Acknowledge when you have seen this alert. If you cannot reach the protected person, use the location below and call emergency services.';
+  @override
+  String get activeAlertGuidanceWithoutLocation =>
+      'Acknowledge when you have seen this alert. If you cannot reach the protected person, call emergency services and explain that no location was provided.';
+  @override
+  String get activeAlertEmergencyTitle => 'Emergency actions';
+  @override
+  String get activeAlertEmergencyBody =>
+      'Call the protected person first when possible. If there is no answer or the situation looks serious, call emergency services.';
 
   // ── Link ──────────────────────────────────────────────────────────────────
   @override
@@ -75,7 +86,33 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String inviteFailed(int code) => 'Failed to accept invite ($code).';
   @override
-  String get connectionError => 'Connection error. Check the backend.';
+  String get connectionError =>
+      'Connection error. Check your network and that the backend is reachable.';
   @override
   String get linkAsCaregiverButton => 'Add as Caregiver';
+
+  // ── History ───────────────────────────────────────────────────────────────
+  @override
+  String get historyTitle => 'Fall History';
+  @override
+  String get historyLoadFailed => 'Failed to load history';
+  @override
+  String get retry => 'Retry';
+  @override
+  String get historyEmpty => 'No fall alerts yet';
+  @override
+  String protectedPersonLabel(int number) => 'Protected person $number';
+  @override
+  String protectedPersonSubtitle(String platform, String shortId) =>
+      '${platform.toUpperCase()} device $shortId';
+  @override
+  String alertCountLabel(int count) => count == 1 ? '1 alert' : '$count alerts';
+  @override
+  String get statusStoppedByProtectedPerson => 'Cancelled by protected person';
+  @override
+  String get statusAcknowledged => 'Acknowledged by caregiver';
+  @override
+  String get statusUnacknowledged => 'Needs caregiver acknowledgement';
+  @override
+  String get unknownDate => 'Unknown date';
 }
