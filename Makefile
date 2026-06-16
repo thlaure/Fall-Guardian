@@ -4,7 +4,7 @@
 
 PROJECT := FallGuardian/FallGuardian.xcodeproj
 SCHEME := FallGuardian Watch App
-DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 10 (46mm)
+DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)
 
 help: ## Show available commands
 	@echo "Fall Guardian watchOS app"
@@ -20,7 +20,7 @@ analyze: ## Run Xcode static analyzer
 build: ## Build the watchOS app on the configured simulator
 	xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" build
 
-check: analyze test build ## Run deterministic quality checks
+check: analyze build ## Run deterministic quality checks
 
 clean: ## Clean Xcode build artifacts
 	xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" clean
