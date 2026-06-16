@@ -38,4 +38,20 @@ void main() {
     expect(state.show({'alertId': 'alert-2'}), isTrue);
     expect(state.activeAlert?['alertId'], 'alert-2');
   });
+
+  test('clearActive removes current alert without dismissing it', () {
+    final state = ActiveAlertPresentationState();
+
+    expect(state.show({'alertId': 'alert-1'}), isTrue);
+    expect(state.clearActive(), isTrue);
+
+    expect(state.activeAlert, isNull);
+    expect(state.show({'alertId': 'alert-1'}), isTrue);
+  });
+
+  test('clearActive returns false when no alert is active', () {
+    final state = ActiveAlertPresentationState();
+
+    expect(state.clearActive(), isFalse);
+  });
 }

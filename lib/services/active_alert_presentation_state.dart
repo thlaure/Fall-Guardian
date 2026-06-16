@@ -30,6 +30,15 @@ class ActiveAlertPresentationState {
     activeAlert = null;
   }
 
+  bool clearActive() {
+    if (activeAlert == null) {
+      return false;
+    }
+
+    activeAlert = null;
+    return true;
+  }
+
   static String? alertId(Map<String, dynamic> data) {
     final alertId = data['alertId'];
     return alertId is String && alertId.isNotEmpty ? alertId : null;

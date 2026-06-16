@@ -162,6 +162,8 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
       final alert = await _backend.getLatestActiveAlertData();
       if (alert != null) {
         _handleAlert(alert);
+      } else if (mounted && _activeAlertPresentation.clearActive()) {
+        setState(() {});
       }
     } catch (e) {
       developer.log('Active alert recovery skipped: $e', name: '_AppRootState');
