@@ -175,6 +175,47 @@ void main() {
   );
 
   test(
+    'getLinkedProtectedPersons returns linked devices from API Platform',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/v1/caregiver/protected-persons');
+
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {
+                  'protectedDeviceId': 'protected-1',
+                  'protectedDevicePlatform': 'ios',
+                },
+                {
+                  'protectedDeviceId': 'protected-2',
+                  'protectedDevicePlatform': 'android',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final protectedPersons = await service.getLinkedProtectedPersons();
+
+      expect(protectedPersons, hasLength(2));
+      expect(protectedPersons.first.protectedDeviceId, 'protected-1');
+      expect(protectedPersons.first.protectedDevicePlatform, 'ios');
+      expect(protectedPersons.last.protectedDevicePlatform, 'android');
+    },
+  );
+
+  test(
     'refreshLinkedProtectedPersons stores false when no link remains',
     () async {
       FlutterSecureStorage.setMockInitialValues({

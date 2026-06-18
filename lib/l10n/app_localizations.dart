@@ -28,6 +28,7 @@ abstract class AppLocalizations {
   String get linkedSnackbar;
   String get linkButton;
   String get relinkButton;
+  String get protectedPersonsButton;
   String get statusCardTitle;
   String get howItWorksTitle;
   String get statusCardBody;
@@ -57,6 +58,14 @@ abstract class AppLocalizations {
   String inviteFailed(int code);
   String get connectionError;
   String get linkAsCaregiverButton;
+
+  // ── Protected Persons ─────────────────────────────────────────────────────
+  String get protectedPersonsTitle;
+  String get protectedPersonsLoadFailed;
+  String get protectedPersonsEmptyTitle;
+  String get protectedPersonsEmptyBody;
+  String get protectedPersonDeviceIdTitle;
+  String protectedPersonsCount(int count);
 
   // ── History ───────────────────────────────────────────────────────────────
   String get historyTitle;

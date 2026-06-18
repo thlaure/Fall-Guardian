@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:caregiver_app/l10n/app_localizations.dart';
 import 'package:caregiver_app/screens/home_screen.dart';
 import 'package:caregiver_app/screens/link_screen.dart';
+import 'package:caregiver_app/screens/protected_persons_screen.dart';
+import 'package:caregiver_app/services/caregiver_backend_service.dart';
 
 void main() {
   testWidgets('renders caregiver scaffold home', (tester) async {
@@ -19,7 +21,8 @@ void main() {
 
     expect(find.text('Fall Guardian Caregiver'), findsOneWidget);
     expect(find.text('Not Linked Yet'), findsOneWidget);
-    expect(find.text('Add protected person'), findsOneWidget);
+    expect(find.text('View protected persons'), findsOneWidget);
+    expect(find.text('Add protected person'), findsNothing);
     expect(find.text('How it works'), findsOneWidget);
   });
 
@@ -44,7 +47,45 @@ void main() {
     await tester.pump();
 
     expect(find.text('Monitoring Active'), findsOneWidget);
-    expect(find.text('Add another protected person'), findsOneWidget);
+    expect(find.text('View protected persons'), findsOneWidget);
+  });
+
+  testWidgets('protected persons screen lists people before add action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: ProtectedPersonsScreen(
+          backend: _FakeCaregiverBackendService([
+            const LinkedProtectedPerson(
+              protectedDeviceId: 'protected-device-1',
+              protectedDevicePlatform: 'ios',
+            ),
+            const LinkedProtectedPerson(
+              protectedDeviceId: 'protected-device-2',
+              protectedDevicePlatform: 'android',
+            ),
+          ]),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Protected persons'), findsOneWidget);
+    expect(find.text('2 protected persons'), findsOneWidget);
+    expect(find.text('Protected person 1'), findsOneWidget);
+    expect(find.text('Protected person 2'), findsOneWidget);
+    expect(find.text('Add protected person'), findsOneWidget);
+
+    final firstTileTop = tester.getTopLeft(find.text('Protected person 1')).dy;
+    final addButtonTop = tester
+        .getTopLeft(find.text('Add protected person'))
+        .dy;
+    expect(addButtonTop, greaterThan(firstTileTop));
   });
 
   testWidgets('link screen accepts the grouped 32-character invite format', (
@@ -87,4 +128,15 @@ void main() {
 
     expect(find.text('Enter the full 32-character code'), findsOneWidget);
   });
+}
+
+class _FakeCaregiverBackendService extends CaregiverBackendService {
+  _FakeCaregiverBackendService(this.protectedPersons);
+
+  final List<LinkedProtectedPerson> protectedPersons;
+
+  @override
+  Future<List<LinkedProtectedPerson>> getLinkedProtectedPersons() async {
+    return protectedPersons;
+  }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import 'alert_history_screen.dart';
-import 'link_screen.dart';
+import 'protected_persons_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
   const CaregiverHomeScreen({super.key, required this.isLinked, this.onLinked});
@@ -107,33 +107,19 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            _linked
-                ? OutlinedButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => LinkScreen(onLinked: _onLinked),
-                      ),
-                    ),
-                    icon: const Icon(Icons.swap_horiz),
-                    label: Text(l10n.relinkButton),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  )
-                : FilledButton.icon(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => LinkScreen(onLinked: _onLinked),
-                      ),
-                    ),
-                    icon: const Icon(Icons.add_link),
-                    label: Text(l10n.linkButton),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
+            FilledButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => ProtectedPersonsScreen(onLinked: _onLinked),
+                ),
+              ),
+              icon: const Icon(Icons.people_alt_outlined),
+              label: Text(l10n.protectedPersonsButton),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+            ),
             const SizedBox(height: 16),
             _InfoCard(
               title: _linked ? l10n.statusCardTitle : l10n.howItWorksTitle,

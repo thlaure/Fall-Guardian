@@ -73,6 +73,14 @@ class CaregiverBackendService {
   }
 
   Future<bool> refreshLinkedProtectedPersons() async {
+    final protectedPersons = await getLinkedProtectedPersons();
+    final linked = protectedPersons.isNotEmpty;
+    await _storage.write(key: _linkedKey, value: linked ? 'true' : 'false');
+
+    return linked;
+  }
+
+  Future<List<LinkedProtectedPerson>> getLinkedProtectedPersons() async {
     final credentials = await _credentials();
     final response = await _send(
       _client.get(
@@ -90,10 +98,9 @@ class CaregiverBackendService {
       );
     }
 
-    final linked = _decodeCollection(jsonDecode(response.body)).isNotEmpty;
-    await _storage.write(key: _linkedKey, value: linked ? 'true' : 'false');
-
-    return linked;
+    return _decodeCollection(
+      jsonDecode(response.body),
+    ).map(LinkedProtectedPerson.fromJson).toList();
   }
 
   Future<void> acceptInvite(String code) async {
@@ -335,6 +342,24 @@ class CaregiverApiException implements Exception {
 
   @override
   String toString() => 'CaregiverApiException($message, $statusCode, $body)';
+}
+
+class LinkedProtectedPerson {
+  const LinkedProtectedPerson({
+    required this.protectedDeviceId,
+    required this.protectedDevicePlatform,
+  });
+
+  factory LinkedProtectedPerson.fromJson(Map<String, dynamic> json) {
+    return LinkedProtectedPerson(
+      protectedDeviceId: '${json['protectedDeviceId'] ?? 'unknown'}',
+      protectedDevicePlatform:
+          '${json['protectedDevicePlatform'] ?? 'unknown'}',
+    );
+  }
+
+  final String protectedDeviceId;
+  final String protectedDevicePlatform;
 }
 
 class _CaregiverCredentials {

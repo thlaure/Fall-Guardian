@@ -24,10 +24,7 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for android - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return android;
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
@@ -59,5 +56,13 @@ class DefaultFirebaseOptions {
     projectId: 'fall-guardian-e6d5b',
     storageBucket: 'fall-guardian-e6d5b.firebasestorage.app',
     iosBundleId: 'com.fallguardian.caregiverApp',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyAIS1m0KbleKLtB5jq7NdB0MO7eie_Gc7k',
+    appId: '1:153278137136:android:ad54523252c6c38f9e3ef5',
+    messagingSenderId: '153278137136',
+    projectId: 'fall-guardian-e6d5b',
+    storageBucket: 'fall-guardian-e6d5b.firebasestorage.app',
   );
 }

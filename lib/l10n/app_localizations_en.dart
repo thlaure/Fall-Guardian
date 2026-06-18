@@ -24,6 +24,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get relinkButton => 'Add another protected person';
   @override
+  String get protectedPersonsButton => 'View protected persons';
+  @override
   String get statusCardTitle => 'Status';
   @override
   String get howItWorksTitle => 'How it works';
@@ -90,6 +92,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'Connection error. Check your network and that the backend is reachable.';
   @override
   String get linkAsCaregiverButton => 'Add as Caregiver';
+
+  // ── Protected Persons ─────────────────────────────────────────────────────
+  @override
+  String get protectedPersonsTitle => 'Protected persons';
+  @override
+  String get protectedPersonsLoadFailed => 'Failed to load protected persons';
+  @override
+  String get protectedPersonsEmptyTitle => 'No protected persons yet';
+  @override
+  String get protectedPersonsEmptyBody =>
+      'Ask a protected person to generate an invite code, then add them here.';
+  @override
+  String get protectedPersonDeviceIdTitle => 'Device ID';
+  @override
+  String protectedPersonsCount(int count) =>
+      count == 1 ? '1 protected person' : '$count protected persons';
 
   // ── History ───────────────────────────────────────────────────────────────
   @override
