@@ -2,6 +2,7 @@
 // A "Stream" in Dart is like a pipe that can carry a sequence of events over
 // time — we use one here to broadcast cancel signals to any open alert screen.
 import 'dart:async';
+import 'dart:developer' as developer;
 
 // Flutter's material library provides the core UI building blocks:
 // widgets, themes, navigation, etc. "Material" refers to Google's design system.
@@ -30,25 +31,35 @@ import 'services/location_service.dart';
 import 'services/notification_service.dart';
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
-// Every Flutter app starts here. The `async` keyword allows us to `await`
-// asynchronous work before the first frame is drawn.
-void main() async {
+// Every Flutter app starts here.
+void main() {
   // Step 1 — Bind Flutter to the native platform.
   // Flutter's engine communicates with Android/iOS through "bindings". Before
-  // calling any platform API (like notifications) we must tell Flutter that
-  // the engine is ready. Without this line, any `await` before `runApp` would
-  // silently hang.
+  // calling any platform API we must tell Flutter that the engine is ready.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Step 2 — Initialise the notification plugin ONCE, at startup.
-  // flutter_local_notifications registers its Android notification channel and
-  // requests iOS permission here. It must happen before any notification can
-  // be shown. We do it eagerly so the channel exists the moment a fall fires.
-  await NotificationService().initialize();
-
-  // Step 3 — Hand control to Flutter and draw the first widget.
+  // Step 2 — Hand control to Flutter and draw the first widget immediately.
+  // Startup services are initialized after runApp so a plugin failure cannot
+  // leave the user stuck on the native white launch view.
   // `runApp` inflates the root widget and begins the render loop.
   runApp(const FallGuardianApp());
+
+  unawaited(_initializeStartupServices());
+}
+
+Future<void> _initializeStartupServices() async {
+  try {
+    // flutter_local_notifications registers its Android notification channel.
+    // On iOS this is intentionally a no-op; see NotificationService.
+    await NotificationService().initialize();
+  } catch (error, stackTrace) {
+    developer.log(
+      'Startup service initialization failed',
+      name: 'FallGuardianApp',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 }
 
 // ─── Root widget ─────────────────────────────────────────────────────────────
