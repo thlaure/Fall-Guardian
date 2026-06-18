@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Http\Security;
 
 use App\Entity\Device;
+use Deprecated;
 use Symfony\Component\Security\Core\User\UserInterface;
 
 final readonly class DeviceApiUser implements UserInterface
@@ -23,6 +24,7 @@ final readonly class DeviceApiUser implements UserInterface
         return ['ROLE_DEVICE'];
     }
 
+    #[Deprecated]
     public function eraseCredentials(): void
     {
     }
