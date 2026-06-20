@@ -6,7 +6,6 @@ services:
             context: .
             dockerfile: .docker/api/Dockerfile
             target: frankenphp_dev
-        container_name: fall-guardian-api
         restart: unless-stopped
         environment:
             SERVER_NAME: :80
@@ -58,7 +57,6 @@ services:
             context: .
             dockerfile: .docker/api/Dockerfile
             target: frankenphp_dev
-        container_name: fall-guardian-messenger
         restart: unless-stopped
         environment:
             APP_ENV: ${APP_ENV:-dev}
@@ -88,7 +86,6 @@ services:
 
     postgres:
         image: postgres:${POSTGRES_VERSION:-16}-alpine
-        container_name: fall-guardian-postgres
         restart: unless-stopped
         environment:
             POSTGRES_DB: ${POSTGRES_DB:-fall_guardian}
@@ -110,7 +107,6 @@ services:
 
     redis:
         image: redis:7-alpine
-        container_name: fall-guardian-redis
         restart: unless-stopped
         healthcheck:
             test: ["CMD", "redis-cli", "ping"]

@@ -2,6 +2,8 @@
 
 .DEFAULT_GOAL := help
 
+ANDROID_HOME ?= $(HOME)/Library/Android/sdk
+
 help: ## Show available commands
 	@grep -E '(^[a-zA-Z_-]+:.*?##.*$$)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
@@ -22,8 +24,7 @@ quality-caregiver: ## Run caregiver mobile quality checks
 	$(MAKE) -C apps/caregiver_mobile quality
 
 quality-wear-os: ## Run Wear OS checks
-	$(MAKE) -C apps/wear_os check
+	ANDROID_HOME=$(ANDROID_HOME) $(MAKE) -C apps/wear_os check
 
 quality-watchos: ## Run watchOS checks
 	$(MAKE) -C apps/watchos check
-

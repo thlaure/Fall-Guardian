@@ -12,7 +12,6 @@ services:
             target: frankenphp_prod
             args:
                 REGISTRY: ${REGISTRY:-}
-        container_name: fall-guardian-api
         restart: unless-stopped
         environment:
             SERVER_NAME: http://localhost, http://app
@@ -55,7 +54,6 @@ services:
             target: frankenphp_prod
             args:
                 REGISTRY: ${REGISTRY:-}
-        container_name: fall-guardian-messenger
         restart: unless-stopped
         environment:
             APP_SECRET: ${APP_SECRET:-changeme}
@@ -79,7 +77,6 @@ services:
 
     postgres:
         image: postgres:${POSTGRES_VERSION:-16}-alpine
-        container_name: fall-guardian-postgres
         environment:
             POSTGRES_DB: ${POSTGRES_DB:-fall_guardian}
             POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall_guardian}
@@ -100,7 +97,6 @@ services:
 
     redis:
         image: redis:7-alpine
-        container_name: fall-guardian-redis
         healthcheck:
             test: ["CMD", "redis-cli", "ping"]
             timeout: 5s
