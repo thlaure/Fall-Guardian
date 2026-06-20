@@ -24,8 +24,10 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
+        _assertConfigured(android, 'android');
         return android;
       case TargetPlatform.iOS:
+        _assertConfigured(ios, 'ios');
         return ios;
       case TargetPlatform.macOS:
         throw UnsupportedError(
@@ -49,8 +51,17 @@ class DefaultFirebaseOptions {
     }
   }
 
+  static void _assertConfigured(FirebaseOptions options, String platform) {
+    if (options.apiKey.isEmpty) {
+      throw UnsupportedError(
+        'Firebase $platform options are not configured. '
+        'Pass the Firebase API key with --dart-define.',
+      );
+    }
+  }
+
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDiper6egquJd1a07T-6mSKGV6BwgtiKoU',
+    apiKey: String.fromEnvironment('FIREBASE_IOS_API_KEY'),
     appId: '1:153278137136:ios:3a86738a98bd421c9e3ef5',
     messagingSenderId: '153278137136',
     projectId: 'fall-guardian-e6d5b',
@@ -59,7 +70,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyAIS1m0KbleKLtB5jq7NdB0MO7eie_Gc7k',
+    apiKey: String.fromEnvironment('FIREBASE_ANDROID_API_KEY'),
     appId: '1:153278137136:android:ad54523252c6c38f9e3ef5',
     messagingSenderId: '153278137136',
     projectId: 'fall-guardian-e6d5b',

@@ -25,6 +25,19 @@ interaction.
 flutter pub get
 ```
 
+## Firebase Push Configuration
+
+Do not commit generated Firebase native config files or API keys. The caregiver
+app reads Firebase API keys from Dart defines:
+
+```sh
+make run-android-debug FIREBASE_ANDROID_API_KEY=...
+make run-ios-profile FIREBASE_IOS_API_KEY=...
+```
+
+Without these values, Firebase initialization is skipped at runtime and push
+notifications are unavailable for that build.
+
 ## Verification
 
 ```sh

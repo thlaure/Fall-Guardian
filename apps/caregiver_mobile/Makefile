@@ -9,9 +9,14 @@ IOS_DEVICE_ID ?= $(if $(DEVICE_ID),$(DEVICE_ID),iPhone)
 IOS_BUNDLE_ID ?= com.fallguardian.caregiverApp
 ANDROID_PACKAGE_ID ?= com.fallguardian.caregiver_app
 BACKEND_BASE_URL ?=
+FIREBASE_ANDROID_API_KEY ?=
+FIREBASE_IOS_API_KEY ?=
 DEVICE_ARG := $(if $(DEVICE_ID),-d $(DEVICE_ID),)
 ANDROID_DEVICE_ARG := $(if $(DEVICE_ID),-s $(DEVICE_ID),)
 BACKEND_ARG := $(if $(BACKEND_BASE_URL),--dart-define=BACKEND_BASE_URL=$(BACKEND_BASE_URL),)
+FIREBASE_ANDROID_ARG := $(if $(FIREBASE_ANDROID_API_KEY),--dart-define=FIREBASE_ANDROID_API_KEY=$(FIREBASE_ANDROID_API_KEY),)
+FIREBASE_IOS_ARG := $(if $(FIREBASE_IOS_API_KEY),--dart-define=FIREBASE_IOS_API_KEY=$(FIREBASE_IOS_API_KEY),)
+FIREBASE_ARGS := $(FIREBASE_ANDROID_ARG) $(FIREBASE_IOS_ARG)
 
 help: ## Show available commands
 	@echo "Fall Guardian caregiver app"
@@ -44,21 +49,21 @@ quality: format-check analyze coverage-check ## Run deterministic quality checks
 check: quality ## Run the default verification set
 
 build-android: ## Build Android debug APK
-	flutter build apk --debug
+	flutter build apk --debug $(FIREBASE_ARGS)
 
 build-ios: ## Build iOS simulator app
-	flutter build ios --simulator --debug
+	flutter build ios --simulator --debug $(FIREBASE_ARGS)
 
 run-android-debug: ## Install and launch Android debug build on a physical device
-	flutter run --debug $(DEVICE_ARG) --no-resident $(BACKEND_ARG)
+	flutter run --debug $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
 
 run-android-wired: ## Launch Android debug through USB reverse proxy to the local backend
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
-	flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002
+	flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002 $(FIREBASE_ARGS)
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
 
 run-ios-profile: ## Install and launch iOS profile build on a physical device
-	flutter run --profile $(DEVICE_ARG) --no-resident $(BACKEND_ARG)
+	flutter run --profile $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
 
 logs-flutter: ## Stream Flutter logs from the selected running app
 	flutter logs $(DEVICE_ARG)
