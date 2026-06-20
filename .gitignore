@@ -1,0 +1,16 @@
+.DS_Store
+*.log
+
+# Local tooling
+.idea/
+.vscode/
+
+# Build outputs
+build/
+coverage/
+dist/
+
+# Local environment
+.env.local
+.env.*.local
+
