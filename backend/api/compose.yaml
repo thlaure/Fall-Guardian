@@ -1,0 +1,137 @@
+# Development environment build.
+services:
+    app:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_dev
+        container_name: fall-guardian-api
+        restart: unless-stopped
+        environment:
+            SERVER_NAME: :80
+            APP_ENV: ${APP_ENV:-dev}
+            APP_DEBUG: ${APP_DEBUG:-1}
+            APP_SECRET: ${APP_SECRET:-changeme}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+            XDEBUG_MODE: "${XDEBUG_MODE:-debug,coverage}"
+            SYMFONY_VERSION: ${SYMFONY_VERSION:-}
+            STABILITY: ${STABILITY:-stable}
+        extra_hosts:
+            - host.docker.internal:host-gateway
+        tty: true
+        volumes:
+            - ./:/app
+            - .docker/api/frankenphp/Caddyfile:/etc/caddy/Caddyfile:ro
+            - .docker/api/frankenphp/conf.d/20-app.dev.ini:/usr/local/etc/php/app.conf.d/20-app.dev.ini:ro
+            - caddy_data:/data
+            - caddy_config:/config
+        networks:
+            - app_network
+        ports:
+            - target: 80
+              published: ${HTTP_PORT:-8002}
+              protocol: tcp
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 120s
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+
+    messenger:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_dev
+        container_name: fall-guardian-messenger
+        restart: unless-stopped
+        environment:
+            APP_ENV: ${APP_ENV:-dev}
+            APP_DEBUG: ${APP_DEBUG:-1}
+            APP_SECRET: ${APP_SECRET:-changeme}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+        volumes:
+            - ./:/app
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        healthcheck:
+            disable: true
+        command: sh -c 'while true; do php bin/console messenger:consume async --time-limit=30 --memory-limit=256M -vv; done'
+        networks:
+            - app_network
+
+    postgres:
+        image: postgres:${POSTGRES_VERSION:-16}-alpine
+        container_name: fall-guardian-postgres
+        restart: unless-stopped
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-fall_guardian}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall_guardian}
+            POSTGRES_USER: ${POSTGRES_USER:-fall_guardian}
+        healthcheck:
+            test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-fall_guardian}", "-U", "${POSTGRES_USER:-fall_guardian}"]
+            timeout: 5s
+            retries: 5
+            start_period: 60s
+        volumes:
+            - database_data:/var/lib/postgresql/data:rw
+        ports:
+            - target: 5432
+              published: ${POSTGRES_PORT:-5434}
+              protocol: tcp
+        networks:
+            - app_network
+
+    redis:
+        image: redis:7-alpine
+        container_name: fall-guardian-redis
+        restart: unless-stopped
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+        volumes:
+            - redis_data:/data
+        ports:
+            - target: 6379
+              published: ${REDIS_PORT:-6380}
+              protocol: tcp
+        networks:
+            - app_network
+
+volumes:
+    caddy_data:
+    caddy_config:
+    database_data:
+    redis_data:
+
+networks:
+    app_network:
+        driver: bridge

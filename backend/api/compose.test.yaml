@@ -1,0 +1,54 @@
+services:
+    app:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api:test
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_test
+            args:
+                REGISTRY: ${REGISTRY:-}
+        container_name: fall-guardian-api-test
+        environment:
+            APP_ENV: test
+            APP_SECRET: ${APP_SECRET:-test-secret}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-test-secret}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian_test}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: in-memory://
+            MESSENGER_FAILED_TRANSPORT_DSN: in-memory://
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: fake
+        volumes:
+            - ./:/app
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+
+    postgres:
+        image: postgres:${POSTGRES_VERSION:-16}-alpine
+        container_name: fall-guardian-postgres-test
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-fall_guardian_test}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall_guardian}
+            POSTGRES_USER: ${POSTGRES_USER:-fall_guardian}
+        healthcheck:
+            test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-fall_guardian_test}", "-U", "${POSTGRES_USER:-fall_guardian}"]
+            timeout: 5s
+            retries: 5
+            start_period: 60s
+        volumes:
+            - test_database_data:/var/lib/postgresql/data:rw
+
+    redis:
+        image: redis:7-alpine
+        container_name: fall-guardian-redis-test
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
+volumes:
+    test_database_data:

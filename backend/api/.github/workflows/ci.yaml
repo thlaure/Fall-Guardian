@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: ~
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+        env:
+          COMPOSER_MEMORY_LIMIT: -1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build test image
+        run: docker compose -f compose.test.yaml build
+
+      - name: Start services
+        run: docker compose -f compose.test.yaml up -d
+
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose -f compose.test.yaml logs
+
+      - name: Create test database
+        run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:database:create --if-not-exists
+
+      - name: Run migrations
+        run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:migrations:migrate --no-interaction
+
+      - name: Run PHPUnit
+        run: docker compose -f compose.test.yaml exec -T app vendor/bin/phpunit
+
+      - name: Run PHPUnit with coverage
+        run: docker compose -f compose.test.yaml exec -T app php -d pcov.enabled=1 vendor/bin/phpunit --coverage-clover var/coverage/clover.xml --coverage-text
+
+      - name: Check coverage threshold (90%)
+        run: |
+          COVERAGE=$(docker compose -f compose.test.yaml exec -T app php -r "
+            \$xml = simplexml_load_file('var/coverage/clover.xml');
+            \$metrics = \$xml->project->metrics;
+            \$statements = (int)\$metrics['statements'];
+            \$covered = (int)\$metrics['coveredstatements'];
+            echo \$statements > 0 ? round((\$covered / \$statements) * 100, 2) : 0;
+          ")
+          echo "Line coverage: ${COVERAGE}%"
+          if [ "$(echo "${COVERAGE} < 90" | bc)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below the 90% threshold"
+            exit 1
+          fi
+
+      - name: Run Behat
+        run: docker compose -f compose.test.yaml exec -T app vendor/bin/behat --no-interaction --colors
+
+      - name: Audit PHP dependencies
+        # Exit 1 = vulnerabilities (blocking), exit 2 = abandoned packages (non-blocking)
+        run: |
+          docker compose -f compose.test.yaml exec -T app composer audit || { code=$?; [ "$code" -eq 2 ] || exit "$code"; }
+
+      - name: Run CS Fixer (dry-run)
+        run: docker compose -f compose.test.yaml exec -T app vendor/bin/php-cs-fixer fix --dry-run --diff
+
+      - name: Run PHPStan
+        run: docker compose -f compose.test.yaml exec -T app vendor/bin/phpstan analyse
+
+      - name: Run Rector (dry-run)
+        run: docker compose -f compose.test.yaml exec -T app vendor/bin/rector process --dry-run
+
+      - name: YAML linter
+        run: docker compose -f compose.test.yaml exec -T app php bin/console lint:yaml config
+
+      - name: Doctrine Schema Validator
+        run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:schema:validate --skip-sync || true
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+  trivy:
+    name: Trivy Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build prod image
+        run: docker build -f .docker/api/Dockerfile --target frankenphp_prod -t fall-guardian-api:ci .
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: fall-guardian-api:ci
+          format: table
+          exit-code: 0
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Scan repository for misconfigurations
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: 0
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+  lint:
+    name: Docker Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: .docker/api/Dockerfile
+          failure-threshold: error

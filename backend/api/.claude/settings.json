@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make lint:*)",
+      "Bash(rtk make lint:*)",
+      "Bash(make lint-dry:*)",
+      "Bash(rtk make lint-dry:*)",
+      "Bash(make analyse:*)",
+      "Bash(rtk make analyse:*)",
+      "Bash(make rector:*)",
+      "Bash(rtk make rector:*)",
+      "Bash(make rector-dry:*)",
+      "Bash(rtk make rector-dry:*)",
+      "Bash(make quality:*)",
+      "Bash(rtk make quality:*)",
+      "Bash(make grumphp:*)",
+      "Bash(rtk make grumphp:*)",
+      "Bash(make up:*)",
+      "Bash(rtk make up:*)",
+      "Bash(make down:*)",
+      "Bash(rtk make down:*)",
+      "Bash(make build:*)",
+      "Bash(rtk make build:*)",
+      "Bash(make rebuild:*)",
+      "Bash(rtk make rebuild:*)",
+      "Bash(make ps:*)",
+      "Bash(rtk make ps:*)",
+      "Bash(make composer-install:*)",
+      "Bash(rtk make composer-install:*)",
+      "Bash(make composer-update:*)",
+      "Bash(rtk make composer-update:*)",
+      "Bash(make test:*)",
+      "Bash(rtk make test:*)",
+      "Bash(make test-unit:*)",
+      "Bash(rtk make test-unit:*)",
+      "Bash(make test-integration:*)",
+      "Bash(rtk make test-integration:*)",
+      "Bash(make test-behat:*)",
+      "Bash(rtk make test-behat:*)",
+      "Bash(make cache-clear:*)",
+      "Bash(rtk make cache-clear:*)",
+      "Bash(make migrate:*)",
+      "Bash(rtk make migrate:*)",
+      "Bash(make routes:*)",
+      "Bash(rtk make routes:*)",
+      "Bash(git status:*)",
+      "Bash(rtk git status:*)",
+      "Bash(git diff:*)",
+      "Bash(rtk git diff:*)",
+      "Bash(git log:*)",
+      "Bash(rtk git log:*)",
+      "Bash(git show:*)",
+      "Bash(rtk git show:*)",
+      "Bash(git branch:*)",
+      "Bash(rtk git branch:*)",
+      "Bash(git add:*)",
+      "Bash(rtk git add:*)",
+      "Bash(git fetch:*)",
+      "Bash(rtk git fetch:*)",
+      "Read",
+      "Write",
+      "Edit"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -r:*)",
+      "Bash(rm -f:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(git rm:*)",
+      "Bash(truncate:*)",
+      "Bash(unlink:*)",
+      "Bash(rmdir:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/php_syntax_check.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/credential_write_guard.py\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/protected_branch_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/out_of_project_write_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
