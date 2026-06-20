@@ -109,6 +109,12 @@ make run-android-wired FIREBASE_ANDROID_API_KEY=...
 Without these values, Firebase initialization is skipped at runtime and push
 notifications are unavailable for that build.
 
+iOS push notifications also require Apple-side configuration. Before adding an
+`aps-environment` entitlement to the Xcode project, enable the Push
+Notifications capability for `com.fallguardian.caregiverApp` in Apple
+Developer/Xcode and regenerate the provisioning profile. Otherwise local device
+builds fail with a provisioning profile error.
+
 Ignored local/generated files:
 
 ```text

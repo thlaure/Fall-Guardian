@@ -216,6 +216,64 @@ void main() {
   );
 
   test(
+    'getLinkedProtectedPersons refreshes stale credentials after unauthorized response',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'stale-device',
+        'caregiver_device_token': 'stale-token',
+      });
+
+      final requests = <String>[];
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+
+          if (request.url.path == '/api/v1/caregiver/protected-persons' &&
+              request.headers['Authorization'] == 'Bearer stale-token') {
+            return http.Response('unauthorized', 401);
+          }
+
+          if (request.url.path == '/api/v1/devices/register') {
+            final payload = jsonDecode(request.body) as Map<String, dynamic>;
+            expect(payload['deviceType'], 'caregiver');
+            return http.Response(
+              jsonEncode({
+                'deviceId': 'fresh-device',
+                'deviceToken': 'fresh-token',
+              }),
+              201,
+            );
+          }
+
+          if (request.url.path == '/api/v1/caregiver/protected-persons' &&
+              request.headers['Authorization'] == 'Bearer fresh-token') {
+            return http.Response(
+              jsonEncode({
+                'hydra:member': [
+                  {'protectedDeviceId': 'protected-1'},
+                ],
+              }),
+              200,
+            );
+          }
+
+          fail('Unexpected request: ${request.method} ${request.url}');
+        }),
+      );
+
+      final protectedPersons = await service.getLinkedProtectedPersons();
+
+      expect(protectedPersons.single.protectedDeviceId, 'protected-1');
+      expect(requests, [
+        'GET /api/v1/caregiver/protected-persons',
+        'POST /api/v1/devices/register',
+        'GET /api/v1/caregiver/protected-persons',
+      ]);
+    },
+  );
+
+  test(
     'refreshLinkedProtectedPersons stores false when no link remains',
     () async {
       FlutterSecureStorage.setMockInitialValues({
