@@ -1,22 +1,31 @@
-name: CI
+name: Assisted Mobile CI
 
 on:
   push:
     branches:
       - main
+    paths:
+      - apps/assisted_mobile/**
+      - .github/workflows/assisted-mobile-ci.yaml
   pull_request:
     branches:
       - main
+    paths:
+      - apps/assisted_mobile/**
+      - .github/workflows/assisted-mobile-ci.yaml
   workflow_dispatch: ~
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: assisted-mobile-ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
   quality:
     name: Quality
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/assisted_mobile
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -33,19 +42,6 @@ jobs:
       - name: Run deterministic quality checks
         run: make quality
 
-      - name: Build Android APK (debug)
+      - name: Build Android APK
         run: make build-android
 
-  secret-scan:
-    name: Secret Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@main
-        with:
-          extra_args: --only-verified

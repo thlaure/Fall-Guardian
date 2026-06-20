@@ -1,0 +1,47 @@
+name: Caregiver Mobile CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/caregiver_mobile/**
+      - .github/workflows/caregiver-mobile-ci.yaml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/caregiver_mobile/**
+      - .github/workflows/caregiver-mobile-ci.yaml
+  workflow_dispatch: ~
+
+concurrency:
+  group: caregiver-mobile-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/caregiver_mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: beta
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run deterministic quality checks
+        run: make quality
+
+      - name: Build Android APK
+        run: make build-android
+
