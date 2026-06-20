@@ -22,3 +22,10 @@ Workflow:
 5. Report findings first, ordered by severity, with file paths.
 
 Do not spend review budget on style nits already covered by deterministic tools.
+
+Output:
+
+1. Severity-ordered findings: `CRITICAL` / `HIGH` / `MEDIUM` / `LOW`, file path, description.
+2. Missing or broken tests.
+3. Skipped quality gates with reason.
+4. Overall verdict: `APPROVED` or `CHANGES REQUESTED`.
