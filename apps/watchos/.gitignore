@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Xcode user data
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# Xcode build outputs
+build/
+**/build/
+*.xcresult
+
+# Swift Package Manager generated shared data
+*.xcworkspace/xcshareddata/swiftpm/
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
