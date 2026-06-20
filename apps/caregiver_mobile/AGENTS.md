@@ -2,7 +2,7 @@
 
 This repository contains the Fall Guardian caregiver Flutter mobile app.
 
-Also follow the workspace-level guide at `../AGENTS.md` when working from the parent folder.
+Also follow the workspace-level guide at `../../AGENTS.md` when working from this project.
 
 `CLAUDE.md` must stay a thin pointer to this file.
 
@@ -16,7 +16,7 @@ Also follow the workspace-level guide at `../AGENTS.md` when working from the pa
 
 Always:
 
-- keep caregiver API contracts aligned with `fall_guardian_api`
+- keep caregiver API contracts aligned with `../../backend/api`
 - keep generated Flutter/iOS/Android files out of Git unless they are intentionally source-controlled by Flutter
 - prefer readable, explicit code over clever Flutter/platform tricks
 - add concise comments for mobile/platform concepts, async flows, native bridges, permissions, background execution, notification delivery, and safety-critical alert behavior when they are not obvious to a non-mobile developer

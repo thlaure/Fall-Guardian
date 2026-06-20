@@ -137,31 +137,30 @@ When a rule is repeatable and machine-checkable, encode it in a deterministic to
 
 ## Shared `.claude` Assets
 
-Claude and Codex must both use the repo-local `.claude/` folder as shared operational guidance.
+Claude and Codex must both use the monorepo root `.claude/` folder as shared operational guidance.
 
 Use these files as the common behavior layer:
 
-- `.claude/settings.json`
-- `.claude/rules/architecture.md`
-- `.claude/rules/security.md`
-- `.claude/rules/testing.md`
-- `.claude/rules/domain.md`
-- `.claude/patterns.md`
-- `.claude/agents/qa-reviewer.md`
-- `.claude/agents/security-reviewer.md`
-- `.claude/hooks/*.py`
+- `../../.claude/settings.json`
+- `../../.claude/rules/architecture.md`
+- `../../.claude/rules/security.md`
+- `../../.claude/rules/testing.md`
+- `../../.claude/patterns.md`
+- `../../.claude/agents/qa-reviewer.md`
+- `../../.claude/agents/security-reviewer.md`
+- `../../.claude/hooks/*.py`
 
 Use the matching workflow when the task fits:
 
-- new functionality: `.claude/skills/new-feature/SKILL.md`
-- bug fixing: `.claude/skills/bug-fix/SKILL.md`
-- review: `.claude/skills/review-change/SKILL.md`
-- security review: `.claude/skills/security-review/SKILL.md`
-- commit preparation: `.claude/skills/prepare-commit/SKILL.md`
-- quality/debugging failures: `.claude/skills/debug-quality/SKILL.md`
-- execution discipline for review, refactor, or ambiguity-heavy tasks: `.claude/skills/karpathy-guidelines/SKILL.md`
-- acceptance-criteria verification: `.claude/agents/qa-reviewer.md`
-- independent security review: `.claude/agents/security-reviewer.md`
+- new functionality: `../../.claude/skills/new-feature/SKILL.md`
+- bug fixing: `../../.claude/skills/bug-fix/SKILL.md`
+- review: `../../.claude/skills/review-change/SKILL.md`
+- security review: `../../.claude/skills/security-review/SKILL.md`
+- commit preparation: `../../.claude/skills/prepare-commit/SKILL.md`
+- quality/debugging failures: `../../.claude/skills/debug-quality/SKILL.md`
+- execution discipline for review, refactor, or ambiguity-heavy tasks: `../../.claude/skills/karpathy-guidelines/SKILL.md`
+- acceptance-criteria verification: `../../.claude/agents/qa-reviewer.md`
+- independent security review: `../../.claude/agents/security-reviewer.md`
 
 Guidance:
 
@@ -170,9 +169,9 @@ Guidance:
 - skills are the third layer, for context-dependent decisions and review workflows
 - rules, patterns, and skills should remain consistent with each other
 - prefer skills when the user is speaking naturally or explicitly invokes a named workflow
-- use `AGENTS.md` as the index into `.claude/`; do not preload the full `.claude` tree
-- open the matching `.claude` file on demand when the task fits, read only enough to execute the workflow
-- `.claude/settings.json` is the versioned repository-default settings file
+- use `AGENTS.md` as the index into the shared `.claude/`; do not preload the full `.claude` tree
+- open the matching shared `.claude` file on demand when the task fits, read only enough to execute the workflow
+- root `.claude/settings.json` is the versioned repository-default settings file
 
 ## Instructions Improvement Policy
 

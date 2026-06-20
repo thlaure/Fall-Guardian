@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""PostToolUse Write|Edit: run php -l on PHP files changed by the agent."""
+"""PostToolUse Write|Edit: run php -l on changed PHP files when PHP exists."""
 
 import json
+import shutil
 import subprocess
 import sys
 
 event = json.load(sys.stdin)
 file_path = event.get("tool_input", {}).get("file_path", "")
 
-if not file_path.endswith(".php"):
+if not file_path.endswith(".php") or shutil.which("php") is None:
     sys.exit(0)
 
 result = subprocess.run(["php", "-l", file_path], capture_output=True, text=True)

@@ -2,7 +2,7 @@
 
 This repository contains the Fall Guardian assisted user Flutter mobile app.
 
-Also follow the workspace-level guide at `../AGENTS.md` when working from the parent folder.
+Also follow the workspace-level guide at `../../AGENTS.md` when working from this project.
 
 `CLAUDE.md` must stay a thin pointer to this file.
 
