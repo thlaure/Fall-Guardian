@@ -2,6 +2,8 @@
 
 .DEFAULT_GOAL := help
 
+-include .env.local
+
 ADB ?= $(shell if [ -x "$(HOME)/Library/Android/sdk/platform-tools/adb" ]; then echo "$(HOME)/Library/Android/sdk/platform-tools/adb"; else echo adb; fi)
 XCRUN ?= xcrun
 DEVICE_ID ?=
@@ -49,21 +51,21 @@ quality: format-check analyze coverage-check ## Run deterministic quality checks
 check: quality ## Run the default verification set
 
 build-android: ## Build Android debug APK
-	flutter build apk --debug $(FIREBASE_ARGS)
+	@flutter build apk --debug $(FIREBASE_ARGS)
 
 build-ios: ## Build iOS simulator app
-	flutter build ios --simulator --debug $(FIREBASE_ARGS)
+	@flutter build ios --simulator --debug $(FIREBASE_ARGS)
 
 run-android-debug: ## Install and launch Android debug build on a physical device
-	flutter run --debug $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
+	@flutter run --debug $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
 
 run-android-wired: ## Launch Android debug through USB reverse proxy to the local backend
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
-	flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002 $(FIREBASE_ARGS)
+	@flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002 $(FIREBASE_ARGS)
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
 
 run-ios-profile: ## Install and launch iOS profile build on a physical device
-	flutter run --profile $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
+	@flutter run --profile $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
 
 logs-flutter: ## Stream Flutter logs from the selected running app
 	flutter logs $(DEVICE_ARG)

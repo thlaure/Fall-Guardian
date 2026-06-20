@@ -90,6 +90,16 @@ make run-android-debug FIREBASE_ANDROID_API_KEY=...
 make run-ios-profile FIREBASE_IOS_API_KEY=...
 ```
 
+For local development, you can also create an ignored `.env.local` file:
+
+```sh
+FIREBASE_ANDROID_API_KEY=...
+FIREBASE_IOS_API_KEY=...
+```
+
+The Makefile loads this file automatically and hides the Flutter command line so
+API keys are not echoed in build logs.
+
 For local Android over USB with backend reverse proxy:
 
 ```sh
