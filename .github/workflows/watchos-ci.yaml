@@ -1,0 +1,42 @@
+name: watchOS CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/watchos/**
+      - .github/workflows/watchos-ci.yaml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/watchos/**
+      - .github/workflows/watchos-ci.yaml
+  workflow_dispatch: ~
+
+concurrency:
+  group: watchos-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/watchos
+    env:
+      PROJECT: FallGuardian/FallGuardian.xcodeproj
+      SCHEME: FallGuardian Watch App
+      DESTINATION: generic/platform=watchOS Simulator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Analyze
+        run: make analyze
+
+      - name: Build
+        run: make build
+

@@ -1,37 +1,16 @@
-# macOS
 .DS_Store
+*.log
 
-# Logs
-firebase-debug.log
+# Local tooling
+.idea/
+.vscode/
 
-# Flutter / Dart
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.metadata
-.packages
+# Build outputs
+build/
+coverage/
+dist/
 
-# Xcode user data
-*.xcuserstate
-xcuserdata/
-DerivedData/
+# Local environment
+.env.local
+.env.*.local
 
-# Xcode build outputs
-**/build/
-*.xcresult
-
-# Xcode Swift Package Manager generated shared data
-**/*.xcworkspace/xcshareddata/swiftpm/
-**/*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
-
-# Android / Gradle local machine files
-**/.gradle/
-**/local.properties
-captures/
-keystore.properties
-*.jks
-*.keystore
-*.p12
-
-# Flutter plugin registrants / generated symlinks
-**/ios/Flutter/ephemeral/

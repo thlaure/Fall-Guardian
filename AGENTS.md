@@ -1,245 +1,67 @@
-# Agent Guide
+@/Users/thomaslaure/.codex/RTK.md
 
-Canonical agent instructions for this repository live in this file.
+# Fall Guardian Monorepo Guide
 
-`CLAUDE.md` must stay a thin pointer to `AGENTS.md` so Claude and Codex share one source of truth.
+Use Caveman mode by default, full intensity, unless the user asks otherwise.
+Use RTK for shell commands when compatible with tool constraints.
 
-## Read First
-
-- `PROJECT_CONTEXT.md`
-- `WORKFLOW.md`
-- `CURRENT_STATUS.md`
-
-## Project
-
-- Cross-platform fall detection and alerting app
-- Flutter phone app, native watch apps, Symfony/API Platform backend
-- Primary workflows: watch fall detection, phone alert orchestration, backend-owned escalation, caregiver notification delivery
-
-## Architecture
-
-- Use clean architecture and ports/adapters pragmatically
-- Keep `AlertCoordinator` as the phone-side workflow owner
-- Keep Flutter widgets UI-only
-- Keep native bridges thin and focused on transport/runtime integration
-- Keep backend workflow in domain-local handlers, services, processors/providers, and Messenger handlers under `backend/src/Domain/...`
-- If a native framework or API Platform feature already solves the need cleanly, use it instead of forcing extra abstraction
-
-Current rule for this project:
-
-- phone alert flow stays explicit and coordinator-driven
-- watch implementations stay native
-- backend alert delivery stays handler/service-driven, not controller-driven
-- cross-platform contracts must remain aligned across Flutter, Android, iOS, Wear OS, watchOS, and backend
-
-### Backend Architecture
-
-The backend follows a domain-first structure inspired by `enovacom/ris-back`.
-
-Use these principles pragmatically:
-
-- new backend business features belong in `backend/src/Domain/<Feature>/...`
-- keep API Platform resources, processors/providers, handlers, messages, ports, and controllers close to the domain they serve
-- keep controllers and API Platform processors/providers focused on HTTP/API Platform orchestration
-- keep handlers and focused services as the main place for application/business flow
-- keep repositories focused on persistence and data access
-- keep DTOs, request objects, response/view objects, and API resource classes free of business decisions
-- keep Doctrine entities focused on ORM mapping and simple state transitions
-- keep external integrations in infrastructure/adapters, behind explicit ports when replaceability or testability matters
-
-Current backend shape:
+## Layout
 
 ```text
-backend/src/
-├── Domain/
-│   ├── Alert/{DTO,Handler,Message,Port,State}
-│   ├── Caregiver/{DTO,Handler,Port,State}
-│   ├── Contact/{DTO,Handler,Port,State}
-│   ├── Device/{DTO,Handler,Port,State}
-│   ├── Debug/Controller
-│   ├── Healthcheck/Controller
-│   ├── Push/Port
-│   └── Sms/{Controller,Port}
-├── Entity/
-├── Enum/
-└── Infrastructure/
+apps/assisted_mobile/     Flutter assisted person app
+apps/caregiver_mobile/    Flutter caregiver app
+apps/wear_os/             native Wear OS app
+apps/watchos/             native watchOS app
+backend/api/              Symfony/API Platform backend
+packages/                 shared contracts, fixtures, and generated artifacts
+docs/                     workspace documentation
+scripts/                  workspace automation
 ```
 
-Backend flow patterns:
+## Rules
 
-- API Platform write flow: `ApiResource DTO -> State Processor -> Handler/Service -> Port/Repository/Gateway -> View/Output DTO`
-- API Platform read flow: `ApiResource View -> State Provider -> Repository/Service -> View DTO`
-- Controller flow: `Controller -> request params/body -> Handler/Repository/Gateway -> Response`
-- Messenger flow: `Message -> MessageHandler -> Repository/Service/Gateway -> persisted audit`
+- Keep platform apps modular; this is a monorepo, not a monolith.
+- Preserve API/mobile/watch contracts when changing alert, invite, device, push,
+  acknowledgement, cancellation, or history behavior.
+- Prefer one PR for cross-project contract changes so API and apps stay in sync.
+- Keep secrets, tokens, certificates, signing files, generated local config, and
+  machine-specific files out of Git.
+- Keep automated line coverage at or above 90% when practical.
+- Tests must prove behavior, contracts, edge cases, and regressions.
+- Check status before committing. Do not revert user changes.
 
-Rules:
+## Guardrail Priority
 
-- preserve backend API prefix `/api/v1`
-- routes are discovered from `backend/src/Domain/`
-- do not reintroduce top-level backend `Application/`, `UI/`, or `Message/` layers
-- prefer extending the local domain folder pattern over introducing a new backend layout
-- if API Platform can solve a CRUD/read concern cleanly, use it directly instead of adding unnecessary layers
-- backend-owned escalation and caregiver delivery must remain service/handler-driven, not controller-driven
+Apply guardrails in this order:
 
-## Current Flow
+1. Deterministic tools: formatters, linters, static analysis, tests, builds,
+   dependency scanners, security scanners, compiler checks.
+2. Agent hooks: fast local checks around actions, such as credential guards,
+   protected branch guards, syntax checks, and write-scope checks.
+3. Skills and written guidance: architecture, review, product, security, and
+   judgment-heavy conventions.
 
-- `watch detects fall -> watch countdown starts -> phone receives shared timestamp -> AlertCoordinator owns phone workflow -> timeout submits to backend -> backend dispatches escalation`
+Move repeatable rules into deterministic tools first. Use hooks only when a rule
+must run immediately around an action. Use skills for work that requires context.
 
-## Repository Structure
+## Verification
 
-```text
-fall_guardian/
-├── caregiver_app/
-├── flutter_app/
-├── wear_os_app/
-├── watchos_app/
-└── backend/
+Root commands:
+
+```sh
+make quality
+make test
+make status
 ```
 
-## Engineering Rules
+Project commands:
 
-Always:
+- API: `make -C backend/api quality`, `make -C backend/api test`,
+  `make -C backend/api test-behat`
+- Assisted mobile: `make -C apps/assisted_mobile quality`
+- Caregiver mobile: `make -C apps/caregiver_mobile quality`
+- Wear OS: `make -C apps/wear_os check`
+- watchOS: `make -C apps/watchos check`
 
-- keep `declare(strict_types=1);` in PHP
-- prefer explicit naming
-- write tests for behavior changes
-- run verification after changes
-- preserve backend API prefix `/api/v1`
-- prefer readability and reviewability over premature optimization
-- if framework-native behavior is already clean, use it instead of layering for its own sake
-- prefer fixing static-analysis issues in code, types, or PHPDoc instead of weakening config
+If a check is skipped, report why.
 
-Ask first:
-
-- adding packages or plugins
-- changing database schema in risky or irreversible ways
-- changing the backend delivery strategy
-- changing major cross-platform contracts
-- changing `phpstan.neon`, CI policy, or release workflow
-- running `git commit`
-- running `git push`
-
-Never:
-
-- commit directly to `master`, `main`, or `develop`
-- hardcode secrets
-- put workflow logic in widgets, controllers, or framework entrypoints
-- create duplicated instructions across `AGENTS.md` and `CLAUDE.md`
-- run `git commit` or `git push` silently; always ask for confirmation in the current conversation first
-
-## Shared `.claude` Assets
-
-Claude and Codex must both use the repo-local `.claude/` folder as shared operational guidance.
-
-Use these files as the common behavior layer:
-
-- `.claude/settings.json`
-- `.claude/rules/architecture.md`
-- `.claude/rules/testing.md`
-- `.claude/rules/security.md`
-- `.claude/patterns.md`
-
-Use the matching workflow when the task fits:
-
-- scan or inspect repository work: `.claude/skills/scan-project/SKILL.md` or `.claude/commands/fall-guardian/scan-project.md`
-- new functionality: `.claude/skills/new-feature/SKILL.md` or `.claude/commands/fall-guardian/new-feature.md`
-- bug fixing: `.claude/skills/bug-fix/SKILL.md` or `.claude/commands/fall-guardian/bug-fix.md`
-- general review: `.claude/skills/review-change/SKILL.md` or `.claude/commands/fall-guardian/review-change.md`
-- security review: `.claude/skills/security-review/SKILL.md` or `.claude/commands/fall-guardian/security-review.md`
-- verification and checks: `.claude/skills/verify-quality/SKILL.md` or `.claude/commands/fall-guardian/verify-quality.md`
-- commit preparation: `.claude/skills/prepare-commit/SKILL.md` or `.claude/commands/fall-guardian/prepare-commit.md`
-- instruction improvement: `.claude/skills/improve-instructions/SKILL.md` or `.claude/commands/fall-guardian/improve-instructions.md`
-- build-in-public post drafting: `.claude/skills/propose-posts/SKILL.md` or `.claude/commands/fall-guardian/propose-posts.md`
-- production-urgency fixes: `.claude/skills/hotfix/SKILL.md` or `.claude/commands/fall-guardian/hotfix.md`
-- execution discipline for review, refactor, or ambiguity-heavy tasks: `.claude/skills/karpathy-guidelines/SKILL.md`
-
-Use the Flutter/Dart-specific workflow when the task is mainly in the phone app:
-
-- scan Flutter architecture: `.claude/skills/flutter-scan-project/SKILL.md` or `.claude/commands/flutter/scan-project.md`
-- Flutter feature work: `.claude/skills/flutter-new-feature/SKILL.md` or `.claude/commands/flutter/new-feature.md`
-- Flutter bug fixing: `.claude/skills/flutter-bug-fix/SKILL.md` or `.claude/commands/flutter/bug-fix.md`
-- Flutter review: `.claude/skills/flutter-review-change/SKILL.md` or `.claude/commands/flutter/review-change.md`
-- Flutter security review: `.claude/skills/flutter-security-review/SKILL.md` or `.claude/commands/flutter/security-review.md`
-- Flutter verification: `.claude/skills/flutter-verify-quality/SKILL.md` or `.claude/commands/flutter/verify-quality.md`
-
-Guidance:
-
-- skills and commands are two interfaces for the same workflows; do not let them drift
-- prefer skills when the user is speaking naturally
-- prefer commands when the user explicitly invokes a named workflow
-- rules and patterns are the shared source of truth behind both interfaces
-- `.claude/settings.json` is the versioned Claude Code settings file for this repository
-- Codex should follow the shared repository guidance from `AGENTS.md` and the reusable `.claude/` docs, even though it does not consume Claude Code settings natively
-- `.claude/settings.local.json` is only for optional local overrides and must not be treated as the shared team standard
-
-## Instructions Improvement Policy
-
-Instruction files are living documentation and should improve with the project and environment, but only through an explicit proposal-and-confirmation workflow.
-
-Files in scope:
-
-- `AGENTS.md`
-- `CLAUDE.md`
-- `.claude/rules/*.md`
-- `.claude/patterns.md`
-- `.claude/hooks/guardrails.py`
-- `.claude/commands/fall-guardian/*.md`
-- `.claude/commands/flutter/*.md`
-- `.claude/skills/*/SKILL.md`
-
-Policy:
-
-- instructions may be improved when there is durable evidence of drift
-- examples of drift:
-  - repeated corrections or reviewer comments
-  - repo-structure or workflow changes
-  - architecture or testing conventions that changed in practice
-  - duplicated or conflicting guidance
-- only reusable, stable guidance should be added
-- temporary context, one-off fixes, and local anecdotes should not be added to instruction files
-- changes to instruction files must be proposed first and applied only after explicit confirmation in the current conversation
-
-## Quality Gates
-
-Run when relevant:
-
-- `make check`
-- `cd flutter_app && flutter analyze`
-- `cd flutter_app && flutter test`
-- `cd backend && vendor/bin/phpstan analyse --no-progress --memory-limit=-1`
-- `cd backend && vendor/bin/phpunit --testsuite=Unit`
-- `cd backend && vendor/bin/phpunit --testsuite=Integration`
-- `cd backend && vendor/bin/behat --config behat.yaml.dist --colors`
-
-Preferred broader verification:
-
-- `make check`
-- `cd backend && docker compose -f docker-compose.yml exec -T app vendor/bin/phpstan analyse --no-progress --memory-limit=-1`
-- `cd backend && docker compose -f docker-compose.yml exec -T app vendor/bin/phpunit --testsuite=Integration`
-
-## Testing Notes
-
-- Flutter tests: `flutter_app/test`
-- Wear OS tests: `wear_os_app` Gradle test targets
-- Backend domain unit tests: `backend/tests/Unit/Domain`
-- Backend infrastructure unit tests: `backend/tests/Unit/Infrastructure`
-- Backend integration tests: `backend/tests/Integration`
-- Backend Behat API scenarios: `backend/features`
-- PHPUnit method names must stay camelCase
-
-## Documentation Policy
-
-Use this split:
-
-- `README.md`: human-facing project overview and usage
-- `PROJECT_CONTEXT.md`: canonical shared architecture and invariants
-- `WORKFLOW.md`: runtime behavior and product flow
-- `CURRENT_STATUS.md`: temporary limitations and active warnings
-- `AGENTS.md`: canonical agent instructions
-- `CLAUDE.md`: pointer file only
-
-If agent instructions need to change:
-
-1. update `AGENTS.md`
-2. keep `CLAUDE.md` minimal and referential
-3. update project docs only when human-facing behavior or workflow changed

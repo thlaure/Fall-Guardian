@@ -1,0 +1,118 @@
+# Production-like local environment.
+#
+# This file is intentionally standalone: do not merge it with compose.yaml.
+# The development compose file bind-mounts the repository into /app and mounts
+# dev PHP configuration. The prod stack must run application code baked into the image.
+services:
+    app:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_prod
+            args:
+                REGISTRY: ${REGISTRY:-}
+        restart: unless-stopped
+        environment:
+            SERVER_NAME: http://localhost, http://app
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            APP_SECRET: ${APP_SECRET:-changeme}
+            PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+        networks:
+            - app_network
+        ports:
+            - target: 80
+              published: ${HTTP_PORT:-8002}
+              protocol: tcp
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 120s
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        volumes:
+            - caddy_data:/data
+            - caddy_config:/config
+
+    messenger:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_prod
+            args:
+                REGISTRY: ${REGISTRY:-}
+        restart: unless-stopped
+        environment:
+            APP_SECRET: ${APP_SECRET:-changeme}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,REMOTE_ADDR}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:-changeme}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: ${PUSH_PROVIDER:-fake}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: php bin/console messenger:consume async --time-limit=3600 --memory-limit=256M -vv
+        networks:
+            - app_network
+
+    postgres:
+        image: postgres:${POSTGRES_VERSION:-16}-alpine
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-fall_guardian}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall_guardian}
+            POSTGRES_USER: ${POSTGRES_USER:-fall_guardian}
+        healthcheck:
+            test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-fall_guardian}", "-U", "${POSTGRES_USER:-fall_guardian}"]
+            timeout: 5s
+            retries: 5
+            start_period: 60s
+        volumes:
+            - database_data:/var/lib/postgresql/data:rw
+        ports:
+            - target: 5432
+              published: ${POSTGRES_PORT:-5434}
+              protocol: tcp
+        networks:
+            - app_network
+
+    redis:
+        image: redis:7-alpine
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+        volumes:
+            - redis_data:/data
+        networks:
+            - app_network
+
+volumes:
+    caddy_data:
+    caddy_config:
+    database_data:
+    redis_data:
+
+networks:
+    app_network:
+        driver: bridge

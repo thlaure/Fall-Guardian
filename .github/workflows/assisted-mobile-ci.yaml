@@ -1,0 +1,47 @@
+name: Assisted Mobile CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/assisted_mobile/**
+      - .github/workflows/assisted-mobile-ci.yaml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/assisted_mobile/**
+      - .github/workflows/assisted-mobile-ci.yaml
+  workflow_dispatch: ~
+
+concurrency:
+  group: assisted-mobile-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/assisted_mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run deterministic quality checks
+        run: make quality
+
+      - name: Build Android APK
+        run: make build-android
+

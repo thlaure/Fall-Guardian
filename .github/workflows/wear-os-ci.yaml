@@ -1,0 +1,46 @@
+name: Wear OS CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/wear_os/**
+      - .github/workflows/wear-os-ci.yaml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/wear_os/**
+      - .github/workflows/wear-os-ci.yaml
+  workflow_dispatch: ~
+
+concurrency:
+  group: wear-os-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/wear_os
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: apps/wear_os/**/*.gradle*
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run deterministic checks
+        run: make check
+
