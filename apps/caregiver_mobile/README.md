@@ -50,7 +50,7 @@ or notification configuration.
 
 ## Related Repositories
 
-- `../fall_guardian_api`: backend API
-- `../fall_guardian_assisted_app`: assisted user mobile app
-- `../fall_guardian_wear_os_app`: Wear OS watch app
-- `../fall_guardian_watchos_app`: watchOS app
+- `../../backend/api`: backend API
+- `../assisted_mobile`: assisted user mobile app
+- `../wear_os`: Wear OS watch app
+- `../watchos`: watchOS app

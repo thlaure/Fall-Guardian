@@ -35,7 +35,7 @@ Run platform builds from this repo when changing native Android or iOS code.
 
 ## Related Repositories
 
-- `../fall_guardian_api`: backend API
-- `../fall_guardian_caregiver_app`: caregiver mobile app
-- `../fall_guardian_wear_os_app`: Wear OS watch app
-- `../fall_guardian_watchos_app`: watchOS app
+- `../../backend/api`: backend API
+- `../caregiver_mobile`: caregiver mobile app
+- `../wear_os`: Wear OS watch app
+- `../watchos`: watchOS app

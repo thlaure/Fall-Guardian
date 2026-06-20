@@ -33,6 +33,6 @@ Use Android Studio or `adb` for emulator/device install and runtime testing.
 
 ## Related Repositories
 
-- `../fall_guardian_assisted_app`: assisted user mobile app
-- `../fall_guardian_api`: backend API
-- `../fall_guardian_watchos_app`: watchOS counterpart
+- `../assisted_mobile`: assisted user mobile app
+- `../../backend/api`: backend API
+- `../watchos`: watchOS counterpart
