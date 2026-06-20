@@ -1,0 +1,376 @@
+import 'dart:async';
+
+import 'package:geolocator/geolocator.dart';
+
+import '../models/contact.dart';
+import '../models/fall_event.dart';
+import 'alert_ports.dart';
+import 'alert_runtime.dart';
+import 'backend_api_service.dart';
+import 'location_service.dart';
+import 'notification_service.dart';
+import '../repositories/contacts_repository.dart';
+import '../repositories/fall_events_repository.dart';
+
+enum AlertPhase {
+  countdown,
+  gettingLocation,
+  sendingAlert,
+  alertSent,
+  alertFailed,
+  timedOutNoSms,
+  cancelled,
+}
+
+class AlertUiState {
+  final int fallTimestamp;
+  final AlertPhase phase;
+  final String? statusMessage;
+
+  const AlertUiState({
+    required this.fallTimestamp,
+    required this.phase,
+    this.statusMessage,
+  });
+
+  bool get isSending =>
+      phase == AlertPhase.gettingLocation ||
+      phase == AlertPhase.sendingAlert ||
+      phase == AlertPhase.alertSent ||
+      phase == AlertPhase.alertFailed ||
+      phase == AlertPhase.timedOutNoSms;
+}
+
+class AlertCoordinator {
+  /// The alert workflow is intentionally written in terms of ports instead of
+  /// concrete repositories/plugins. That keeps this class focused on
+  /// "what should happen next?" rather than "how do we talk to storage/SMS?".
+  AlertCoordinator({
+    required EmergencyContactsStore contactsStore,
+    required FallEventRecorder eventRecorder,
+    required AlertLocationProvider locationProvider,
+    required AlertNotificationGateway notificationGateway,
+    required AlertBackendGateway backendGateway,
+    required WatchCommandGateway watchGateway,
+    required AlertLocaleResolver localeResolver,
+    required Clock clock,
+    required IdGenerator idGenerator,
+  })  : _contactsStore = contactsStore,
+        _eventRecorder = eventRecorder,
+        _locationProvider = locationProvider,
+        _notificationGateway = notificationGateway,
+        _backendGateway = backendGateway,
+        _watchGateway = watchGateway,
+        _localeResolver = localeResolver,
+        _clock = clock,
+        _idGenerator = idGenerator;
+
+  factory AlertCoordinator.live() {
+    return AlertCoordinator(
+      contactsStore: ContactsRepository(),
+      eventRecorder: FallEventsRepository(),
+      locationProvider: LocationService(),
+      notificationGateway: NotificationService(),
+      backendGateway: BackendApiService(),
+      watchGateway: const MethodChannelWatchGateway(),
+      localeResolver: const DeviceLocaleResolver(),
+      clock: SystemClock(),
+      idGenerator: const UuidGenerator(),
+    );
+  }
+
+  static const _countdownSeconds = 30;
+
+  final EmergencyContactsStore _contactsStore;
+  final FallEventRecorder _eventRecorder;
+  final AlertLocationProvider _locationProvider;
+  final AlertNotificationGateway _notificationGateway;
+  final AlertBackendGateway _backendGateway;
+  final WatchCommandGateway _watchGateway;
+  final AlertLocaleResolver _localeResolver;
+  final Clock _clock;
+  final IdGenerator _idGenerator;
+
+  final _stateController = StreamController<AlertUiState>.broadcast();
+  final _dismissController = StreamController<void>.broadcast();
+
+  Timer? _timeoutTimer;
+  Timer? _dismissTimer;
+  AlertUiState? _currentState;
+  int? _activeTimestamp;
+  String? _activeClientAlertId;
+  bool _submittedToBackend = false;
+
+  Stream<AlertUiState> get stateStream => _stateController.stream;
+  Stream<void> get dismissStream => _dismissController.stream;
+  AlertUiState? get currentState => _currentState;
+
+  Future<void> startAlert(int timestamp) async {
+    if (_activeTimestamp == timestamp) return;
+
+    _cancelTimers();
+    _activeTimestamp = timestamp;
+    _activeClientAlertId = _idGenerator.newId();
+    _submittedToBackend = false;
+    _transition(timestamp, AlertPhase.countdown);
+
+    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    final remainingMs = (_countdownSeconds * 1000 - elapsedMs)
+        .clamp(0, _countdownSeconds * 1000);
+
+    _timeoutTimer = Timer(
+      Duration(milliseconds: remainingMs),
+      () => unawaited(_handleTimeout(timestamp)),
+    );
+  }
+
+  /// Reconciles the active alert after lifecycle interruptions such as the app
+  /// being backgrounded long enough for Dart timers to pause.
+  Future<void> reconcileActiveAlert() async {
+    final timestamp = _activeTimestamp;
+    if (timestamp == null) return;
+    if (_currentState?.phase != AlertPhase.countdown) return;
+
+    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    if (elapsedMs < _countdownSeconds * 1000) return;
+
+    _timeoutTimer?.cancel();
+    _timeoutTimer = null;
+    await _handleTimeout(timestamp);
+  }
+
+  Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
+
+  Future<void> cancelFromWatch() => _cancel(notifyWatch: false);
+
+  Future<void> _cancel({required bool notifyWatch}) async {
+    final timestamp = _activeTimestamp;
+    _cancelTimers();
+
+    if (timestamp == null) {
+      await _notificationGateway.cancelAll();
+      _dismissController.add(null);
+      return;
+    }
+
+    if (notifyWatch) {
+      unawaited(_watchGateway.sendCancelAlert());
+    }
+
+    final clientAlertId = _activeClientAlertId;
+    final wasSubmittedToBackend = _submittedToBackend;
+    _transition(timestamp, AlertPhase.cancelled);
+    _activeTimestamp = null;
+    _activeClientAlertId = null;
+    _submittedToBackend = false;
+    _currentState = null;
+
+    if (wasSubmittedToBackend && clientAlertId != null) {
+      await _cancelSubmittedFallAlert(clientAlertId: clientAlertId);
+    } else if (clientAlertId != null) {
+      await _recordCancelledFallAlert(
+        clientAlertId: clientAlertId,
+        timestamp: timestamp,
+      );
+    }
+
+    final event = FallEvent(
+      id: _idGenerator.newId(),
+      timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+      status: FallEventStatus.cancelled,
+    );
+    await _eventRecorder.add(event);
+    await _notificationGateway.cancelAll();
+    _dismissController.add(null);
+  }
+
+  Future<void> _cancelSubmittedFallAlert({
+    required String clientAlertId,
+  }) async {
+    try {
+      await _backendGateway.cancelFallAlert(clientAlertId: clientAlertId);
+    } catch (_) {
+      // The local cancellation must not be rolled back by a transient backend
+      // failure; local history still records the cancelled fall.
+    }
+  }
+
+  Future<void> _recordCancelledFallAlert({
+    required String clientAlertId,
+    required int timestamp,
+  }) async {
+    try {
+      await _backendGateway.recordCancelledFallAlert(
+        clientAlertId: clientAlertId,
+        fallTimestamp: timestamp,
+        locale: _localeResolver.languageCode(),
+        latitude: null,
+        longitude: null,
+      );
+    } catch (_) {
+      // The local cancellation must not be rolled back by a transient backend
+      // failure; local history still records the cancelled fall.
+    }
+  }
+
+  Future<void> _handleTimeout(int timestamp) async {
+    if (!_isCurrentAlert(timestamp) ||
+        _currentState?.phase != AlertPhase.countdown) {
+      return;
+    }
+
+    final l10n = _localeResolver.resolve();
+    final clientAlertId = _activeClientAlertId;
+    _transition(
+      timestamp,
+      AlertPhase.gettingLocation,
+      statusMessage: l10n.gettingLocation,
+    );
+
+    final Position? position = await _locationProvider.getCurrentPosition();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    _transition(
+      timestamp,
+      AlertPhase.sendingAlert,
+      statusMessage: l10n.sendingAlert,
+    );
+
+    final contacts = await _contactsStore.getAll();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    // Always submit to the backend regardless of contacts: recording the fall
+    // and notifying contacts are two separate backend responsibilities.
+    // With no contacts the backend stores the event without sending any SMS.
+    final outcome = await _backendEscalationOutcome(
+      clientAlertId: clientAlertId,
+      timestamp: timestamp,
+      position: position,
+      contacts: contacts,
+      locale: _localeResolver.languageCode(),
+      alertFailedMessage: l10n.smsFailed,
+      alertSubmittedMessage: l10n.alertSubmitted,
+    );
+    if (outcome == null || !_isCurrentAlert(timestamp)) return;
+
+    await _eventRecorder.add(outcome.event);
+    await _notificationGateway.cancelAll();
+    if (!_isCurrentAlert(timestamp)) return;
+
+    _transition(timestamp, outcome.phase, statusMessage: outcome.message);
+
+    _dismissTimer = Timer(outcome.dismissDelay, () {
+      if (!_isCurrentAlert(timestamp)) return;
+      _activeTimestamp = null;
+      _activeClientAlertId = null;
+      _submittedToBackend = false;
+      _currentState = null;
+      _dismissController.add(null);
+    });
+  }
+
+  Future<_AlertOutcome?> _backendEscalationOutcome({
+    required String? clientAlertId,
+    required int timestamp,
+    required Position? position,
+    required List<Contact> contacts,
+    required String locale,
+    required String alertFailedMessage,
+    required String alertSubmittedMessage,
+  }) async {
+    if (clientAlertId == null) {
+      return null;
+    }
+
+    try {
+      await _backendGateway.submitFallAlert(
+        clientAlertId: clientAlertId,
+        fallTimestamp: timestamp,
+        locale: locale,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+        contacts: contacts,
+      );
+    } catch (_) {
+      if (!_isCurrentAlert(timestamp)) return null;
+      _submittedToBackend = false;
+
+      return _AlertOutcome(
+        event: FallEvent(
+          id: _idGenerator.newId(),
+          timestamp:
+              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          status: FallEventStatus.alertFailed,
+          latitude: position?.latitude,
+          longitude: position?.longitude,
+        ),
+        phase: AlertPhase.alertFailed,
+        message: alertFailedMessage,
+        dismissDelay: const Duration(seconds: 5),
+      );
+    }
+
+    if (!_isCurrentAlert(timestamp)) return null;
+    _submittedToBackend = true;
+
+    return _AlertOutcome(
+      event: FallEvent(
+        id: _idGenerator.newId(),
+        timestamp: DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+        status: FallEventStatus.alertSent,
+        latitude: position?.latitude,
+        longitude: position?.longitude,
+      ),
+      phase: AlertPhase.alertSent,
+      message: alertSubmittedMessage,
+      dismissDelay: const Duration(seconds: 2),
+    );
+  }
+
+  void _cancelTimers() {
+    _timeoutTimer?.cancel();
+    _dismissTimer?.cancel();
+  }
+
+  bool _isCurrentAlert(int timestamp) => _activeTimestamp == timestamp;
+
+  void _transition(
+    int timestamp,
+    AlertPhase phase, {
+    String? statusMessage,
+  }) {
+    _emit(
+      AlertUiState(
+        fallTimestamp: timestamp,
+        phase: phase,
+        statusMessage: statusMessage,
+      ),
+    );
+  }
+
+  void _emit(AlertUiState state) {
+    _currentState = state;
+    _stateController.add(state);
+  }
+
+  void dispose() {
+    _timeoutTimer?.cancel();
+    _dismissTimer?.cancel();
+    _stateController.close();
+    _dismissController.close();
+  }
+}
+
+class _AlertOutcome {
+  const _AlertOutcome({
+    required this.event,
+    required this.phase,
+    required this.message,
+    required this.dismissDelay,
+  });
+
+  final FallEvent event;
+  final AlertPhase phase;
+  final String message;
+  final Duration dismissDelay;
+}
