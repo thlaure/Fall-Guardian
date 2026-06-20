@@ -13,7 +13,7 @@ SENSITIVE_FILENAMES = {
 SECRET_PATTERNS = [
     re.compile(r"AIza[0-9A-Za-z_-]{20,}"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |)PRIVATE KEY-----"),
-    re.compile(r"(?i)(?:password|secret|api[_-]?key|private[_-]?key|token|credential)\s*[:=>=]\s*['\"][^'\"]{8,}['\"]"),
+    re.compile(r"(?i)(?:password|secret|api[_-]?key|private[_-]?key|token|credential)\s*[:=]\s*['\"][^'\"]{8,}['\"]"),
     re.compile(r"(?i)FCM_SERVICE_ACCOUNT_JSON\s*="),
 ]
 
