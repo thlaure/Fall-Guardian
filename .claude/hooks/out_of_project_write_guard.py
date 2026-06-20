@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse Write: block writes outside the repository root."""
+"""PreToolUse Write|Edit: block writes outside the repository root."""
 
 import json
 import os
@@ -7,7 +7,8 @@ import subprocess
 import sys
 
 event = json.load(sys.stdin)
-file_path = event.get("tool_input", {}).get("file_path", "")
+tool_input = event.get("tool_input", {})
+file_path = tool_input.get("file_path") or tool_input.get("path") or ""
 
 if not file_path:
     sys.exit(0)

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(make help:*)",
+      "Bash(rtk make help:*)",
+      "Bash(make status:*)",
+      "Bash(rtk make status:*)",
+      "Bash(make quality:*)",
+      "Bash(rtk make quality:*)",
+      "Bash(make test:*)",
+      "Bash(rtk make test:*)",
+      "Bash(make -C backend/api quality:*)",
+      "Bash(rtk make -C backend/api quality:*)",
+      "Bash(make -C backend/api test:*)",
+      "Bash(rtk make -C backend/api test:*)",
+      "Bash(make -C backend/api test-behat:*)",
+      "Bash(rtk make -C backend/api test-behat:*)",
+      "Bash(make -C apps/assisted_mobile quality:*)",
+      "Bash(rtk make -C apps/assisted_mobile quality:*)",
+      "Bash(make -C apps/caregiver_mobile quality:*)",
+      "Bash(rtk make -C apps/caregiver_mobile quality:*)",
+      "Bash(make -C apps/wear_os check:*)",
+      "Bash(rtk make -C apps/wear_os check:*)",
+      "Bash(make -C apps/watchos check:*)",
+      "Bash(rtk make -C apps/watchos check:*)",
+      "Bash(git status:*)",
+      "Bash(rtk git status:*)",
+      "Bash(git diff:*)",
+      "Bash(rtk git diff:*)",
+      "Bash(git log:*)",
+      "Bash(rtk git log:*)",
+      "Bash(git show:*)",
+      "Bash(rtk git show:*)",
+      "Bash(git branch:*)",
+      "Bash(rtk git branch:*)",
+      "Bash(git add:*)",
+      "Bash(rtk git add:*)",
+      "Bash(git fetch:*)",
+      "Bash(rtk git fetch:*)",
+      "Read",
+      "Write",
+      "Edit"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -r:*)",
+      "Bash(rm -f:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(git rm:*)",
+      "Bash(truncate:*)",
+      "Bash(unlink:*)",
+      "Bash(rmdir:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/protected_branch_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/out_of_project_write_guard.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/php_syntax_check.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/credential_write_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -30,6 +30,24 @@ scripts/                  workspace automation
 - Tests must prove behavior, contracts, edge cases, and regressions.
 - Check status before committing. Do not revert user changes.
 
+## Claude / Codex Configuration
+
+Shared Claude/Codex practices live at the monorepo root:
+
+- `CLAUDE.md`: thin Claude entrypoint that points to this file and shared
+  `.claude` guidance.
+- `.claude/settings.json`: shared permissions and hooks.
+- `.claude/hooks/`: deterministic safety checks around agent actions.
+- `.claude/rules/`: shared architecture, security, and testing rules.
+- `.claude/skills/`: shared task workflows such as review, security review,
+  bug fix, feature work, and prepare-commit.
+- `.claude/agents/`: shared QA and security reviewer agent definitions.
+
+Project-local `CLAUDE.md` files must stay thin pointers to the local
+`AGENTS.md`. Add a project-local `.claude/` only when a project needs genuinely
+specific hooks, permissions, agents, or skills that do not belong to every
+project.
+
 ## Guardrail Priority
 
 Apply guardrails in this order:
@@ -43,6 +61,21 @@ Apply guardrails in this order:
 
 Move repeatable rules into deterministic tools first. Use hooks only when a rule
 must run immediately around an action. Use skills for work that requires context.
+
+## Commit And PR Practice
+
+- Work on a dedicated branch for commits and pushes; do not commit directly on
+  `main`, `master`, or `develop`.
+- Use one logical change per commit.
+- Stage only intended files after inspecting `git status` and `git diff`.
+- Prefer Conventional Commits:
+  `{type}({scope}): {description}`.
+- Useful scopes: `api`, `assisted`, `caregiver`, `wear-os`, `watchos`,
+  `monorepo`, or backend domain names such as `alert`, `device`, `push`.
+- Run relevant deterministic checks before commit.
+- Mention skipped checks and the reason in the final response or PR body.
+- Never commit secrets, generated Firebase files, signing material, local env
+  files, or machine-specific configuration.
 
 ## Verification
 
@@ -64,4 +97,3 @@ Project commands:
 - watchOS: `make -C apps/watchos check`
 
 If a check is skipped, report why.
-
