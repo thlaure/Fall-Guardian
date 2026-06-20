@@ -4,6 +4,9 @@ updates:
     directory: /backend/api
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "symfony/*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pub
     directory: /apps/assisted_mobile
     schedule:
