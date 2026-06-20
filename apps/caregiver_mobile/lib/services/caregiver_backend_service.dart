@@ -81,14 +81,12 @@ class CaregiverBackendService {
   }
 
   Future<List<LinkedProtectedPerson>> getLinkedProtectedPersons() async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.get(
-        Uri.parse('$_baseUrl/api/v1/caregiver/protected-persons'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Linked protected persons fetch timed out',
-    );
+    var credentials = await _credentials();
+    var response = await _getLinkedProtectedPersons(credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _getLinkedProtectedPersons(credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw CaregiverApiException(
@@ -101,6 +99,18 @@ class CaregiverBackendService {
     return _decodeCollection(
       jsonDecode(response.body),
     ).map(LinkedProtectedPerson.fromJson).toList();
+  }
+
+  Future<http.Response> _getLinkedProtectedPersons(
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/caregiver/protected-persons'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Linked protected persons fetch timed out',
+    );
   }
 
   Future<void> acceptInvite(String code) async {
@@ -136,14 +146,12 @@ class CaregiverBackendService {
   }
 
   Future<void> acknowledgeFallAlert(String alertId) async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.post(
-        Uri.parse('$_baseUrl/api/v1/fall-alerts/$alertId/acknowledge'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Fall alert acknowledgement timed out',
-    );
+    var credentials = await _credentials();
+    var response = await _acknowledgeFallAlert(alertId, credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _acknowledgeFallAlert(alertId, credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw CaregiverApiException(
@@ -154,15 +162,26 @@ class CaregiverBackendService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> getCaregiverAlerts() async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.get(
-        Uri.parse('$_baseUrl/api/v1/caregiver/alerts'),
+  Future<http.Response> _acknowledgeFallAlert(
+    String alertId,
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts/$alertId/acknowledge'),
         headers: _jsonHeaders(token: credentials.deviceToken),
       ),
-      'Caregiver alerts fetch timed out',
+      'Fall alert acknowledgement timed out',
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getCaregiverAlerts() async {
+    var credentials = await _credentials();
+    var response = await _getCaregiverAlerts(credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _getCaregiverAlerts(credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw CaregiverApiException(
@@ -174,6 +193,16 @@ class CaregiverBackendService {
 
     final decoded = jsonDecode(response.body);
     return _decodeAlertCollection(decoded);
+  }
+
+  Future<http.Response> _getCaregiverAlerts(_CaregiverCredentials credentials) {
+    return _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/caregiver/alerts'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Caregiver alerts fetch timed out',
+    );
   }
 
   Future<Map<String, dynamic>?> getLatestActiveAlertData() async {
@@ -191,15 +220,12 @@ class CaregiverBackendService {
   }
 
   Future<void> registerPushToken(String fcmToken) async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.post(
-        Uri.parse('$_baseUrl/api/v1/caregiver/push-token'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode({'fcmToken': fcmToken}),
-      ),
-      'Push token registration timed out',
-    );
+    var credentials = await _credentials();
+    var response = await _registerPushToken(fcmToken, credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _registerPushToken(fcmToken, credentials);
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw CaregiverApiException(
@@ -208,6 +234,20 @@ class CaregiverBackendService {
         body: response.body,
       );
     }
+  }
+
+  Future<http.Response> _registerPushToken(
+    String fcmToken,
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/caregiver/push-token'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode({'fcmToken': fcmToken}),
+      ),
+      'Push token registration timed out',
+    );
   }
 
   Future<_CaregiverCredentials> _credentials({
