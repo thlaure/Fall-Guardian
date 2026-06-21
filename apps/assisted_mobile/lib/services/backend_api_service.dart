@@ -64,7 +64,29 @@ class BackendApiService implements AlertBackendGateway {
 
   @override
   Future<void> ensureReady() async {
-    await _credentials();
+    var credentials = await _credentials();
+    final response = await _getLinkedCaregivers(credentials);
+    if (response.statusCode == HttpStatus.unauthorized ||
+        response.statusCode == HttpStatus.forbidden) {
+      credentials = await _credentials(forceRefresh: true);
+      final refreshedResponse = await _getLinkedCaregivers(credentials);
+      if (!_isSuccess(refreshedResponse.statusCode)) {
+        throw BackendApiException(
+          'Failed to validate refreshed device credentials',
+          statusCode: refreshedResponse.statusCode,
+          body: refreshedResponse.body,
+        );
+      }
+      return;
+    }
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to validate device credentials',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
   }
 
   @override
@@ -81,22 +103,26 @@ class BackendApiService implements AlertBackendGateway {
     required double? longitude,
     required List<Contact> contacts,
   }) async {
-    final credentials = await _credentials();
-
-    final response = await _send(
-      _client.post(
-        Uri.parse('$_baseUrl/api/v1/fall-alerts'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode(_fallAlertPayload(
-          clientAlertId: clientAlertId,
-          fallTimestamp: fallTimestamp,
-          locale: locale,
-          latitude: latitude,
-          longitude: longitude,
-        )),
-      ),
-      'Fall alert submission timed out',
+    var credentials = await _credentials();
+    var response = await _submitFallAlert(
+      credentials: credentials,
+      clientAlertId: clientAlertId,
+      fallTimestamp: fallTimestamp,
+      locale: locale,
+      latitude: latitude,
+      longitude: longitude,
     );
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _submitFallAlert(
+        credentials: credentials,
+        clientAlertId: clientAlertId,
+        fallTimestamp: fallTimestamp,
+        locale: locale,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    }
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -110,6 +136,30 @@ class BackendApiService implements AlertBackendGateway {
     // caregiver push delivery happens asynchronously on the backend worker.
   }
 
+  Future<http.Response> _submitFallAlert({
+    required _BackendCredentials credentials,
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode(_fallAlertPayload(
+          clientAlertId: clientAlertId,
+          fallTimestamp: fallTimestamp,
+          locale: locale,
+          latitude: latitude,
+          longitude: longitude,
+        )),
+      ),
+      'Fall alert submission timed out',
+    );
+  }
+
   @override
   Future<void> recordCancelledFallAlert({
     required String clientAlertId,
@@ -118,9 +168,45 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    final credentials = await _credentials();
+    var credentials = await _credentials();
+    var response = await _recordCancelledFallAlert(
+      credentials: credentials,
+      clientAlertId: clientAlertId,
+      fallTimestamp: fallTimestamp,
+      locale: locale,
+      latitude: latitude,
+      longitude: longitude,
+    );
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _recordCancelledFallAlert(
+        credentials: credentials,
+        clientAlertId: clientAlertId,
+        fallTimestamp: fallTimestamp,
+        locale: locale,
+        latitude: latitude,
+        longitude: longitude,
+      );
+    }
 
-    final response = await _send(
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to record cancelled fall alert',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  }
+
+  Future<http.Response> _recordCancelledFallAlert({
+    required _BackendCredentials credentials,
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) {
+    return _send(
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
@@ -135,14 +221,6 @@ class BackendApiService implements AlertBackendGateway {
       ),
       'Cancelled fall alert recording timed out',
     );
-
-    if (!_isSuccess(response.statusCode)) {
-      throw BackendApiException(
-        'Failed to record cancelled fall alert',
-        statusCode: response.statusCode,
-        body: response.body,
-      );
-    }
   }
 
   Future<Map<String, dynamic>> createInvite() async {
@@ -204,13 +282,7 @@ class BackendApiService implements AlertBackendGateway {
 
   Future<List<Map<String, dynamic>>> getLinkedCaregivers() async {
     final credentials = await _credentials();
-    final response = await _send(
-      _client.get(
-        Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Linked caregivers request timed out',
-    );
+    final response = await _getLinkedCaregivers(credentials);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -221,6 +293,18 @@ class BackendApiService implements AlertBackendGateway {
     }
 
     return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<http.Response> _getLinkedCaregivers(
+    _BackendCredentials credentials,
+  ) {
+    return _send(
+      _client.get(
+        Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Linked caregivers request timed out',
+    );
   }
 
   Future<void> deleteLinkedCaregiver(String linkId) async {

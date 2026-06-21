@@ -9,6 +9,7 @@ use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
+use App\Shared\DateTime\ApiDateTimeFormatter;
 use DateTimeImmutable;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -22,6 +23,7 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
 
     public function createAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
     {
+        $fallTimestamp = ApiDateTimeFormatter::normalizeToUtc($fallTimestamp);
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
 
         if ($existing instanceof FallAlert) {
@@ -38,6 +40,7 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
 
     public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
     {
+        $fallTimestamp = ApiDateTimeFormatter::normalizeToUtc($fallTimestamp);
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
 
         if ($existing instanceof FallAlert) {

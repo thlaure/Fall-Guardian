@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'firebase_options.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -70,6 +71,7 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   late PushNotificationService _pushService;
   Timer? _activeAlertPoller;
   bool _recoveringActiveAlert = false;
+  bool _activeAlertRouteShowing = false;
 
   final _activeAlertPresentation = ActiveAlertPresentationState();
   bool _linked = false;
@@ -187,8 +189,47 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   void _handleAlert(Map<String, dynamic> data) {
     if (!mounted) return;
     if (_activeAlertPresentation.show(data)) {
-      setState(() {});
+      _presentActiveAlert(data);
     }
+  }
+
+  void _presentActiveAlert(Map<String, dynamic> data) {
+    if (_activeAlertRouteShowing) return;
+    _activeAlertRouteShowing = true;
+
+    void pushAlertRoute() {
+      if (!mounted) {
+        _activeAlertRouteShowing = false;
+        return;
+      }
+
+      Navigator.of(context, rootNavigator: true)
+          .push<void>(
+            MaterialPageRoute<void>(
+              fullscreenDialog: true,
+              builder: (_) => ActiveAlertScreen(
+                alertData: data,
+                onDismiss: () {
+                  _activeAlertPresentation.dismissActive();
+                  Navigator.of(context, rootNavigator: true).maybePop();
+                },
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (!mounted) return;
+            _activeAlertRouteShowing = false;
+            setState(_activeAlertPresentation.dismissActive);
+          });
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      pushAlertRoute();
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => pushAlertRoute());
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _handleLinkRevoked() {
@@ -211,16 +252,6 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final activeAlert = _activeAlertPresentation.activeAlert;
-    if (activeAlert != null) {
-      return ActiveAlertScreen(
-        alertData: activeAlert,
-        onDismiss: () {
-          setState(_activeAlertPresentation.dismissActive);
-        },
-      );
-    }
-
     return CaregiverHomeScreen(isLinked: _linked, onLinked: _onLinked);
   }
 }

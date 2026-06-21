@@ -12,8 +12,8 @@ use App\Domain\Push\Port\PushGatewayInterface;
 use App\Entity\CaregiverPushToken;
 use App\Entity\FallAlert;
 use App\Entity\PushAttempt;
+use App\Shared\DateTime\ApiDateTimeFormatter;
 use DateTimeImmutable;
-use DateTimeInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Throwable;
 
@@ -42,7 +42,7 @@ final readonly class SendFallAlertPushMessageHandler
             return;
         }
 
-        $fallTimestamp = $alert->getFallDetectedAt()->format(DateTimeInterface::ATOM);
+        $fallTimestamp = ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt());
         $provider = $this->pushGateway->getProviderName();
         $attempted = 0;
         $sentCount = 0;

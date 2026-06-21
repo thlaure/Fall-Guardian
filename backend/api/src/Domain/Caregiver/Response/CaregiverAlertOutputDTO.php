@@ -9,7 +9,7 @@ use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\OpenApi\Model\Operation;
 use App\Domain\Caregiver\Provider\CaregiverAlertsProvider;
 use App\Entity\FallAlert;
-use DateTimeInterface;
+use App\Shared\DateTime\ApiDateTimeFormatter;
 
 #[ApiResource(operations: [
     new GetCollection(
@@ -44,11 +44,11 @@ final readonly class CaregiverAlertOutputDTO
         return new self(
             $alert->getId()->toRfc4122(),
             $alert->getStatus()->value,
-            $alert->getFallDetectedAt()->format(DateTimeInterface::ATOM),
+            ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
             $alert->getLatitude(),
             $alert->getLongitude(),
             $acknowledged,
-            $alert->getCancelledAt()?->format(DateTimeInterface::ATOM),
+            null === $alert->getCancelledAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getCancelledAt()),
             $alert->getDevice()->getPublicId(),
             $alert->getDevice()->getPlatform(),
         );

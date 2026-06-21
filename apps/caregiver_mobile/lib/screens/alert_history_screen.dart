@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
+import '../utils/api_date_time.dart';
 
 class AlertHistoryScreen extends StatefulWidget {
   const AlertHistoryScreen({super.key});
@@ -46,8 +47,8 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
   }
 
   int _newestFirst(Map<String, dynamic> a, Map<String, dynamic> b) {
-    final da = DateTime.tryParse('${a['fallDetectedAt']}');
-    final db = DateTime.tryParse('${b['fallDetectedAt']}');
+    final da = parseApiDateTime('${a['fallDetectedAt']}');
+    final db = parseApiDateTime('${b['fallDetectedAt']}');
     if (da == null && db == null) return 0;
     if (da == null) return 1;
     if (db == null) return -1;
@@ -237,7 +238,7 @@ class _AlertTile extends StatelessWidget {
     final acknowledged = alert['acknowledged'] == true;
     final isCancelled = status == 'cancelled';
 
-    final date = DateTime.tryParse(
+    final date = parseApiDateTime(
       '${alert['fallDetectedAt'] ?? ''}',
     )?.toLocal();
     final dateStr = date != null
