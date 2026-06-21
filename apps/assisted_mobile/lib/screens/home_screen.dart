@@ -1,13 +1,42 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/backend_api_service.dart';
 import 'contacts_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.onSimulateFall, this.backendApi});
+
   final Future<void> Function(int timestamp)? onSimulateFall;
-  const HomeScreen({super.key, this.onSimulateFall});
+  final BackendApiService? backendApi;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late final BackendApiService _backendApi =
+      widget.backendApi ?? BackendApiService();
+  bool _hasLinkedCaregiver = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLinkedCaregiverState();
+  }
+
+  Future<void> _loadLinkedCaregiverState() async {
+    try {
+      final caregivers = await _backendApi.getLinkedCaregivers();
+      if (!mounted) return;
+      setState(() => _hasLinkedCaregiver = caregivers.isNotEmpty);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _hasLinkedCaregiver = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,16 +64,23 @@ class HomeScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 16),
-            _StatusCard(l10n: l10n),
-            const SizedBox(height: 32),
+            if (_hasLinkedCaregiver) ...[
+              _StatusCard(l10n: l10n),
+              const SizedBox(height: 32),
+            ],
             _NavButton(
               icon: Icons.people,
               label: l10n.homeContactsTitle,
               subtitle: l10n.homeContactsSubtitle,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(builder: (_) => const ContactsScreen()),
-              ),
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ContactsScreen(),
+                  ),
+                );
+                await _loadLinkedCaregiverState();
+              },
             ),
             const SizedBox(height: 16),
             _NavButton(
@@ -57,12 +93,13 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            if (kDebugMode && onSimulateFall != null)
+            if (kDebugMode && widget.onSimulateFall != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: OutlinedButton.icon(
-                  onPressed: () =>
-                      onSimulateFall!(DateTime.now().millisecondsSinceEpoch),
+                  onPressed: () => widget.onSimulateFall!(
+                    DateTime.now().millisecondsSinceEpoch,
+                  ),
                   icon: const Icon(Icons.bug_report, color: Color(0xFFE5694A)),
                   label: const Text(
                     'Simulate Fall (debug)',

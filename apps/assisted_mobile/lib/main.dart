@@ -247,12 +247,12 @@ class _FallGuardianAppState extends State<FallGuardianApp>
       // useMaterial3 opts into Material Design 3 (the latest version of
       // Google's design system, with rounded shapes and tonal colours).
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFE5694A)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2D6A4F)),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFE5694A),
+          seedColor: const Color(0xFF2D6A4F),
           // brightness: Brightness.dark tells the seed algorithm to produce
           // dark-mode-appropriate shades of the same colour family.
           brightness: Brightness.dark,

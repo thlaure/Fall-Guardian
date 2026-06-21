@@ -156,16 +156,22 @@ class _EventTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(icon, color: color, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: color, fontWeight: FontWeight.bold),
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 12),
                 Text(
                   fmt.format(event.timestamp.toLocal()),
+                  textAlign: TextAlign.right,
                   style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
                 ),
               ],
