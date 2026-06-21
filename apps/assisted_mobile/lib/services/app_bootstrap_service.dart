@@ -5,9 +5,8 @@ import 'location_service.dart';
 
 /// Best-effort app startup bootstrap for phone-side integrations.
 ///
-/// This keeps startup coordination out of the widget entrypoint while
-/// preserving the existing behavior: request location permission, warm up the
-/// backend client, and sync locally stored contacts when possible.
+/// This keeps startup coordination out of the widget entrypoint while keeping
+/// critical backend readiness independent from optional platform permissions.
 class AppBootstrapService {
   AppBootstrapService({
     required LocationService locationService,
@@ -22,9 +21,9 @@ class AppBootstrapService {
   final ContactsRepository _contactsRepository;
 
   Future<void> bootstrap() async {
-    await _locationService.requestPermissionIfNeeded();
     await _backendApi.ensureReady();
     final List<Contact> contacts = await _contactsRepository.getAll();
     await _backendApi.syncContacts(contacts);
+    await _locationService.requestPermissionIfNeeded();
   }
 }

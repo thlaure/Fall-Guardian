@@ -9,8 +9,7 @@ use ApiPlatform\Metadata\Get;
 use ApiPlatform\OpenApi\Model\Operation;
 use App\Domain\Alert\Provider\FallAlertProvider;
 use App\Entity\FallAlert;
-
-use const DATE_ATOM;
+use App\Shared\DateTime\ApiDateTimeFormatter;
 
 #[ApiResource(operations: [
     new Get(
@@ -41,8 +40,8 @@ final class FallAlertOutputDTO
             $alert->getId()->toRfc4122(),
             $alert->getClientAlertId(),
             $alert->getStatus()->value,
-            $alert->getFallDetectedAt()->format(DATE_ATOM),
-            $alert->getCancelledAt()?->format(DATE_ATOM),
+            ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
+            null === $alert->getCancelledAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getCancelledAt()),
         );
     }
 }

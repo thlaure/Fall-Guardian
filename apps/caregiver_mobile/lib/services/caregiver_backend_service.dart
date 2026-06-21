@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import '../utils/api_date_time.dart';
+
 class CaregiverBackendService {
   CaregiverBackendService({
     FlutterSecureStorage? storage,
@@ -355,8 +357,8 @@ class CaregiverBackendService {
   }
 
   int _newestAlertFirst(Map<String, dynamic> left, Map<String, dynamic> right) {
-    final leftDate = DateTime.tryParse('${left['fallDetectedAt']}');
-    final rightDate = DateTime.tryParse('${right['fallDetectedAt']}');
+    final leftDate = parseApiDateTime('${left['fallDetectedAt']}');
+    final rightDate = parseApiDateTime('${right['fallDetectedAt']}');
     if (leftDate == null && rightDate == null) return 0;
     if (leftDate == null) return 1;
     if (rightDate == null) return -1;

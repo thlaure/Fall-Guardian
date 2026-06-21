@@ -35,6 +35,7 @@ void main() {
 
   test('ensureReady registers device once and stores credentials', () async {
     var registerCalls = 0;
+    var validationCalls = 0;
     final client = MockClient((request) async {
       if (request.url.path == '/api/v1/devices/register') {
         registerCalls++;
@@ -48,6 +49,12 @@ void main() {
         );
       }
 
+      if (request.url.path == '/api/v1/protected/linked-caregivers') {
+        validationCalls++;
+        expect(request.headers['authorization'], 'Bearer token-1');
+        return http.Response('[]', 200);
+      }
+
       fail('Unexpected request: ${request.method} ${request.url}');
     });
 
@@ -57,8 +64,55 @@ void main() {
     await service.ensureReady();
 
     expect(registerCalls, 1);
+    expect(validationCalls, 2);
     expect(store.data['backend_device_id'], 'device-1');
     expect(store.data['backend_device_token'], 'token-1');
+  });
+
+  test('ensureReady refreshes stale stored credentials after unauthorized',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+
+      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
+          request.headers['authorization'] == 'Bearer stale-token') {
+        return http.Response('unauthorized', 401);
+      }
+
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
+          request.headers['authorization'] == 'Bearer fresh-token') {
+        return http.Response('[]', 200);
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    await service.ensureReady();
+
+    expect(store.data['backend_device_id'], 'fresh-device');
+    expect(store.data['backend_device_token'], 'fresh-token');
+    expect(requests, [
+      'GET /api/v1/protected/linked-caregivers',
+      'POST /api/v1/devices/register',
+      'GET /api/v1/protected/linked-caregivers',
+    ]);
   });
 
   test('ensureReady rejects insecure backend URL in release mode', () async {
@@ -84,6 +138,10 @@ void main() {
       releaseMode: true,
       client: MockClient((request) async {
         expect(request.url.scheme, 'https');
+        if (request.url.path == '/api/v1/protected/linked-caregivers') {
+          return http.Response('[]', 200);
+        }
+
         expect(request.url.path, '/api/v1/devices/register');
         return http.Response(
           jsonEncode({
@@ -152,6 +210,69 @@ void main() {
     );
 
     expect(requests, [
+      'POST /api/v1/devices/register',
+      'POST /api/v1/fall-alerts',
+    ]);
+  });
+
+  test('submitFallAlert refreshes stale credentials after unauthorized',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+
+      if (request.url.path == '/api/v1/fall-alerts' &&
+          request.headers['authorization'] == 'Bearer stale-token') {
+        return http.Response('unauthorized', 401);
+      }
+
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/fall-alerts' &&
+          request.headers['authorization'] == 'Bearer fresh-token') {
+        return http.Response(
+          jsonEncode({
+            'id': 'server-alert-1',
+            'clientAlertId': 'alert-1',
+            'status': 'received',
+            'fallTimestamp': '2026-04-09T10:00:00+00:00',
+            'cancelledAt': null,
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    await service.submitFallAlert(
+      clientAlertId: 'alert-1',
+      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+      locale: 'en',
+      latitude: null,
+      longitude: null,
+      contacts: const [],
+    );
+
+    expect(store.data['backend_device_id'], 'fresh-device');
+    expect(store.data['backend_device_token'], 'fresh-token');
+    expect(requests, [
+      'POST /api/v1/fall-alerts',
       'POST /api/v1/devices/register',
       'POST /api/v1/fall-alerts',
     ]);

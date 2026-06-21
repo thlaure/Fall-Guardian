@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
+import '../utils/api_date_time.dart';
 
 /// Full-screen alert shown when a fall notification is received.
 class ActiveAlertScreen extends StatefulWidget {
@@ -38,7 +39,7 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
       _longitude!.isNotEmpty;
 
   String get _formattedTime {
-    final dt = DateTime.tryParse(_fallTimestamp)?.toLocal();
+    final dt = parseApiDateTime(_fallTimestamp)?.toLocal();
     if (dt == null) return _fallTimestamp;
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
