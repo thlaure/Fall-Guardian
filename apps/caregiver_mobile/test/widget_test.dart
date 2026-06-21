@@ -23,7 +23,7 @@ void main() {
     expect(find.text('Not Linked Yet'), findsOneWidget);
     expect(find.text('View protected persons'), findsOneWidget);
     expect(find.text('Add protected person'), findsNothing);
-    expect(find.text('How it works'), findsOneWidget);
+    expect(find.text('Fall History'), findsOneWidget);
   });
 
   testWidgets('updates the home status when the linked state changes', (
@@ -50,7 +50,7 @@ void main() {
     expect(find.text('View protected persons'), findsOneWidget);
   });
 
-  testWidgets('protected persons screen lists people before add action', (
+  testWidgets('protected persons screen lists people with add FAB', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -79,13 +79,9 @@ void main() {
     expect(find.text('2 protected persons'), findsOneWidget);
     expect(find.text('Protected person 1'), findsOneWidget);
     expect(find.text('Protected person 2'), findsOneWidget);
-    expect(find.text('Add protected person'), findsOneWidget);
-
-    final firstTileTop = tester.getTopLeft(find.text('Protected person 1')).dy;
-    final addButtonTop = tester
-        .getTopLeft(find.text('Add protected person'))
-        .dy;
-    expect(addButtonTop, greaterThan(firstTileTop));
+    expect(find.text('Device ID'), findsNothing);
+    expect(find.textContaining('IOS device'), findsNothing);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
   });
 
   testWidgets('link screen accepts the grouped 32-character invite format', (

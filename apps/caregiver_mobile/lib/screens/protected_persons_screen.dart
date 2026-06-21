@@ -77,6 +77,11 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.protectedPersonsTitle)),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openLinkScreen,
+        tooltip: l10n.linkButton,
+        child: const Icon(Icons.add),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -103,15 +108,7 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _openLinkScreen,
-                    icon: const Icon(Icons.add_link),
-                    label: Text(l10n.linkButton),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                  ),
+                  const SizedBox(height: 88),
                 ],
               ),
             ),
@@ -132,30 +129,19 @@ class _ProtectedPersonTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final cs = Theme.of(context).colorScheme;
-    final deviceId = protectedPerson.protectedDeviceId;
-    final shortDeviceId = deviceId.length <= 8
-        ? deviceId
-        : deviceId.substring(0, 8);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
-        leading: Icon(_platformIcon(protectedPerson.protectedDevicePlatform)),
-        title: Text(l10n.protectedPersonLabel(index + 1)),
-        subtitle: Text(
-          '${l10n.protectedPersonSubtitle(protectedPerson.protectedDevicePlatform, shortDeviceId)}\n'
-          '${l10n.protectedPersonDeviceIdTitle}: $deviceId',
+        leading: CircleAvatar(
+          backgroundColor: cs.primaryContainer,
+          child: Icon(Icons.person_outline, color: cs.onPrimaryContainer),
         ),
-        isThreeLine: true,
+        title: Text(l10n.protectedPersonLabel(index + 1)),
+        subtitle: Text(l10n.statusLinkedBody),
         iconColor: cs.primary,
       ),
     );
-  }
-
-  IconData _platformIcon(String platform) {
-    return platform.toLowerCase() == 'ios'
-        ? Icons.phone_iphone
-        : Icons.phone_android;
   }
 }
 

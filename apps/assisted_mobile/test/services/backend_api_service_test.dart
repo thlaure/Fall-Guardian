@@ -115,6 +115,69 @@ void main() {
     ]);
   });
 
+  test('ensureReady throws typed exception on validation failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient(
+        (request) async => http.Response('backend unavailable', 503),
+      ),
+    );
+
+    await expectLater(
+      service.ensureReady(),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having((error) => error.body, 'body', 'backend unavailable'),
+      ),
+    );
+  });
+
+  test('ensureReady throws when refreshed credentials cannot be validated',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
+          request.headers['authorization'] == 'Bearer stale-token') {
+        return http.Response('unauthorized', 401);
+      }
+
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
+          request.headers['authorization'] == 'Bearer fresh-token') {
+        return http.Response('still unavailable', 503);
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    await expectLater(
+      service.ensureReady(),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having((error) => error.body, 'body', 'still unavailable'),
+      ),
+    );
+  });
+
   test('ensureReady rejects insecure backend URL in release mode', () async {
     final service = BackendApiService(
       store: store,

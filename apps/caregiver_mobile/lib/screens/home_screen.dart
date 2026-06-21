@@ -46,91 +46,54 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          l10n.appTitle,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          if (_linked)
-            IconButton(
-              icon: const Icon(Icons.history),
-              tooltip: 'Fall history',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const AlertHistoryScreen(),
-                ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.health_and_safety_outlined, size: 24),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                l10n.appTitle,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ),
-        ],
+          ],
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: _linked
-                      ? [const Color(0xFF1B5E20), const Color(0xFF2E7D32)]
-                      : [const Color(0xFF183153), const Color(0xFF284B63)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    _linked ? Icons.volunteer_activism : Icons.link_off,
-                    color: Colors.white,
-                    size: 54,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _linked ? l10n.statusLinkedTitle : l10n.statusUnlinkedTitle,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _linked ? l10n.statusLinkedBody : l10n.statusUnlinkedBody,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
+            _CaregiverHero(l10n: l10n, linked: _linked),
             const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => Navigator.push(
+            _NavButton(
+              icon: Icons.people_alt_outlined,
+              label: l10n.protectedPersonsButton,
+              subtitle: _linked
+                  ? l10n.statusLinkedBody
+                  : l10n.statusUnlinkedBody,
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => ProtectedPersonsScreen(onLinked: _onLinked),
                 ),
               ),
-              icon: const Icon(Icons.people_alt_outlined),
-              label: Text(l10n.protectedPersonsButton),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
             ),
             const SizedBox(height: 16),
-            _InfoCard(
-              title: _linked ? l10n.statusCardTitle : l10n.howItWorksTitle,
-              body: _linked ? l10n.statusCardBody : l10n.howItWorksBody,
-              icon: _linked ? Icons.check_circle_outline : Icons.info_outline,
-            ),
-            const SizedBox(height: 16),
-            _InfoCard(
-              title: l10n.importantTitle,
-              body: l10n.importantBody,
-              icon: Icons.notifications_active_outlined,
+            _NavButton(
+              icon: Icons.history,
+              label: l10n.historyTitle,
+              subtitle: l10n.historyEmpty,
+              onTap: _linked
+                  ? () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AlertHistoryScreen(),
+                      ),
+                    )
+                  : null,
             ),
             const SizedBox(height: 24),
             Text(
@@ -145,52 +108,139 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
   }
 }
 
-class _InfoCard extends StatelessWidget {
-  const _InfoCard({
-    required this.title,
-    required this.body,
-    required this.icon,
-  });
+class _CaregiverHero extends StatelessWidget {
+  const _CaregiverHero({required this.l10n, required this.linked});
 
-  final String title;
-  final String body;
-  final IconData icon;
+  final AppLocalizations l10n;
+  final bool linked;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0F3D35), Color(0xFF2D6A4F)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: cs.primary),
-          const SizedBox(width: 14),
+          Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+            child: Icon(
+              linked ? Icons.volunteer_activism : Icons.link_off,
+              color: Colors.white,
+              size: 36,
+            ),
+          ),
+          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: TextStyle(
-                    color: cs.onSurface,
-                    fontWeight: FontWeight.w700,
+                  linked ? l10n.statusLinkedTitle : l10n.statusUnlinkedTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
-                  body,
-                  style: TextStyle(color: cs.onSurfaceVariant, height: 1.35),
+                  linked ? l10n.statusLinkedBody : l10n.howItWorksBody,
+                  style: TextStyle(
+                    color: cs.onPrimary.withValues(alpha: 0.82),
+                    fontSize: 14,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NavButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  const _NavButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final enabled = onTap != null;
+
+    return Material(
+      color: enabled ? cs.surfaceContainerHigh : cs.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: enabled ? cs.primary : cs.onSurfaceVariant,
+                size: 28,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: cs.onSurface,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: enabled ? cs.onSurfaceVariant : cs.outline,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
