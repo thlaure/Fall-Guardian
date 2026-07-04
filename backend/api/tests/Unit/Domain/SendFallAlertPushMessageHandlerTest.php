@@ -120,6 +120,58 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
     }
 
     #[Test]
+    public function itSendsPushToEveryLinkedCaregiverDeviceWithAToken(): void
+    {
+        $protectedDevice = $this->createMock(Device::class);
+        $firstCaregiverDevice = $this->createMock(Device::class);
+        $secondCaregiverDevice = $this->createMock(Device::class);
+
+        $firstLink = $this->createMock(CaregiverLink::class);
+        $firstLink->method('getCaregiverDevice')->willReturn($firstCaregiverDevice);
+
+        $secondLink = $this->createMock(CaregiverLink::class);
+        $secondLink->method('getCaregiverDevice')->willReturn($secondCaregiverDevice);
+
+        $firstPushToken = $this->createMock(CaregiverPushToken::class);
+        $firstPushToken->method('getFcmToken')->willReturn('first-fcm-token');
+
+        $secondPushToken = $this->createMock(CaregiverPushToken::class);
+        $secondPushToken->method('getFcmToken')->willReturn('second-fcm-token');
+
+        $alert = $this->createMock(FallAlert::class);
+        $alert->method('getCancelledAt')->willReturn(null);
+        $alert->method('getDevice')->willReturn($protectedDevice);
+        $alert->method('getId')->willReturn(Uuid::v7());
+        $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable('2025-01-01T12:00:00+00:00'));
+        $alert->method('getLatitude')->willReturn(48.8566);
+        $alert->method('getLongitude')->willReturn(2.3522);
+
+        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([$firstLink, $secondLink]);
+        $this->pushTokenRepository
+            ->expects($this->exactly(2))
+            ->method('findByDevice')
+            ->willReturnCallback(
+                static fn (Device $device): ?CaregiverPushToken => match ($device) {
+                    $firstCaregiverDevice => $firstPushToken,
+                    $secondCaregiverDevice => $secondPushToken,
+                    default => null,
+                },
+            );
+        $this->pushGateway->method('getProviderName')->willReturn('fake');
+        $this->pushGateway
+            ->expects($this->exactly(2))
+            ->method('send')
+            ->willReturn(['providerMessageId' => 'push-id']);
+
+        $alert->expects($this->exactly(2))->method('addPushAttempt');
+        $alert->expects($this->once())->method('markSent');
+        $this->fallAlertRepository->expects($this->once())->method('save')->with($alert);
+
+        ($this->handler)(new SendFallAlertPushMessage('some-id'));
+    }
+
+    #[Test]
     public function itSkipsCaregiverWithNoToken(): void
     {
         $protectedDevice = $this->createMock(Device::class);
