@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fall Guardian — fall alerts from watch to caregiver</title>
+  <meta name="description" content="Fall Guardian quietly notifies caregivers when a fall goes unanswered. Private preview. Not an emergency service.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header role="banner">
+    <div class="container header-inner">
+      <a href="./index.html" class="brand" aria-label="Fall Guardian — home">
+        <svg class="brand-icon" aria-hidden="true" width="22" height="22" viewBox="0 0 32 32" fill="none">
+          <path d="M16 5 L27 10 v7 c0 6-4.5 10.5-11 12.5 C9.5 27.5 5 23 5 17 v-7 Z" fill="#0d6b72"/>
+          <path d="M12 16.5 l2.5 2.5 L20 13" stroke="#f7f5f0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Fall Guardian
+      </a>
+      <nav aria-label="Site navigation">
+        <ul role="list">
+          <li><a href="#how-it-works">How it works</a></li>
+          <li><a href="#who-it-helps">Who it helps</a></li>
+          <li><a href="#waitlist" class="nav-cta">Join waitlist</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ==================== Hero ==================== -->
+    <section class="section-hero" aria-labelledby="hero-heading">
+      <div class="container hero-inner">
+
+        <div class="hero-copy">
+          <p class="eyebrow">Private preview</p>
+          <h1 id="hero-heading">Fall alerts — from wrist to caregiver.</h1>
+          <p class="hero-lead">Fall Guardian quietly monitors for falls on a paired Apple Watch. If a fall goes unanswered, your caregiver is notified — no panic, no noise.</p>
+          <p class="disclaimer-note">
+            <strong>Not an emergency service.</strong> Fall Guardian is a fall alert companion, not a certified medical device.
+          </p>
+          <div class="hero-actions">
+            <a href="#waitlist" class="btn btn-primary">Join the waitlist</a>
+            <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="countdown-display">
+            <div class="countdown-ring-wrap">
+              <svg class="ring-svg" viewBox="0 0 240 240" fill="none">
+                <circle class="ring-track" cx="120" cy="120" r="100"/>
+                <circle class="ring-progress" cx="120" cy="120" r="100"/>
+              </svg>
+              <div class="ring-inner">
+                <span class="ring-number" id="ring-number">27</span>
+                <span class="ring-unit">seconds</span>
+              </div>
+            </div>
+            <div class="ring-context">
+              <div class="pnotif pnotif--warn ring-pnotif">
+                <span class="pnotif-dot"></span>
+                <span class="pnotif-body">
+                  <strong>Possible fall detected</strong>
+                  <span>Cancel before alert fires</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== How it works ==================== -->
+    <section id="how-it-works" class="section-alt" aria-labelledby="how-heading">
+      <div class="container">
+        <h2 id="how-heading">How it works</h2>
+        <p class="section-lead">Three quiet steps. Most of the time, nothing happens.</p>
+        <ol class="steps" role="list">
+          <li class="step reveal">
+            <div class="step-num" aria-hidden="true">1</div>
+            <div class="step-body">
+              <h3>Watch detects a possible fall</h3>
+              <p>Fall Guardian monitors motion on a paired Apple Watch. A suspected fall triggers a silent alert on the assisted user's phone.</p>
+            </div>
+          </li>
+          <li class="step reveal">
+            <div class="step-num" aria-hidden="true">2</div>
+            <div class="step-body">
+              <h3>User can cancel within 30 seconds</h3>
+              <p>If everything is fine, a single tap cancels the alert. No caregiver is disturbed. False alarms stay private.</p>
+            </div>
+          </li>
+          <li class="step reveal">
+            <div class="step-num" aria-hidden="true">3</div>
+            <div class="step-body">
+              <h3>Caregiver receives an alert</h3>
+              <p>If the countdown expires uncancelled, the linked caregiver receives a push notification and can acknowledge — bringing calm, attentive response without calling emergency services.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ==================== Product preview ==================== -->
+    <section class="section-preview" aria-labelledby="preview-heading">
+      <div class="container preview-inner">
+
+        <div class="preview-copy">
+          <h2 id="preview-heading">Designed around the caregiver</h2>
+          <p>Caregivers see a clear notification with context — who, when, and whether it was acknowledged. No missed calls, no guesswork.</p>
+          <ul class="feature-list" role="list">
+            <li>Push notification the moment an alert fires</li>
+            <li>One-tap acknowledgement to confirm you are aware</li>
+            <li>Alert history for ongoing peace of mind</li>
+            <li>Paired to a specific watch — no unwanted access</li>
+          </ul>
+        </div>
+
+        <div class="preview-device-wrap" aria-hidden="true">
+          <div class="device-phone device-phone--large">
+            <div class="phone-notch"></div>
+            <div class="phone-screen phone-screen--large">
+              <div class="app-bar">
+                <span class="app-name">Fall Guardian</span>
+                <span class="app-conn">● Connected</span>
+              </div>
+              <div class="alert-card">
+                <div class="alert-card-head">
+                  <span class="alert-pill">Active alert</span>
+                  <span class="alert-ts">Today, 10:43</span>
+                </div>
+                <div class="alert-user">Marie Dupont</div>
+                <div class="alert-sub">Fall not cancelled</div>
+                <button class="pmock-btn pmock-btn--ack pmock-btn--lg" tabindex="-1">Acknowledge alert</button>
+              </div>
+              <div class="history-block">
+                <div class="history-head">Recent</div>
+                <div class="history-row">
+                  <span>Yesterday, 15:12</span>
+                  <span class="htag htag--cancel">Cancelled</span>
+                </div>
+                <div class="history-row">
+                  <span>Mon, 09:07</span>
+                  <span class="htag htag--ack">Acknowledged</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== Who it helps ==================== -->
+    <section id="who-it-helps" class="section-alt" aria-labelledby="who-heading">
+      <div class="container">
+        <h2 id="who-heading">Who it helps</h2>
+        <div class="personas">
+
+          <div class="persona reveal">
+            <div class="persona-icon" aria-hidden="true">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="20" fill="#0d6b7218"/>
+                <circle cx="20" cy="14" r="4.5" fill="#0d6b72"/>
+                <path d="M10 30c0-5.5 4.5-8 10-8s10 2.5 10 8" stroke="#0d6b72" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+            <h3>Older adults living independently</h3>
+            <p>Stay autonomous at home with a discreet safety net that only activates when needed. No constant monitoring, no camera.</p>
+          </div>
+
+          <div class="persona reveal">
+            <div class="persona-icon" aria-hidden="true">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="20" fill="#0d6b7218"/>
+                <circle cx="15" cy="14" r="3.5" fill="#0d6b72"/>
+                <circle cx="26" cy="15" r="2.8" fill="#0d6b72" opacity=".6"/>
+                <path d="M7 30c0-4.5 3.5-7 8-7s8 2.5 8 7" stroke="#0d6b72" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                <path d="M24 28c.8-.6 2-1 3-1 2.5 0 5 1.5 5 4" stroke="#0d6b72" stroke-width="1.5" stroke-linecap="round" fill="none" opacity=".6"/>
+              </svg>
+            </div>
+            <h3>Remote family caregivers</h3>
+            <p>Distance is less stressful when you know you will be notified if something goes wrong — without being alerted for every stumble.</p>
+          </div>
+
+          <div class="persona reveal">
+            <div class="persona-icon" aria-hidden="true">
+              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                <circle cx="20" cy="20" r="20" fill="#0d6b7218"/>
+                <path d="M20 10 L31 15 v6 c0 6.5-5 11-11 13 C14 32 9 27.5 9 21 v-6 Z" fill="#0d6b72" opacity=".25"/>
+                <path d="M15 20.5 l3 3 L25 17" stroke="#0d6b72" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h3>Recovery and rehabilitation</h3>
+            <p>Useful during recovery when fall risk is temporarily elevated and extra reassurance helps everyone involved.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Private preview ==================== -->
+    <section class="section-beta" aria-labelledby="beta-heading">
+      <div class="container beta-inner">
+        <span class="badge" aria-hidden="true">Private preview</span>
+        <h2 id="beta-heading">Currently in private preview</h2>
+        <p>Fall Guardian is not yet publicly available. We are testing with a small group to ensure the alert flow is reliable and the experience feels calm and trusted before opening more broadly.</p>
+        <p class="disclaimer-note disclaimer-note--light">Fall Guardian is a fall alert companion, not a certified medical device, and not a substitute for emergency services.</p>
+      </div>
+    </section>
+
+    <!-- ==================== Waitlist ==================== -->
+    <section id="waitlist" class="section-waitlist" aria-labelledby="waitlist-heading">
+      <div class="container waitlist-inner">
+        <h2 id="waitlist-heading">Join the waitlist</h2>
+        <p>Leave your details and we will reach out when a spot opens in the private preview.</p>
+
+        <form id="waitlist-form" novalidate aria-label="Waitlist sign-up">
+          <p class="form-note">Fields marked <span class="req-marker" aria-hidden="true">*</span> are required.</p>
+
+          <div class="form-group">
+            <label for="wl-name">Name <span class="optional-lbl">(optional)</span></label>
+            <input type="text" id="wl-name" name="name" autocomplete="name" spellcheck="false">
+          </div>
+
+          <div class="form-group">
+            <label for="wl-email">Email <span class="req-marker" aria-hidden="true">*</span></label>
+            <input
+              type="email"
+              id="wl-email"
+              name="email"
+              required
+              aria-required="true"
+              aria-describedby="err-email"
+              autocomplete="email"
+              spellcheck="false"
+            >
+            <span id="err-email" class="field-error" role="alert"></span>
+          </div>
+
+          <div class="form-group">
+            <label for="wl-role">I am a <span class="optional-lbl">(optional)</span></label>
+            <select id="wl-role" name="role">
+              <option value="">— select —</option>
+              <option value="assisted-user">Person who may benefit from Fall Guardian</option>
+              <option value="caregiver">Family caregiver</option>
+              <option value="professional">Healthcare professional</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="wl-message">Message <span class="optional-lbl">(optional)</span></label>
+            <textarea id="wl-message" name="message" rows="3" placeholder="Tell us about your situation or ask a question."></textarea>
+          </div>
+
+          <div class="form-group form-group--check">
+            <label class="check-wrap" for="wl-consent">
+              <input
+                type="checkbox"
+                id="wl-consent"
+                name="consent"
+                required
+                aria-required="true"
+                aria-describedby="err-consent"
+              >
+              <span class="check-text">
+                I agree to be contacted about Fall Guardian private preview.
+                <span class="req-marker" aria-hidden="true">*</span>
+                — <a href="./privacy.html">Privacy notice</a>
+              </span>
+            </label>
+            <span id="err-consent" class="field-error" role="alert"></span>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-submit">Request access</button>
+        </form>
+
+        <div id="form-status" role="status" aria-live="polite" class="form-success" hidden>
+          Request received. You will be contacted about the Fall Guardian private preview.
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== FAQ ==================== -->
+    <section class="section-faq section-alt" aria-labelledby="faq-heading">
+      <div class="container">
+        <h2 id="faq-heading">Frequently asked questions</h2>
+        <dl class="faq-list">
+
+          <div class="faq-item">
+            <dt>
+              <button class="faq-btn" aria-expanded="false" aria-controls="faq-a1">
+                Is Fall Guardian an emergency service?
+                <span class="faq-icon" aria-hidden="true"></span>
+              </button>
+            </dt>
+            <dd id="faq-a1" hidden>
+              <p>No. Fall Guardian notifies a linked caregiver when a fall alert goes unanswered. It is not a certified medical device and not a substitute for emergency services. In an emergency, call 15 (SAMU), 18 (Sapeurs-Pompiers), or 112 (European emergency number).</p>
+            </dd>
+          </div>
+
+          <div class="faq-item">
+            <dt>
+              <button class="faq-btn" aria-expanded="false" aria-controls="faq-a2">
+                What devices are required?
+                <span class="faq-icon" aria-hidden="true"></span>
+              </button>
+            </dt>
+            <dd id="faq-a2" hidden>
+              <p>Currently Fall Guardian requires an Apple Watch paired with an iPhone for the assisted user, and an iPhone for the caregiver. Android support is under consideration for a later phase.</p>
+            </dd>
+          </div>
+
+          <div class="faq-item">
+            <dt>
+              <button class="faq-btn" aria-expanded="false" aria-controls="faq-a3">
+                How accurate is fall detection?
+                <span class="faq-icon" aria-hidden="true"></span>
+              </button>
+            </dt>
+            <dd id="faq-a3" hidden>
+              <p>Fall detection relies on Apple Watch motion sensors. Like any motion-based system, it can produce false alerts — for example from vigorous exercise or dropping the watch. The 30-second cancellation window handles these cases, and detection accuracy is continuously reviewed during the private preview.</p>
+            </dd>
+          </div>
+
+          <div class="faq-item">
+            <dt>
+              <button class="faq-btn" aria-expanded="false" aria-controls="faq-a4">
+                Who can see my data?
+                <span class="faq-icon" aria-hidden="true"></span>
+              </button>
+            </dt>
+            <dd id="faq-a4" hidden>
+              <p>Alert data is shared only with the caregiver you explicitly link in the app. We do not sell personal data. See our <a href="./privacy.html">privacy notice</a> for full details on data handling, processors, and your rights.</p>
+            </dd>
+          </div>
+
+          <div class="faq-item">
+            <dt>
+              <button class="faq-btn" aria-expanded="false" aria-controls="faq-a5">
+                When will it be publicly available?
+                <span class="faq-icon" aria-hidden="true"></span>
+              </button>
+            </dt>
+            <dd id="faq-a5" hidden>
+              <p>There is no public launch date at this time. The private preview is ongoing to gather feedback and ensure reliability before a wider release. Join the waitlist to be notified when a spot opens.</p>
+            </dd>
+          </div>
+
+        </dl>
+      </div>
+    </section>
+
+  </main>
+
+  <footer role="contentinfo">
+    <div class="container footer-inner">
+      <a href="./index.html" class="brand footer-brand" aria-label="Fall Guardian — home">
+        <svg class="brand-icon" aria-hidden="true" width="18" height="18" viewBox="0 0 32 32" fill="none">
+          <path d="M16 5 L27 10 v7 c0 6-4.5 10.5-11 12.5 C9.5 27.5 5 23 5 17 v-7 Z" fill="#0d6b72"/>
+          <path d="M12 16.5 l2.5 2.5 L20 13" stroke="#f7f5f0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Fall Guardian
+      </a>
+      <p class="footer-legal">
+        <a href="./privacy.html">Privacy</a> — data handled per GDPR. Controller: Thomas Laure. Contact: <a href="mailto:thomas.laure@enovacom.com">thomas.laure@enovacom.com</a>
+      </p>
+      <p class="footer-disclaimer">Not an emergency service. Fall Guardian is a fall alert companion, not a certified medical device.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
