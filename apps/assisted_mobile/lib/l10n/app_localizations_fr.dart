@@ -26,6 +26,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get homeStatusBody => 'La détection de chutes est active.\n'
       'Une alerte de 30 secondes apparaîtra si une chute est détectée.';
   @override
+  String get homeStatusUnlinkedTitle => 'Aucun aidant lié';
+  @override
+  String get homeStatusUnlinkedBody =>
+      'La détection peut fonctionner, mais aucun aidant ne sera alerté pour le moment.\nAjoutez un aidant avant de compter sur la surveillance.';
+  @override
   String get homeContactsTitle => 'Aidants';
   @override
   String get homeContactsSubtitle => 'Gérer qui reçoit l’alerte';

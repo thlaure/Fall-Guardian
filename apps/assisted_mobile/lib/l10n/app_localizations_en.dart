@@ -26,6 +26,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeStatusBody =>
       'Fall detection is active.\nA 30-second alert will appear if a fall is detected.';
   @override
+  String get homeStatusUnlinkedTitle => 'No caregiver linked';
+  @override
+  String get homeStatusUnlinkedBody =>
+      'Fall detection can run, but no caregiver will be alerted yet.\nAdd a caregiver before relying on monitoring.';
+  @override
   String get homeContactsTitle => 'Caregivers';
   @override
   String get homeContactsSubtitle => 'Manage who should be alerted';
