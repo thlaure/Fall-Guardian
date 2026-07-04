@@ -44,6 +44,7 @@ final class LinkedProtectedPersonsProviderTest extends TestCase
         $link = $this->createMock(CaregiverLink::class);
         $link->method('getProtectedDevice')->willReturn($protectedDevice);
         $link->method('getCreatedAt')->willReturn(new DateTimeImmutable('2026-06-15T10:00:00+00:00'));
+        $link->method('getProtectedPersonName')->willReturn('Marie');
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($caregiverDevice);
         $this->caregiverLinkRepository->method('findByCaregiverDevice')->with($caregiverDevice)->willReturn([$link]);
@@ -53,6 +54,7 @@ final class LinkedProtectedPersonsProviderTest extends TestCase
         $this->assertCount(1, $result);
         $this->assertSame('protected-1', $result[0]->protectedDeviceId);
         $this->assertSame('ios', $result[0]->protectedDevicePlatform);
+        $this->assertSame('Marie', $result[0]->protectedPersonName);
     }
 
     #[Test]

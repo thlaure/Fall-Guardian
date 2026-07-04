@@ -63,10 +63,12 @@ void main() {
             const LinkedProtectedPerson(
               protectedDeviceId: 'protected-device-1',
               protectedDevicePlatform: 'ios',
+              protectedPersonName: 'Marie',
             ),
             const LinkedProtectedPerson(
               protectedDeviceId: 'protected-device-2',
               protectedDevicePlatform: 'android',
+              protectedPersonName: 'Paul',
             ),
           ]),
         ),
@@ -77,10 +79,9 @@ void main() {
 
     expect(find.text('Protected persons'), findsOneWidget);
     expect(find.text('2 protected persons'), findsOneWidget);
-    expect(find.text('Protected person 1'), findsOneWidget);
-    expect(find.text('Protected person 2'), findsOneWidget);
+    expect(find.text('Marie'), findsOneWidget);
+    expect(find.text('Paul'), findsOneWidget);
     expect(find.text('Device ID'), findsNothing);
-    expect(find.textContaining('IOS device'), findsNothing);
     expect(find.byType(FloatingActionButton), findsOneWidget);
   });
 
@@ -100,7 +101,9 @@ void main() {
     expect(find.text('32-character invite code'), findsOneWidget);
 
     const groupedCode = '669C BEC2 61CD DF65 DD21 F4D2 A245 2689';
-    await tester.enterText(find.byType(TextFormField), groupedCode);
+    await tester.enterText(find.byType(TextFormField).at(0), 'Marie');
+    await tester.enterText(find.byType(TextFormField).at(1), 'Thomas');
+    await tester.enterText(find.byType(TextFormField).last, groupedCode);
     await tester.pump();
 
     expect(find.text(groupedCode), findsOneWidget);
@@ -118,7 +121,10 @@ void main() {
     );
     await tester.pump();
 
-    await tester.enterText(find.byType(TextFormField), 'ABC12345');
+    await tester.enterText(find.byType(TextFormField).first, 'Marie');
+    await tester.enterText(find.byType(TextFormField).at(1), 'Thomas');
+    await tester.enterText(find.byType(TextFormField).last, 'ABC12345');
+    await tester.ensureVisible(find.text('Add as Caregiver'));
     await tester.tap(find.text('Add as Caregiver'));
     await tester.pump();
 

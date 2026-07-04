@@ -18,6 +18,8 @@ class _LinkScreenState extends State<LinkScreen> {
   static final _inviteCodePattern = RegExp(r'^[A-F0-9]{32}$');
 
   final _codeController = TextEditingController();
+  final _protectedPersonNameController = TextEditingController();
+  final _caregiverNameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _api = CaregiverBackendService();
   bool _loading = false;
@@ -26,6 +28,8 @@ class _LinkScreenState extends State<LinkScreen> {
   @override
   void dispose() {
     _codeController.dispose();
+    _protectedPersonNameController.dispose();
+    _caregiverNameController.dispose();
     super.dispose();
   }
 
@@ -33,6 +37,8 @@ class _LinkScreenState extends State<LinkScreen> {
     if (!_formKey.currentState!.validate()) return;
     final l10n = AppLocalizations.of(context);
     final code = _normalizeInviteCode(_codeController.text);
+    final protectedPersonName = _protectedPersonNameController.text.trim();
+    final caregiverName = _caregiverNameController.text.trim();
 
     setState(() {
       _loading = true;
@@ -40,7 +46,11 @@ class _LinkScreenState extends State<LinkScreen> {
     });
 
     try {
-      await _api.acceptInvite(code);
+      await _api.acceptInvite(
+        code,
+        protectedPersonName: protectedPersonName,
+        caregiverName: caregiverName,
+      );
       if (mounted) {
         widget.onLinked();
         Navigator.pop(context);
@@ -109,34 +119,82 @@ class _LinkScreenState extends State<LinkScreen> {
             const SizedBox(height: 32),
             Form(
               key: _formKey,
-              child: TextFormField(
-                controller: _codeController,
-                textCapitalization: TextCapitalization.characters,
-                maxLength: 39,
-                maxLines: 2,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp('[a-fA-F0-9\\s-]')),
-                ],
-                decoration: InputDecoration(
-                  labelText: l10n.codeFieldLabel,
-                  prefixIcon: const Icon(Icons.vpn_key),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _protectedPersonNameController,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 120,
+                    decoration: InputDecoration(
+                      labelText: l10n.protectedPersonNameFieldLabel,
+                      prefixIcon: const Icon(Icons.person),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.length < 2) {
+                        return l10n.protectedPersonNameValidation;
+                      }
+                      return null;
+                    },
                   ),
-                ),
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 20,
-                  letterSpacing: 1.5,
-                  fontWeight: FontWeight.bold,
-                ),
-                validator: (v) {
-                  if (v == null ||
-                      !_inviteCodePattern.hasMatch(_normalizeInviteCode(v))) {
-                    return l10n.codeFieldValidation;
-                  }
-                  return null;
-                },
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _caregiverNameController,
+                    textCapitalization: TextCapitalization.words,
+                    maxLength: 120,
+                    decoration: InputDecoration(
+                      labelText: l10n.caregiverNameFieldLabel,
+                      prefixIcon: const Icon(Icons.badge),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.length < 2) {
+                        return l10n.caregiverNameValidation;
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _codeController,
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 39,
+                    maxLines: 2,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp('[a-fA-F0-9\\s-]'),
+                      ),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: l10n.codeFieldLabel,
+                      prefixIcon: const Icon(Icons.vpn_key),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 20,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    validator: (v) {
+                      if (v == null ||
+                          !_inviteCodePattern.hasMatch(
+                            _normalizeInviteCode(v),
+                          )) {
+                        return l10n.codeFieldValidation;
+                      }
+                      return null;
+                    },
+                  ),
+                ],
               ),
             ),
             if (_errorMessage != null) ...[

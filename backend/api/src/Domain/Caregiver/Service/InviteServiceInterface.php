@@ -13,7 +13,12 @@ interface InviteServiceInterface
 {
     public function createInvite(Device $protectedDevice): CaregiverInvite;
 
-    public function acceptInvite(string $code, Device $caregiverDevice): CaregiverLink;
+    public function acceptInvite(
+        string $code,
+        Device $caregiverDevice,
+        ?string $protectedPersonName = null,
+        ?string $caregiverName = null,
+    ): CaregiverLink;
 
     public function registerPushToken(Device $caregiverDevice, string $fcmToken): CaregiverPushToken;
 }

@@ -117,11 +117,19 @@ void main() {
 
     const inviteCode = '669CBEC261CDDF65DD21F4D2A2452689';
 
-    await service.acceptInvite(inviteCode);
+    await service.acceptInvite(
+      inviteCode,
+      protectedPersonName: 'Marie',
+      caregiverName: 'Thomas',
+    );
 
     expect(capturedRequest.method, 'POST');
     expect(capturedRequest.url.path, '/api/v1/invites/$inviteCode/accept');
     expect(capturedRequest.headers['Authorization'], 'Bearer token-1');
+    expect(jsonDecode(capturedRequest.body), {
+      'protectedPersonName': 'Marie',
+      'caregiverName': 'Thomas',
+    });
     expect(await service.isLinked(), isTrue);
   });
 
@@ -194,10 +202,12 @@ void main() {
                 {
                   'protectedDeviceId': 'protected-1',
                   'protectedDevicePlatform': 'ios',
+                  'protectedPersonName': 'Marie',
                 },
                 {
                   'protectedDeviceId': 'protected-2',
                   'protectedDevicePlatform': 'android',
+                  'protectedPersonName': 'Paul',
                 },
               ],
             }),
@@ -211,7 +221,48 @@ void main() {
       expect(protectedPersons, hasLength(2));
       expect(protectedPersons.first.protectedDeviceId, 'protected-1');
       expect(protectedPersons.first.protectedDevicePlatform, 'ios');
+      expect(protectedPersons.first.protectedPersonName, 'Marie');
       expect(protectedPersons.last.protectedDevicePlatform, 'android');
+      expect(protectedPersons.last.protectedPersonName, 'Paul');
+    },
+  );
+
+  test(
+    'getLinkedProtectedPersons keeps named protected persons visible first',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {
+                  'protectedDeviceId': 'protected-without-name',
+                  'protectedDevicePlatform': 'ios',
+                  'protectedPersonName': null,
+                },
+                {
+                  'protectedDeviceId': 'protected-with-name',
+                  'protectedDevicePlatform': 'android',
+                  'protectedPersonName': 'Marie',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final protectedPersons = await service.getLinkedProtectedPersons();
+
+      expect(protectedPersons.first.protectedDeviceId, 'protected-with-name');
+      expect(protectedPersons.first.protectedPersonName, 'Marie');
+      expect(protectedPersons.last.protectedDeviceId, 'protected-without-name');
     },
   );
 
@@ -340,7 +391,11 @@ void main() {
         }),
       );
 
-      await service.acceptInvite(inviteCode);
+      await service.acceptInvite(
+        inviteCode,
+        protectedPersonName: 'Marie',
+        caregiverName: 'Thomas',
+      );
 
       expect(requests, [
         'POST /api/v1/invites/$inviteCode/accept',

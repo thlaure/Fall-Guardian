@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -36,7 +38,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
         _linkedCaregivers = caregivers;
         _loading = false;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to load linked caregivers',
+        name: 'ContactsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -49,7 +57,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
     try {
       await _api.deleteLinkedCaregiver(linkId);
       await _load();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to create caregiver invite',
+        name: 'ContactsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to remove caregiver.')),
@@ -68,7 +82,13 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ? DateTime.tryParse(data['expiresAt'] as String)
             : null;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to create caregiver invite',
+        name: 'ContactsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -250,6 +270,8 @@ class _LinkedCaregiversSection extends StatelessWidget {
         ...caregivers.indexed.map((entry) {
           final caregiver = entry.$2;
           final linkId = caregiver['id'] as String? ?? '';
+          final caregiverName = '${caregiver['caregiverName'] ?? ''}'.trim();
+          final platform = '${caregiver['platform'] ?? ''}'.trim();
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
@@ -257,8 +279,16 @@ class _LinkedCaregiversSection extends StatelessWidget {
                 backgroundColor: cs.primaryContainer,
                 child: Icon(Icons.person_outline, color: cs.onPrimaryContainer),
               ),
-              title: Text('Caregiver ${entry.$1 + 1}'),
-              subtitle: const Text('Receives fall alerts from this device'),
+              title: Text(
+                caregiverName.isNotEmpty
+                    ? caregiverName
+                    : 'Caregiver ${entry.$1 + 1}',
+              ),
+              subtitle: Text(
+                platform.isEmpty
+                    ? 'Receives fall alerts from this device'
+                    : '${platform.toUpperCase()} caregiver device',
+              ),
               trailing: IconButton(
                 tooltip: 'Remove caregiver',
                 icon: const Icon(Icons.link_off),

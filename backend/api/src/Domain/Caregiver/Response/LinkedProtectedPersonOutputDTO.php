@@ -30,6 +30,7 @@ final readonly class LinkedProtectedPersonOutputDTO
         public string $protectedDeviceId,
         public string $protectedDevicePlatform,
         public string $linkedAt,
+        public ?string $protectedPersonName,
     ) {
     }
 
@@ -41,6 +42,7 @@ final readonly class LinkedProtectedPersonOutputDTO
             protectedDeviceId: $protectedDevice->getPublicId(),
             protectedDevicePlatform: $protectedDevice->getPlatform(),
             linkedAt: $link->getCreatedAt()->format(DateTimeInterface::ATOM),
+            protectedPersonName: $link->getProtectedPersonName(),
         );
     }
 }

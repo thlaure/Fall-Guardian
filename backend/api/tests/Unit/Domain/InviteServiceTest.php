@@ -80,9 +80,11 @@ final class InviteServiceTest extends TestCase
         $this->inviteRepository->expects($this->once())->method('save');
         $this->linkRepository->expects($this->once())->method('save');
 
-        $link = $this->service->acceptInvite('ABCD1234', $caregiverDevice);
+        $link = $this->service->acceptInvite('ABCD1234', $caregiverDevice, 'Marie', 'Thomas');
 
         self::assertInstanceOf(CaregiverLink::class, $link);
+        self::assertSame('Marie', $link->getProtectedPersonName());
+        self::assertSame('Thomas', $link->getCaregiverName());
     }
 
     #[Test]
@@ -163,13 +165,15 @@ final class InviteServiceTest extends TestCase
         $existing = $this->createMock(CaregiverLink::class);
         $existing->method('getStatus')->willReturn(\App\Enum\CaregiverLinkStatus::Revoked);
         $existing->expects($this->once())->method('reactivate');
+        $existing->expects($this->once())->method('renameProtectedPerson')->with('Marie');
+        $existing->expects($this->once())->method('renameCaregiver')->with('Thomas');
 
         $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
         $this->inviteRepository->expects($this->once())->method('save')->with($invite);
         $this->linkRepository->expects($this->once())->method('save')->with($existing);
 
-        $result = $this->service->acceptInvite('ABCD1234', $caregiverDevice);
+        $result = $this->service->acceptInvite('ABCD1234', $caregiverDevice, 'Marie', 'Thomas');
 
         $this->assertSame($existing, $result);
     }
@@ -187,11 +191,39 @@ final class InviteServiceTest extends TestCase
 
         $existing = $this->createMock(CaregiverLink::class);
         $existing->method('getStatus')->willReturn(\App\Enum\CaregiverLinkStatus::Active);
+        $existing->expects($this->once())->method('renameProtectedPerson')->with('Marie');
+        $existing->expects($this->once())->method('renameCaregiver')->with('Thomas');
 
         $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
         $this->inviteRepository->expects($this->once())->method('save');
-        $this->linkRepository->expects($this->never())->method('save');
+        $this->linkRepository->expects($this->once())->method('save')->with($existing);
+
+        $result = $this->service->acceptInvite('ABCD1234', $caregiverDevice, 'Marie', 'Thomas');
+
+        $this->assertSame($existing, $result);
+    }
+
+    #[Test]
+    public function itPreservesExistingNamesWhenAcceptedWithoutNames(): void
+    {
+        $protectedDevice = $this->createMock(Device::class);
+        $caregiverDevice = $this->createMock(Device::class);
+        $caregiverDevice->method('isCaregiver')->willReturn(true);
+
+        $invite = $this->createMock(CaregiverInvite::class);
+        $invite->method('getDevice')->willReturn($protectedDevice);
+        $invite->expects($this->once())->method('markUsed');
+
+        $existing = $this->createMock(CaregiverLink::class);
+        $existing->method('getStatus')->willReturn(\App\Enum\CaregiverLinkStatus::Active);
+        $existing->expects($this->never())->method('renameProtectedPerson');
+        $existing->expects($this->never())->method('renameCaregiver');
+
+        $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
+        $this->linkRepository->method('findExistingPair')->willReturn($existing);
+        $this->inviteRepository->expects($this->once())->method('save');
+        $this->linkRepository->expects($this->once())->method('save')->with($existing);
 
         $result = $this->service->acceptInvite('ABCD1234', $caregiverDevice);
 
