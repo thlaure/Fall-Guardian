@@ -9,6 +9,7 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Caregiver\Request\RegisterPushTokenInputDTO;
 use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DomainException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
@@ -21,6 +22,7 @@ final readonly class RegisterPushTokenProcessor implements ProcessorInterface
     public function __construct(
         private InviteServiceInterface $inviteService,
         private DeviceContextInterface $currentDeviceProvider,
+        private EndpointRateLimiterInterface $rateLimiter,
     ) {
     }
 
@@ -30,11 +32,12 @@ final readonly class RegisterPushTokenProcessor implements ProcessorInterface
             throw new BadRequestHttpException('Invalid push token payload.');
         }
 
+        $device = $this->currentDeviceProvider->requireDevice();
+
+        $this->rateLimiter->consume('register_push_token', 10, 60, $device->getPublicId());
+
         try {
-            $this->inviteService->registerPushToken(
-                $this->currentDeviceProvider->requireDevice(),
-                $data->fcmToken,
-            );
+            $this->inviteService->registerPushToken($device, $data->fcmToken);
         } catch (DomainException $e) {
             throw new UnprocessableEntityHttpException($e->getMessage(), $e);
         }

@@ -4,8 +4,9 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Allow plain HTTP in dev builds (LAN backend). Use HTTPS in production. -->
-		<key>NSAllowsArbitraryLoads</key>
+		<!-- Allow plain HTTP only to local/LAN hosts (dev backend). Production traffic
+		     still requires HTTPS, matching the assisted app's ATS configuration. -->
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
