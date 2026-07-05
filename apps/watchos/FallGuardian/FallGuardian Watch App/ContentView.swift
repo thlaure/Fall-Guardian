@@ -143,7 +143,7 @@ struct ContentView: View {
                     .frame(width: 52, height: 52)
                 Image(systemName: "shield.fill")  // SF Symbols icon — built into the OS.
                     .font(.system(size: 28))
-                    .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))  // Warm orange
+                    .foregroundColor(.white)
             }
 
             Text("Fall Guardian")
