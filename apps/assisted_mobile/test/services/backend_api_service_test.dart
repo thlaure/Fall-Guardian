@@ -454,7 +454,8 @@ void main() {
     ]);
   });
 
-  test('recordCancelledFallAlert refreshes stale credentials after unauthorized',
+  test(
+      'recordCancelledFallAlert refreshes stale credentials after unauthorized',
       () async {
     store.data['backend_device_id'] = 'stale-device';
     store.data['backend_device_token'] = 'stale-token';

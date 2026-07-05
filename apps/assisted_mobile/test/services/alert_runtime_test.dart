@@ -46,7 +46,8 @@ void main() {
     expect(resolver.resolve(), isNotNull);
   });
 
-  test('DeviceLocaleResolver.resolve falls back to English for an unsupported '
+  test(
+      'DeviceLocaleResolver.resolve falls back to English for an unsupported '
       'device locale', () {
     final dispatcher = TestWidgetsFlutterBinding.instance.platformDispatcher;
     dispatcher.localeTestValue = const Locale('xx');

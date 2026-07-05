@@ -549,8 +549,7 @@ void main() {
 
   test(
       'timeout with a real position submits lat/lng and dismisses after the '
-      'alertSent delay',
-      () async {
+      'alertSent delay', () async {
     final repo = _FakeFallEventsRepository();
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway();

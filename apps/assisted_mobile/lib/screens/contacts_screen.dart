@@ -273,9 +273,8 @@ class _LinkedCaregiversSection extends StatelessWidget {
           final caregiverName = '${caregiver['caregiverName'] ?? ''}'.trim();
           final platform = '${caregiver['platform'] ?? ''}'.trim();
           final deviceId = '${caregiver['caregiverDeviceId'] ?? ''}'.trim();
-          final shortDeviceId = deviceId.length <= 8
-              ? deviceId
-              : deviceId.substring(0, 8);
+          final shortDeviceId =
+              deviceId.length <= 8 ? deviceId : deviceId.substring(0, 8);
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(

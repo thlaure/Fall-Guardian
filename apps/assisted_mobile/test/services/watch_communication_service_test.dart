@@ -50,7 +50,8 @@ void main() {
       final after = DateTime.now().millisecondsSinceEpoch;
 
       expect(receivedTimestamp, isNotNull);
-      expect(receivedTimestamp! >= before && receivedTimestamp! <= after, isTrue);
+      expect(
+          receivedTimestamp! >= before && receivedTimestamp! <= after, isTrue);
       service.dispose();
     });
 
