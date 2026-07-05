@@ -60,8 +60,8 @@ class FallDetectionService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
 
     // The fall-detection algorithm (see FallAlgorithm.kt). Receives raw X/Y/Z
-    // accelerometer values on every tick and returns true when it identifies the
-    // full three-phase fall pattern (freefall → impact → tilt).
+    // accelerometer values on every tick and returns true when it identifies
+    // either (freefall → impact) or (impact + steep tilt).
     private lateinit var algorithm: FallAlgorithm
 
     // A WakeLock prevents the watch CPU from entering deep sleep while the
@@ -207,10 +207,11 @@ class FallDetectionService : Service(), SensorEventListener {
         val az = event.values[2]
 
         // Feed this sample into the PSP fall-detection state machine.
-        // processSample() returns true only after the full pattern completes:
-        // freefall phase (< thresh_freefall g for >= thresh_freefall_ms ms) →
-        // impact phase  (> thresh_impact g) →
-        // tilt phase    (body angle > thresh_tilt degrees).
+        // processSample() returns true once either qualifying pattern completes:
+        // freefall phase (< thresh_freefall g for >= thresh_freefall_ms ms) followed
+        // by an impact phase (> thresh_impact g), OR an impact phase together with
+        // a tilt phase (body angle > thresh_tilt degrees) — for falls with no
+        // clean free-fall phase.
         val detected = algorithm.processSample(ax, ay, az, nowElapsed)
 
         // Only act on a positive detection if enough time has passed since the

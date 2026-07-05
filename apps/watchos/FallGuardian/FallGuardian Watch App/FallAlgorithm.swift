@@ -30,13 +30,16 @@ import CoreMotion  // Apple's motion framework; CMAccelerometerData lives here.
 ///   - **P**hase 1 — Free-fall  : the watch becomes nearly weightless
 ///   - **P**hase 2 — Impact     : a sudden hard jolt follows the free-fall
 ///   - **P**hase 3 — (P)osture/Tilt : body orientation change after landing
-///                                    (tracked here but not part of the trigger)
+///
+/// Trigger: (Free-fall latch AND Impact) OR (Impact AND Tilt).
 ///
 /// A real human fall typically produces this exact signature:
 ///   1. The person's arm swings freely → accelerometer magnitude drops near 0 g.
 ///   2. The body hits the ground        → magnitude spikes well above 1 g.
-/// Requiring both phases in order eliminates most false positives (sitting down,
-/// arm gestures, phone vibrations, etc.).
+/// Requiring free-fall + impact together eliminates most false positives
+/// (sitting down, arm gestures, phone vibrations, etc.). Some real falls never
+/// produce a clean free-fall phase (e.g. sliding out of a chair); for those,
+/// impact + a steep post-fall tilt angle triggers the alert instead.
 ///
 /// ## Units: g-forces vs m/s²
 /// Apple's CMMotionManager reports acceleration in **g** (1 g ≈ 9.81 m/s²).
@@ -63,8 +66,9 @@ class FallAlgorithm {
     /// typically produces 3–6 g.  2.5 g sits between those ranges.
     var impactThresholdG: Double = 2.5
 
-    /// Tilt angle (degrees from vertical) tracked after landing.  Kept for future
-    /// use and logging but not currently part of the trigger condition.
+    /// Tilt angle (degrees from vertical) checked after an impact spike. Combined
+    /// with an active impact, a tilt past this threshold triggers a fall even
+    /// without a qualifying free-fall phase (see `processSample`).
     var tiltThresholdDeg: Double = 45.0
 
     /// Minimum number of milliseconds the acceleration must stay below
@@ -209,19 +213,21 @@ class FallAlgorithm {
         // impact followed it was probably a slow controlled descent, not a fall.
         let impactActive = impactDetected && (nowMs - impactTimeMs < 2000)
 
-        // --- Phase 3: Tilt tracking (informational only) ---
-        // Tilt angle is computed from the filtered gravity vector.  It tells us
-        // how far the watch has tilted from its normal upright position.
-        // Currently tracked but NOT part of the trigger decision.  The underscore
-        // assignment suppresses the Swift "result unused" compiler warning.
-        _ = tiltAngleDeg()
+        // --- Phase 3: Tilt detection ---
+        // Tilt angle is computed from the filtered gravity vector. Some real falls
+        // (e.g. a slow slide out of a chair) never produce a qualifying free-fall
+        // phase but still end in a hard impact followed by lying at a steep angle.
+        // Tracking this as an alternate path — impact + tilt, no free-fall required —
+        // catches that case instead of only logging the angle for later use.
+        let tiltActive = tiltAngleDeg() > tiltThresholdDeg
 
         // --- Final trigger ---
-        // A fall is confirmed when BOTH conditions hold at the same time:
-        //   • The free-fall latch fired earlier (phase 1 was qualified)
-        //   • An impact spike happened recently (phase 2 is still active)
+        // A fall is confirmed when either:
+        //   • The free-fall latch fired earlier AND an impact spike is still active, or
+        //   • An impact spike is active AND the watch is currently tilted past
+        //     threshold (covers falls without a free-fall phase).
         // Returning true here causes FallDetectionManager to fire the alarm.
-        return freeFallQualifiedLatch && impactActive
+        return (freeFallQualifiedLatch && impactActive) || (impactActive && tiltActive)
     }
 
     // MARK: - Private helpers

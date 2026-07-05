@@ -43,12 +43,15 @@ final class FallAlgorithmTests: XCTestCase {
     // MARK: - Impact alone does not trigger
 
     func testImpactAloneDoesNotTrigger() {
+        // Z-axis-aligned impact (matches the direction gravity already converges
+        // toward from a zero baseline) so this isolates impact magnitude without
+        // incidentally producing a large tilt angle as a side effect.
         var triggered = false
         for i in 0..<5 {
             let t = Double(i) * 20
-            triggered = algorithm.processSample(ax: 3.0, ay: 3.0, az: 3.0, nowMs: t) || triggered
+            triggered = algorithm.processSample(ax: 0, ay: 0, az: 3.0, nowMs: t) || triggered
         }
-        XCTAssertFalse(triggered, "Impact without prior free-fall should not trigger")
+        XCTAssertFalse(triggered, "Impact without prior free-fall or tilt should not trigger")
     }
 
     // MARK: - Full fall sequence triggers detection
@@ -79,9 +82,9 @@ final class FallAlgorithmTests: XCTestCase {
             t += 20
         }
         algorithm.reset()
-        // After reset, impact alone must not trigger
-        let triggered = algorithm.processSample(ax: 3.0, ay: 3.0, az: 3.0, nowMs: t)
-        XCTAssertFalse(triggered, "Impact after reset() should not trigger without new free-fall")
+        // After reset, impact alone (Z-aligned, so tilt stays ~0°) must not trigger
+        let triggered = algorithm.processSample(ax: 0, ay: 0, az: 3.0, nowMs: t)
+        XCTAssertFalse(triggered, "Impact after reset() should not trigger without new free-fall or tilt")
     }
 
     // MARK: - Impact window expires
@@ -110,8 +113,38 @@ final class FallAlgorithmTests: XCTestCase {
             _ = algorithm.processSample(ax: 0.1, ay: 0.1, az: 0.1, nowMs: t)
             t += 20
         }
-        // Impact immediately after
-        let triggered = algorithm.processSample(ax: 3.0, ay: 3.0, az: 3.0, nowMs: t)
-        XCTAssertFalse(triggered, "Free-fall shorter than freeFallMinMs should not latch")
+        // Impact immediately after (Z-aligned, so tilt stays ~0°)
+        let triggered = algorithm.processSample(ax: 0, ay: 0, az: 3.0, nowMs: t)
+        XCTAssertFalse(triggered, "Free-fall shorter than freeFallMinMs should not latch, and no tilt is present")
+    }
+
+    // MARK: - Impact + tilt with no free-fall phase triggers detection
+
+    func testImpactPlusTiltWithNoFreeFallTriggers() {
+        // Prime gravity to horizontal (ax dominant) so tiltAngleDeg ends up well
+        // past the 45° default threshold, entirely without a free-fall phase.
+        var t = 0.0
+        for _ in 0..<20 {
+            _ = algorithm.processSample(ax: 1.0, ay: 0, az: 0, nowMs: t)
+            t += 20
+        }
+
+        let triggered = algorithm.processSample(ax: 3.0, ay: 0, az: 0, nowMs: t)
+        XCTAssertTrue(triggered, "Impact + steep tilt with no free-fall phase should trigger")
+    }
+
+    // MARK: - Raising the tilt threshold suppresses the impact+tilt trigger
+
+    func testRaisedTiltThresholdSuppressesImpactPlusTiltTrigger() {
+        algorithm.tiltThresholdDeg = 100 // above the ~90° tilt this scenario produces
+
+        var t = 0.0
+        for _ in 0..<20 {
+            _ = algorithm.processSample(ax: 1.0, ay: 0, az: 0, nowMs: t)
+            t += 20
+        }
+
+        let triggered = algorithm.processSample(ax: 3.0, ay: 0, az: 0, nowMs: t)
+        XCTAssertFalse(triggered, "Raising tiltThresholdDeg above the actual tilt angle must suppress the trigger")
     }
 }
