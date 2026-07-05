@@ -13,6 +13,7 @@ use App\Domain\Caregiver\Request\AcknowledgeAlertInputDTO;
 use App\Entity\AlertAcknowledgement;
 use App\Entity\FallAlert;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -26,6 +27,7 @@ final readonly class AcknowledgeAlertProcessor implements ProcessorInterface
         private FallAlertRepositoryInterface $fallAlertRepository,
         private CaregiverLinkRepositoryInterface $caregiverLinkRepository,
         private AlertAcknowledgementRepositoryInterface $acknowledgementRepository,
+        private EndpointRateLimiterInterface $rateLimiter,
     ) {
     }
 
@@ -41,6 +43,8 @@ final readonly class AcknowledgeAlertProcessor implements ProcessorInterface
         }
 
         $caregiverDevice = $this->currentDeviceProvider->requireDevice();
+
+        $this->rateLimiter->consume('acknowledge_alert', 20, 60, $caregiverDevice->getPublicId());
 
         $links = $this->caregiverLinkRepository->findActiveByProtectedDevice($alert->getDevice());
         $isLinked = array_any($links, static fn ($link) => $link->getCaregiverDevice()->getId()->equals($caregiverDevice->getId()));

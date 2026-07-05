@@ -14,6 +14,7 @@ use App\Entity\CaregiverLink;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -31,6 +32,8 @@ final class AcknowledgeAlertProcessorTest extends TestCase
 
     private AlertAcknowledgementRepositoryInterface&MockObject $acknowledgementRepository;
 
+    private EndpointRateLimiterInterface&MockObject $rateLimiter;
+
     private AcknowledgeAlertProcessor $processor;
 
     protected function setUp(): void
@@ -39,11 +42,13 @@ final class AcknowledgeAlertProcessorTest extends TestCase
         $this->fallAlertRepository = $this->createMock(FallAlertRepositoryInterface::class);
         $this->caregiverLinkRepository = $this->createMock(CaregiverLinkRepositoryInterface::class);
         $this->acknowledgementRepository = $this->createMock(AlertAcknowledgementRepositoryInterface::class);
+        $this->rateLimiter = $this->createMock(EndpointRateLimiterInterface::class);
         $this->processor = new AcknowledgeAlertProcessor(
             $this->currentDeviceProvider,
             $this->fallAlertRepository,
             $this->caregiverLinkRepository,
             $this->acknowledgementRepository,
+            $this->rateLimiter,
         );
     }
 
@@ -53,6 +58,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
         $caregiverId = Uuid::v7();
         $caregiverDevice = $this->createMock(Device::class);
         $caregiverDevice->method('getId')->willReturn($caregiverId);
+        $caregiverDevice->method('getPublicId')->willReturn('caregiver-device-1');
 
         $protectedDevice = $this->createMock(Device::class);
 
@@ -68,6 +74,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
         $this->caregiverLinkRepository->method('findActiveByProtectedDevice')->willReturn([$link]);
         $this->acknowledgementRepository->method('findByCaregiverAndAlert')->willReturn(null);
         $this->acknowledgementRepository->expects($this->once())->method('save');
+        $this->rateLimiter->expects($this->once())->method('consume')->with('acknowledge_alert', 20, 60, 'caregiver-device-1');
 
         $result = $this->processor->process(null, $this->createMock(Operation::class), ['id' => 'some-uuid']);
 

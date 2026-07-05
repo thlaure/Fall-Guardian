@@ -11,6 +11,7 @@ use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DomainException;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -23,20 +24,25 @@ final class RegisterPushTokenProcessorTest extends TestCase
 
     private DeviceContextInterface&MockObject $currentDeviceProvider;
 
+    private EndpointRateLimiterInterface&MockObject $rateLimiter;
+
     private RegisterPushTokenProcessor $processor;
 
     protected function setUp(): void
     {
         $this->inviteService = $this->createMock(InviteServiceInterface::class);
         $this->currentDeviceProvider = $this->createMock(DeviceContextInterface::class);
-        $this->processor = new RegisterPushTokenProcessor($this->inviteService, $this->currentDeviceProvider);
+        $this->rateLimiter = $this->createMock(EndpointRateLimiterInterface::class);
+        $this->processor = new RegisterPushTokenProcessor($this->inviteService, $this->currentDeviceProvider, $this->rateLimiter);
     }
 
     #[Test]
     public function itRegistersPushTokenAndReturnsNull(): void
     {
         $device = $this->createMock(Device::class);
+        $device->method('getPublicId')->willReturn('device-1');
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->rateLimiter->expects($this->once())->method('consume')->with('register_push_token', 10, 60, 'device-1');
         $this->inviteService->method('registerPushToken')->willReturn($this->createMock(CaregiverPushToken::class));
 
         $data = new RegisterPushTokenInputDTO();

@@ -10,6 +10,7 @@ use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Entity\CaregiverInvite;
 use App\Entity\Device;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
+use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DateTimeImmutable;
 use DomainException;
 use PHPUnit\Framework\Attributes\Test;
@@ -23,24 +24,29 @@ final class CreateInviteProcessorTest extends TestCase
 
     private DeviceContextInterface&MockObject $currentDeviceProvider;
 
+    private EndpointRateLimiterInterface&MockObject $rateLimiter;
+
     private CreateInviteProcessor $processor;
 
     protected function setUp(): void
     {
         $this->inviteService = $this->createMock(InviteServiceInterface::class);
         $this->currentDeviceProvider = $this->createMock(DeviceContextInterface::class);
-        $this->processor = new CreateInviteProcessor($this->inviteService, $this->currentDeviceProvider);
+        $this->rateLimiter = $this->createMock(EndpointRateLimiterInterface::class);
+        $this->processor = new CreateInviteProcessor($this->inviteService, $this->currentDeviceProvider, $this->rateLimiter);
     }
 
     #[Test]
     public function itCreatesInviteAndReturnsDTO(): void
     {
         $device = $this->createMock(Device::class);
+        $device->method('getPublicId')->willReturn('device-1');
         $invite = $this->createMock(CaregiverInvite::class);
         $invite->method('getCode')->willReturn('ABCD1234');
         $invite->method('getExpiresAt')->willReturn(new DateTimeImmutable('+30 minutes'));
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->rateLimiter->expects($this->once())->method('consume')->with('invite_create', 10, 300, 'device-1');
         $this->inviteService->method('createInvite')->willReturn($invite);
 
         $result = $this->processor->process(null, $this->createMock(Operation::class));
