@@ -584,7 +584,8 @@ void main() {
       'call fails', () async {
     final repo = _FakeFallEventsRepository();
     final backend = _FakeBackendGateway(cancelShouldFail: true);
-    final coordinator = _coordinator(eventRecorder: repo, backendGateway: backend);
+    final coordinator =
+        _coordinator(eventRecorder: repo, backendGateway: backend);
     var dismissed = false;
     final sub = coordinator.dismissStream.listen((_) => dismissed = true);
 
@@ -611,7 +612,8 @@ void main() {
       submitCompleter: submitCompleter,
       recordCancelledShouldFail: true,
     );
-    final coordinator = _coordinator(eventRecorder: repo, backendGateway: backend);
+    final coordinator =
+        _coordinator(eventRecorder: repo, backendGateway: backend);
     var dismissed = false;
     final sub = coordinator.dismissStream.listen((_) => dismissed = true);
 
