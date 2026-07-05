@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -326,10 +327,6 @@ void main() {
       locale: 'en',
       latitude: 48.8566,
       longitude: 2.3522,
-      contacts: const [
-        Contact(id: '1', name: 'Alice', phone: '+33600000001'),
-        Contact(id: '2', name: 'Bob', phone: '+33600000002'),
-      ],
     );
 
     expect(requests, [
@@ -389,7 +386,6 @@ void main() {
       locale: 'en',
       latitude: null,
       longitude: null,
-      contacts: const [],
     );
 
     expect(store.data['backend_device_id'], 'fresh-device');
@@ -628,13 +624,21 @@ void main() {
     );
   });
 
-  test('submitFallAlert throws typed exception on API failure', () async {
+  test('submitFallAlert throws typed exception on API failure without retrying',
+      () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
 
+    var requestCount = 0;
     final service = BackendApiService(
       store: store,
-      client: MockClient((request) async => http.Response('bad request', 400)),
+      // No retry delays configured: a permanent 4xx is not worth retrying,
+      // so this must fail on the very first attempt.
+      submitRetryDelays: const [],
+      client: MockClient((request) async {
+        requestCount++;
+        return http.Response('bad request', 400);
+      }),
     );
 
     await expectLater(
@@ -644,7 +648,6 @@ void main() {
         locale: 'en',
         latitude: null,
         longitude: null,
-        contacts: const [],
       ),
       throwsA(
         isA<BackendApiException>()
@@ -652,6 +655,7 @@ void main() {
             .having((error) => error.body, 'body', 'bad request'),
       ),
     );
+    expect(requestCount, 1);
   });
 
   test('submitFallAlert throws typed exception when backend hangs', () async {
@@ -661,6 +665,7 @@ void main() {
     final service = BackendApiService(
       store: store,
       requestTimeout: const Duration(milliseconds: 1),
+      submitRetryDelays: const [],
       client: MockClient((request) => Completer<http.Response>().future),
     );
 
@@ -671,7 +676,6 @@ void main() {
         locale: 'en',
         latitude: null,
         longitude: null,
-        contacts: const [],
       ),
       throwsA(
         isA<BackendApiException>().having(
@@ -681,6 +685,92 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('submitFallAlert retries on a timeout and succeeds on the next attempt',
+      () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    var requestCount = 0;
+    final service = BackendApiService(
+      store: store,
+      submitRetryDelays: const [Duration.zero],
+      client: MockClient((request) async {
+        requestCount++;
+        if (requestCount == 1) {
+          // Simulate the phone being locked/unreachable for the very first
+          // attempt (e.g. a transient network blip right at fall detection).
+          throw const SocketException('unreachable');
+        }
+        return http.Response('', 201);
+      }),
+    );
+
+    await service.submitFallAlert(
+      clientAlertId: 'alert-1',
+      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+      locale: 'en',
+      latitude: null,
+      longitude: null,
+    );
+
+    expect(requestCount, 2);
+  });
+
+  test('submitFallAlert retries on a 5xx response', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    var requestCount = 0;
+    final service = BackendApiService(
+      store: store,
+      submitRetryDelays: const [Duration.zero],
+      client: MockClient((request) async {
+        requestCount++;
+        if (requestCount == 1) {
+          return http.Response('server error', 500);
+        }
+        return http.Response('', 201);
+      }),
+    );
+
+    await service.submitFallAlert(
+      clientAlertId: 'alert-1',
+      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+      locale: 'en',
+      latitude: null,
+      longitude: null,
+    );
+
+    expect(requestCount, 2);
+  });
+
+  test('submitFallAlert gives up after exhausting all retries', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    var requestCount = 0;
+    final service = BackendApiService(
+      store: store,
+      submitRetryDelays: const [Duration.zero, Duration.zero],
+      client: MockClient((request) async {
+        requestCount++;
+        return http.Response('server error', 500);
+      }),
+    );
+
+    await expectLater(
+      service.submitFallAlert(
+        clientAlertId: 'alert-1',
+        fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+        locale: 'en',
+        latitude: null,
+        longitude: null,
+      ),
+      throwsA(isA<BackendApiException>()),
+    );
+    expect(requestCount, 3);
   });
 
   test('cancelFallAlert skips API call when no token is stored', () async {
@@ -723,6 +813,84 @@ void main() {
 
     await expectLater(
       service.cancelFallAlert(clientAlertId: 'alert-1'),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 500)
+            .having((error) => error.body, 'body', 'server error'),
+      ),
+    );
+  });
+
+  test('attachLocation skips API call when no token is stored', () async {
+    var called = false;
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        called = true;
+        return http.Response('', 200);
+      }),
+    );
+
+    await service.attachLocation(
+      clientAlertId: 'alert-1',
+      latitude: 48.8566,
+      longitude: 2.3522,
+    );
+
+    expect(called, isFalse);
+  });
+
+  test('attachLocation posts the coordinates for an existing alert', () async {
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        expect(request.url.path, '/api/v1/fall-alerts/alert-1/location');
+        expect(request.headers['authorization'], 'Bearer token-1');
+        final payload = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(payload['latitude'], 48.8566);
+        expect(payload['longitude'], 2.3522);
+        return http.Response('', 200);
+      }),
+    );
+
+    await service.attachLocation(
+      clientAlertId: 'alert-1',
+      latitude: 48.8566,
+      longitude: 2.3522,
+    );
+  });
+
+  test('attachLocation ignores an already missing/finished alert', () async {
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('missing', 404)),
+    );
+
+    await service.attachLocation(
+      clientAlertId: 'alert-1',
+      latitude: 48.8566,
+      longitude: 2.3522,
+    );
+  });
+
+  test('attachLocation throws typed exception on API failure', () async {
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('server error', 500)),
+    );
+
+    await expectLater(
+      service.attachLocation(
+        clientAlertId: 'alert-1',
+        latitude: 48.8566,
+        longitude: 2.3522,
+      ),
       throwsA(
         isA<BackendApiException>()
             .having((error) => error.statusCode, 'statusCode', 500)

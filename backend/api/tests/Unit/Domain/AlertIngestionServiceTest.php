@@ -15,6 +15,7 @@ use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 final class AlertIngestionServiceTest extends TestCase
 {
@@ -45,6 +46,82 @@ final class AlertIngestionServiceTest extends TestCase
         $alert = $this->service->createAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
 
         self::assertSame('client-001', $alert->getClientAlertId());
+    }
+
+    #[Test]
+    public function itDispatchesPushMessageWithDelayStampMatchingRemainingGrace(): void
+    {
+        $device = $this->createMock(Device::class);
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn(null);
+
+        $capturedStamps = null;
+        $this->bus->expects($this->once())
+            ->method('dispatch')
+            ->willReturnCallback(static function (object $msg, array $stamps = []) use (&$capturedStamps): Envelope {
+                $capturedStamps = $stamps;
+
+                return new Envelope($msg);
+            });
+
+        $this->service->createAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
+
+        self::assertNotNull($capturedStamps);
+        $delayStamps = array_values(array_filter($capturedStamps, static fn (object $s): bool => $s instanceof DelayStamp));
+        self::assertCount(1, $delayStamps);
+        // fallTimestamp was "now", so the remaining grace should be ~30s minus
+        // negligible test-execution time — never negative, never the full 30s.
+        self::assertGreaterThan(25_000, $delayStamps[0]->getDelay());
+        self::assertLessThanOrEqual(30_000, $delayStamps[0]->getDelay());
+    }
+
+    #[Test]
+    public function itDispatchesWithZeroDelayWhenGraceAlreadyElapsed(): void
+    {
+        $device = $this->createMock(Device::class);
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn(null);
+
+        $capturedStamps = null;
+        $this->bus->expects($this->once())
+            ->method('dispatch')
+            ->willReturnCallback(static function (object $msg, array $stamps = []) use (&$capturedStamps): Envelope {
+                $capturedStamps = $stamps;
+
+                return new Envelope($msg);
+            });
+
+        $longAgo = new DateTimeImmutable()->modify('-1 hour');
+        $this->service->createAlert($device, 'client-001', $longAgo, 'en', null, null);
+
+        $delayStamps = array_values(array_filter($capturedStamps, static fn (object $s): bool => $s instanceof DelayStamp));
+        self::assertCount(1, $delayStamps);
+        self::assertSame(0, $delayStamps[0]->getDelay());
+    }
+
+    #[Test]
+    public function itAttachesLocationToExistingAlert(): void
+    {
+        $device = $this->createMock(Device::class);
+        $alert = $this->createMock(FallAlert::class);
+        $alert->expects($this->once())->method('updateLocation')->with(48.8566, 2.3522);
+
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($alert);
+        $this->repository->expects($this->once())->method('save')->with($alert);
+
+        $result = $this->service->attachLocation($device, 'client-001', 48.8566, 2.3522);
+
+        self::assertSame($alert, $result);
+    }
+
+    #[Test]
+    public function itReturnsNullWhenAttachingLocationToUnknownAlert(): void
+    {
+        $device = $this->createMock(Device::class);
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn(null);
+        $this->repository->expects($this->never())->method('save');
+
+        $result = $this->service->attachLocation($device, 'unknown', 48.8566, 2.3522);
+
+        self::assertNull($result);
     }
 
     #[Test]
