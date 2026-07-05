@@ -43,10 +43,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get importantBody =>
       'Keep notifications enabled for this app. Fall alerts are delivered as '
       'data-only messages — your phone must be on and connected.';
-  @override
-  String get homeFootnote =>
-      'Separate apps keep the protected-person and caregiver flows cleaner, '
-      'safer, and easier to maintain.';
 
   // ── Active Alert ──────────────────────────────────────────────────────────
   @override

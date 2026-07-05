@@ -16,11 +16,13 @@ class CaregiverBackendService {
     String? baseUrl,
     bool? releaseMode,
     Duration? requestTimeout,
+    bool? isIOSPlatform,
   }) : _storage = storage ?? const FlutterSecureStorage(),
        _client = client ?? http.Client(),
        _baseUrlOverride = baseUrl,
        _releaseMode = releaseMode ?? kReleaseMode,
-       _requestTimeout = requestTimeout ?? const Duration(seconds: 10);
+       _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
+       _isIOSPlatform = isIOSPlatform ?? Platform.isIOS;
 
   static const _deviceIdKey = 'caregiver_device_id';
   static const _deviceTokenKey = 'caregiver_device_token';
@@ -31,22 +33,27 @@ class CaregiverBackendService {
   final String? _baseUrlOverride;
   final bool _releaseMode;
   final Duration _requestTimeout;
+  final bool _isIOSPlatform;
 
   String get _baseUrl {
     if (_baseUrlOverride case final override? when override.isNotEmpty) {
       return _validateBaseUrl(override);
     }
 
+    // Compile-time constant: only ever non-empty when the binary is built
+    // with --dart-define=BACKEND_BASE_URL=..., which unit tests don't do.
+    // coverage:ignore-start
     const defined = String.fromEnvironment('BACKEND_BASE_URL');
     if (defined.isNotEmpty) {
       return _validateBaseUrl(defined);
     }
+    // coverage:ignore-end
 
     if (_releaseMode) {
       throw StateError('BACKEND_BASE_URL must be set for release builds.');
     }
 
-    if (Platform.isIOS) {
+    if (_isIOSPlatform) {
       throw StateError(
         'BACKEND_BASE_URL must be set for iOS physical development builds.',
       );

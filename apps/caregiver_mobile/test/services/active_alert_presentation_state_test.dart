@@ -54,4 +54,17 @@ void main() {
 
     expect(state.clearActive(), isFalse);
   });
+
+  test('dismissActive prunes the oldest dismissed alert past the cap', () {
+    final state = ActiveAlertPresentationState();
+
+    for (var i = 0; i < 33; i++) {
+      expect(state.show({'alertId': 'alert-$i'}), isTrue);
+      state.dismissActive();
+    }
+
+    // The 33rd dismissal evicts the oldest id (alert-0), so it can be
+    // re-shown even though it was previously dismissed.
+    expect(state.show({'alertId': 'alert-0'}), isTrue);
+  });
 }
