@@ -21,9 +21,12 @@ class AppBootstrapService {
   final ContactsRepository _contactsRepository;
 
   Future<void> bootstrap() async {
+    // Location permission must be requested before anything network-dependent:
+    // a backend failure below must never suppress this prompt, or the first
+    // real request ends up happening mid-fall-alert instead of at startup.
+    await _locationService.requestPermissionIfNeeded();
     await _backendApi.ensureReady();
     final List<Contact> contacts = await _contactsRepository.getAll();
     await _backendApi.syncContacts(contacts);
-    await _locationService.requestPermissionIfNeeded();
   }
 }

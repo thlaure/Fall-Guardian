@@ -19,22 +19,22 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final BackendApiService _backendApi =
       widget.backendApi ?? BackendApiService();
-  bool _hasLinkedCaregiver = false;
+  int? _caregiverCount;
 
   @override
   void initState() {
     super.initState();
-    _loadLinkedCaregiverState();
+    _loadCaregiverCount();
   }
 
-  Future<void> _loadLinkedCaregiverState() async {
+  Future<void> _loadCaregiverCount() async {
     try {
       final caregivers = await _backendApi.getLinkedCaregivers();
       if (!mounted) return;
-      setState(() => _hasLinkedCaregiver = caregivers.isNotEmpty);
+      setState(() => _caregiverCount = caregivers.length);
     } catch (_) {
       if (!mounted) return;
-      setState(() => _hasLinkedCaregiver = false);
+      setState(() => _caregiverCount = null);
     }
   }
 
@@ -64,12 +64,14 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 16),
-            _StatusCard(l10n: l10n, linked: _hasLinkedCaregiver),
+            _StatusCard(l10n: l10n, linked: (_caregiverCount ?? 0) > 0),
             const SizedBox(height: 32),
             _NavButton(
               icon: Icons.people,
               label: l10n.homeContactsTitle,
-              subtitle: l10n.homeContactsSubtitle,
+              subtitle: _caregiverCount == null
+                  ? null
+                  : l10n.homeCaregiverCount(_caregiverCount!),
               onTap: () async {
                 await Navigator.push(
                   context,
@@ -77,14 +79,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     builder: (_) => const ContactsScreen(),
                   ),
                 );
-                await _loadLinkedCaregiverState();
+                await _loadCaregiverCount();
               },
             ),
             const SizedBox(height: 16),
             _NavButton(
               icon: Icons.history,
               label: l10n.homeHistoryTitle,
-              subtitle: l10n.homeHistorySubtitle,
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
@@ -135,8 +136,6 @@ class _StatusCard extends StatelessWidget {
     final colors = linked
         ? const [Color(0xFF001A18), Color(0xFF003F3C)]
         : const [Color(0xFF403016), Color(0xFF70531B)];
-    final iconBackground =
-        linked ? const Color(0xFF003F3C) : Colors.white.withValues(alpha: 0.14);
     final icon = linked ? Icons.shield : Icons.link_off;
 
     return Container(
@@ -156,31 +155,38 @@ class _StatusCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
+      child: Row(
         children: [
           Container(
-            width: 72,
-            height: 72,
+            width: 68,
+            height: 68,
             decoration: BoxDecoration(
-              color: iconBackground,
+              color: Colors.white.withValues(alpha: 0.14),
               shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
             ),
-            child: Icon(icon, color: const Color(0xFFE5694A), size: 40),
+            child: Icon(icon, color: Colors.white, size: 36),
           ),
-          const SizedBox(height: 16),
-          Text(
-            linked ? l10n.homeStatusTitle : l10n.homeStatusUnlinkedTitle,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  linked ? l10n.homeStatusTitle : l10n.homeStatusUnlinkedTitle,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  linked ? l10n.homeStatusBody : l10n.homeStatusUnlinkedBody,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            linked ? l10n.homeStatusBody : l10n.homeStatusUnlinkedBody,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ],
       ),
@@ -191,13 +197,13 @@ class _StatusCard extends StatelessWidget {
 class _NavButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
 
   const _NavButton({
     required this.icon,
     required this.label,
-    required this.subtitle,
+    this.subtitle,
     required this.onTap,
   });
 
@@ -228,13 +234,16 @@ class _NavButton extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 13,
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

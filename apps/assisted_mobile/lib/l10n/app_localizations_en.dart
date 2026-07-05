@@ -33,11 +33,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeContactsTitle => 'Caregivers';
   @override
-  String get homeContactsSubtitle => 'Manage who should be alerted';
+  String homeCaregiverCount(int count) =>
+      count == 1 ? '1 caregiver' : '$count caregivers';
   @override
   String get homeHistoryTitle => 'Fall History';
-  @override
-  String get homeHistorySubtitle => 'Review past fall events';
   @override
   String get homeFootnote =>
       'Monitoring active on your watch.\nKeep the watch app running in the background.';

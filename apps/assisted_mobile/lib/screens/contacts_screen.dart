@@ -272,6 +272,9 @@ class _LinkedCaregiversSection extends StatelessWidget {
           final linkId = caregiver['id'] as String? ?? '';
           final caregiverName = '${caregiver['caregiverName'] ?? ''}'.trim();
           final platform = '${caregiver['platform'] ?? ''}'.trim();
+          final deviceId = '${caregiver['caregiverDeviceId'] ?? ''}'.trim();
+          final shortDeviceId =
+              deviceId.length <= 8 ? deviceId : deviceId.substring(0, 8);
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
@@ -287,7 +290,9 @@ class _LinkedCaregiversSection extends StatelessWidget {
               subtitle: Text(
                 platform.isEmpty
                     ? 'Receives fall alerts from this device'
-                    : '${platform.toUpperCase()} caregiver device',
+                    : shortDeviceId.isEmpty
+                        ? platform.toUpperCase()
+                        : '${platform.toUpperCase()} device $shortDeviceId',
               ),
               trailing: IconButton(
                 tooltip: 'Remove caregiver',

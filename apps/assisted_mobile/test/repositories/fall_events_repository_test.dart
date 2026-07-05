@@ -116,6 +116,16 @@ void main() {
       expect(all.first.id, 'valid-1');
     });
 
+    test('getAll deletes and recovers from a corrupted secure store value',
+        () async {
+      store.data['fall_events'] = 'not a valid json list';
+
+      final all = await repo.getAll();
+
+      expect(all, isEmpty);
+      expect(store.data.containsKey('fall_events'), isFalse);
+    });
+
     test('clear_isIdempotent', () async {
       await repo.add(
         FallEvent(
