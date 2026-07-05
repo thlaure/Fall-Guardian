@@ -52,6 +52,7 @@ final class LinkedCaregiversProviderTest extends TestCase
         $protectedDevice = $this->createMock(Device::class);
         $caregiverDevice = $this->createMock(Device::class);
         $caregiverDevice->method('getPlatform')->willReturn('android');
+        $caregiverDevice->method('getPublicId')->willReturn('caregiver-device-abc');
 
         $link = $this->createMock(CaregiverLink::class);
         $link->method('getCaregiverDevice')->willReturn($caregiverDevice);
@@ -64,6 +65,7 @@ final class LinkedCaregiversProviderTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertSame('android', $result[0]->platform);
+        $this->assertSame('caregiver-device-abc', $result[0]->caregiverDeviceId);
         $this->assertStringContainsString('2025-01-15', $result[0]->linkedAt);
     }
 }

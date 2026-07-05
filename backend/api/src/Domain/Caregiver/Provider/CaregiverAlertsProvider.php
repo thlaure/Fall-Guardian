@@ -43,7 +43,11 @@ final readonly class CaregiverAlertsProvider implements ProviderInterface
 
             foreach ($alerts as $alert) {
                 $ack = $this->acknowledgementRepository->findByCaregiverAndAlert($alert, $caregiverDevice);
-                $result[] = CaregiverAlertOutputDTO::fromEntity($alert, $ack instanceof \App\Entity\AlertAcknowledgement);
+                $result[] = CaregiverAlertOutputDTO::fromEntity(
+                    $alert,
+                    $ack instanceof \App\Entity\AlertAcknowledgement,
+                    $link->getProtectedPersonName(),
+                );
             }
         }
 

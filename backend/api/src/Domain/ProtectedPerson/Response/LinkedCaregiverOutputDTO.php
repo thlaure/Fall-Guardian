@@ -42,6 +42,7 @@ final readonly class LinkedCaregiverOutputDTO
 {
     public function __construct(
         public string $id,
+        public string $caregiverDeviceId,
         public string $linkedAt,
         public string $platform,
         public ?string $protectedPersonName,
@@ -53,6 +54,7 @@ final readonly class LinkedCaregiverOutputDTO
     {
         return new self(
             id: $link->getId()->toRfc4122(),
+            caregiverDeviceId: $link->getCaregiverDevice()->getPublicId(),
             linkedAt: $link->getCreatedAt()->format(DateTimeInterface::ATOM),
             platform: $link->getCaregiverDevice()->getPlatform(),
             protectedPersonName: $link->getProtectedPersonName(),

@@ -81,6 +81,7 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $link = $this->createMock(CaregiverLink::class);
         $link->method('getProtectedDevice')->willReturn($protectedDevice);
+        $link->method('getProtectedPersonName')->willReturn('Alice');
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($caregiverDevice);
         $this->caregiverLinkRepository->method('findByCaregiverDevice')->willReturn([$link]);
@@ -95,6 +96,7 @@ final class CaregiverAlertsProviderTest extends TestCase
         $this->assertTrue($result[0]->acknowledged);
         $this->assertSame('device-abc', $result[0]->protectedDeviceId);
         $this->assertSame('ios', $result[0]->protectedDevicePlatform);
+        $this->assertSame('Alice', $result[0]->protectedPersonName);
     }
 
     #[Test]
@@ -127,6 +129,7 @@ final class CaregiverAlertsProviderTest extends TestCase
         $this->assertFalse($result[0]->acknowledged);
         $this->assertSame('device-xyz', $result[0]->protectedDeviceId);
         $this->assertSame('android', $result[0]->protectedDevicePlatform);
+        $this->assertNull($result[0]->protectedPersonName);
     }
 
     #[Test]
