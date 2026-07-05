@@ -58,16 +58,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 16),
-            if (_hasLinkedCaregiver) ...[
-              _StatusCard(l10n: l10n),
-              const SizedBox(height: 32),
-            ],
+            _StatusCard(l10n: l10n, linked: _hasLinkedCaregiver),
+            const SizedBox(height: 32),
             _NavButton(
               icon: Icons.people,
               label: l10n.homeContactsTitle,
@@ -92,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 MaterialPageRoute<void>(builder: (_) => const HistoryScreen()),
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 24),
             if (kDebugMode && widget.onSimulateFall != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
@@ -128,15 +126,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _StatusCard extends StatelessWidget {
   final AppLocalizations l10n;
-  const _StatusCard({required this.l10n});
+  final bool linked;
+
+  const _StatusCard({required this.l10n, required this.linked});
 
   @override
   Widget build(BuildContext context) {
+    final colors = linked
+        ? const [Color(0xFF001A18), Color(0xFF003F3C)]
+        : const [Color(0xFF403016), Color(0xFF70531B)];
+    final iconBackground =
+        linked ? const Color(0xFF003F3C) : Colors.white.withValues(alpha: 0.14);
+    final icon = linked ? Icons.shield : Icons.link_off;
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF001A18), Color(0xFF003F3C)],
+        gradient: LinearGradient(
+          colors: colors,
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -154,15 +161,15 @@ class _StatusCard extends StatelessWidget {
           Container(
             width: 72,
             height: 72,
-            decoration: const BoxDecoration(
-              color: Color(0xFF003F3C),
+            decoration: BoxDecoration(
+              color: iconBackground,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.shield, color: Color(0xFFE5694A), size: 40),
+            child: Icon(icon, color: const Color(0xFFE5694A), size: 40),
           ),
           const SizedBox(height: 16),
           Text(
-            l10n.homeStatusTitle,
+            linked ? l10n.homeStatusTitle : l10n.homeStatusUnlinkedTitle,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
@@ -171,7 +178,7 @@ class _StatusCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            l10n.homeStatusBody,
+            linked ? l10n.homeStatusBody : l10n.homeStatusUnlinkedBody,
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
