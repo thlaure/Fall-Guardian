@@ -840,8 +840,7 @@ void main() {
     expect(called, isFalse);
   });
 
-  test('attachLocation posts the coordinates for an existing alert',
-      () async {
+  test('attachLocation posts the coordinates for an existing alert', () async {
     store.data['backend_device_token'] = 'token-1';
 
     final service = BackendApiService(

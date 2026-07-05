@@ -514,8 +514,7 @@ void main() {
     coordinator.dispose();
   });
 
-  test(
-      'cancelFromPhone waits for the cancel call to finish before resolving',
+  test('cancelFromPhone waits for the cancel call to finish before resolving',
       () async {
     final backendCompleter = Completer<void>();
     final backend = _FakeBackendGateway(cancelCompleter: backendCompleter);
@@ -586,8 +585,7 @@ void main() {
     coordinator.dispose();
   });
 
-  test(
-      'the fast-path alertSent outcome dismisses itself after the usual delay',
+  test('the fast-path alertSent outcome dismisses itself after the usual delay',
       () async {
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway();

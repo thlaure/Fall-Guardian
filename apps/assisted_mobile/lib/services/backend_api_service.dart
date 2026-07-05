@@ -121,7 +121,7 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    for (var attempt = 0; ; attempt++) {
+    for (var attempt = 0;; attempt++) {
       try {
         await _submitFallAlertOnce(
           clientAlertId: clientAlertId,
@@ -134,8 +134,8 @@ class BackendApiService implements AlertBackendGateway {
         // the grace/cancel window and dispatches the caregiver push itself.
         return;
       } catch (error) {
-        final canRetry = attempt < _submitRetryDelays.length &&
-            _isRetryableFailure(error);
+        final canRetry =
+            attempt < _submitRetryDelays.length && _isRetryableFailure(error);
         if (!canRetry) rethrow;
         await Future<void>.delayed(_submitRetryDelays[attempt]);
       }
