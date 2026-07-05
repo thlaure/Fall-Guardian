@@ -75,7 +75,5 @@
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>
     <string>Main</string>
-    <key>WKCompanionAppBundleIdentifier</key>
-    <string>com.fallguardian.app</string>
 </dict>
 </plist>
