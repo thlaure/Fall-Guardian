@@ -78,11 +78,6 @@ class FallAlert
         return $this->status;
     }
 
-    public function markDispatching(): void
-    {
-        $this->status = FallAlertStatus::Dispatching;
-    }
-
     public function markSent(): void
     {
         $this->status = FallAlertStatus::Sent;
@@ -98,14 +93,28 @@ class FallAlert
         $this->status = FallAlertStatus::Failed;
     }
 
+    /**
+     * Cancelling and acknowledging can race (the protected person cancels while
+     * a caregiver is acknowledging the same alert). Once either has happened the
+     * alert is in a terminal state: a cancel arriving after an acknowledgement
+     * must not silently erase it, and vice versa.
+     */
     public function cancel(): void
     {
+        if (FallAlertStatus::Acknowledged === $this->status) {
+            return;
+        }
+
         $this->status = FallAlertStatus::Cancelled;
         $this->cancelledAt = new DateTimeImmutable();
     }
 
     public function markAcknowledged(): void
     {
+        if (FallAlertStatus::Cancelled === $this->status) {
+            return;
+        }
+
         $this->status = FallAlertStatus::Acknowledged;
     }
 
