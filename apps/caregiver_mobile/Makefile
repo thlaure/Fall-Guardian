@@ -1,4 +1,4 @@
-.PHONY: help install format format-check analyze test coverage coverage-check quality check build-android build-ios run-android-debug run-android-wired run-ios-profile logs-flutter logs-android logs-ios-console clean
+.PHONY: help install format format-check analyze test coverage coverage-check quality check build-android build-ios run-android-debug run-android-wired run-ios-debug run-ios-profile logs-flutter logs-android logs-ios-console clean
 
 .DEFAULT_GOAL := help
 
@@ -11,11 +11,14 @@ IOS_DEVICE_ID ?= $(if $(DEVICE_ID),$(DEVICE_ID),iPhone)
 IOS_BUNDLE_ID ?= com.fallguardian.caregiverApp
 ANDROID_PACKAGE_ID ?= com.fallguardian.caregiver_app
 BACKEND_BASE_URL ?=
+LOCAL_HOSTNAME ?= $(shell scutil --get LocalHostName 2>/dev/null || hostname -s)
+IOS_BACKEND_BASE_URL ?= $(if $(BACKEND_BASE_URL),$(BACKEND_BASE_URL),http://$(LOCAL_HOSTNAME).local:8002)
 FIREBASE_ANDROID_API_KEY ?=
 FIREBASE_IOS_API_KEY ?=
 DEVICE_ARG := $(if $(DEVICE_ID),-d $(DEVICE_ID),)
 ANDROID_DEVICE_ARG := $(if $(DEVICE_ID),-s $(DEVICE_ID),)
 BACKEND_ARG := $(if $(BACKEND_BASE_URL),--dart-define=BACKEND_BASE_URL=$(BACKEND_BASE_URL),)
+IOS_BACKEND_ARG := --dart-define=BACKEND_BASE_URL=$(IOS_BACKEND_BASE_URL)
 FIREBASE_ANDROID_ARG := $(if $(FIREBASE_ANDROID_API_KEY),--dart-define=FIREBASE_ANDROID_API_KEY=$(FIREBASE_ANDROID_API_KEY),)
 FIREBASE_IOS_ARG := $(if $(FIREBASE_IOS_API_KEY),--dart-define=FIREBASE_IOS_API_KEY=$(FIREBASE_IOS_API_KEY),)
 FIREBASE_ARGS := $(FIREBASE_ANDROID_ARG) $(FIREBASE_IOS_ARG)
@@ -23,7 +26,7 @@ FIREBASE_ARGS := $(FIREBASE_ANDROID_ARG) $(FIREBASE_IOS_ARG)
 help: ## Show available commands
 	@echo "Fall Guardian caregiver app"
 	@echo ""
-	@grep -E '(^[a-zA-Z_-]+:.*?##.*$$)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
+	@grep -h -E '(^[a-zA-Z_-]+:.*?##.*$$)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 install: ## Install Flutter dependencies
 	flutter pub get
@@ -64,8 +67,11 @@ run-android-wired: ## Launch Android debug through USB reverse proxy to the loca
 	@flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002 $(FIREBASE_ARGS)
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
 
+run-ios-debug: ## Install and launch iOS debug build on a physical device
+	@flutter run --debug $(DEVICE_ARG) --no-resident $(IOS_BACKEND_ARG) $(FIREBASE_ARGS)
+
 run-ios-profile: ## Install and launch iOS profile build on a physical device
-	@flutter run --profile $(DEVICE_ARG) --no-resident $(BACKEND_ARG) $(FIREBASE_ARGS)
+	@flutter run --profile $(DEVICE_ARG) --no-resident $(IOS_BACKEND_ARG) $(FIREBASE_ARGS)
 
 logs-flutter: ## Stream Flutter logs from the selected running app
 	flutter logs $(DEVICE_ARG)
