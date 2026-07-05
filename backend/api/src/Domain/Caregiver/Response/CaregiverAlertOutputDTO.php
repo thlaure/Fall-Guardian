@@ -36,11 +36,15 @@ final readonly class CaregiverAlertOutputDTO
         public ?string $cancelledAt,
         public string $protectedDeviceId,
         public string $protectedDevicePlatform,
+        public ?string $protectedPersonName,
     ) {
     }
 
-    public static function fromEntity(FallAlert $alert, bool $acknowledged = false): self
-    {
+    public static function fromEntity(
+        FallAlert $alert,
+        bool $acknowledged = false,
+        ?string $protectedPersonName = null,
+    ): self {
         return new self(
             $alert->getId()->toRfc4122(),
             $alert->getStatus()->value,
@@ -51,6 +55,7 @@ final readonly class CaregiverAlertOutputDTO
             null === $alert->getCancelledAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getCancelledAt()),
             $alert->getDevice()->getPublicId(),
             $alert->getDevice()->getPlatform(),
+            $protectedPersonName,
         );
     }
 }
