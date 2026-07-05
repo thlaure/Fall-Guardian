@@ -33,6 +33,22 @@ class _FakeLocationService implements AlertLocationProvider {
   Future<Position?> getCurrentPosition() async => null;
 }
 
+class _FakeLocationServiceWithPosition implements AlertLocationProvider {
+  @override
+  Future<Position?> getCurrentPosition() async => Position(
+        latitude: 48.8566,
+        longitude: 2.3522,
+        timestamp: DateTime.now(),
+        accuracy: 5,
+        altitude: 0,
+        altitudeAccuracy: 0,
+        heading: 0,
+        headingAccuracy: 0,
+        speed: 0,
+        speedAccuracy: 0,
+      );
+}
+
 class _FakeNotificationService implements AlertNotificationGateway {
   int cancelCount = 0;
 
@@ -510,6 +526,84 @@ void main() {
     ]);
 
     await sub.cancel();
+    coordinator.dispose();
+  });
+
+  test('cancelFromPhone with no active alert clears notifications only',
+      () async {
+    final notifications = _FakeNotificationService();
+    final coordinator = _coordinator(notificationGateway: notifications);
+    var dismissed = false;
+    final sub = coordinator.dismissStream.listen((_) => dismissed = true);
+
+    await coordinator.cancelFromPhone();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.cancelCount, 1);
+    expect(dismissed, isTrue);
+    expect(coordinator.currentState, isNull);
+
+    await sub.cancel();
+    coordinator.dispose();
+  });
+
+  test(
+      'timeout with a real position submits lat/lng and dismisses after the '
+      'alertSent delay',
+      () async {
+    final repo = _FakeFallEventsRepository();
+    final notifications = _FakeNotificationService();
+    final backend = _FakeBackendGateway();
+    final coordinator = _coordinator(
+      locationProvider: _FakeLocationServiceWithPosition(),
+      eventRecorder: repo,
+      notificationGateway: notifications,
+      backendGateway: backend,
+    );
+    var dismissed = false;
+    final sub = coordinator.dismissStream.listen((_) => dismissed = true);
+
+    await coordinator.startAlert(
+      DateTime.now().millisecondsSinceEpoch -
+          const Duration(seconds: 31).inMilliseconds,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(backend.lastLatitude, 48.8566);
+    expect(backend.lastLongitude, 2.3522);
+    expect(repo.savedEvents.single.latitude, 48.8566);
+    expect(repo.savedEvents.single.longitude, 2.3522);
+    expect(coordinator.currentState?.phase, AlertPhase.alertSent);
+
+    // The alertSent outcome dismisses itself 2 seconds after being shown.
+    await Future<void>.delayed(const Duration(seconds: 2, milliseconds: 200));
+
+    expect(dismissed, isTrue);
+    expect(coordinator.currentState, isNull);
+
+    await sub.cancel();
+    coordinator.dispose();
+  });
+
+  test('timeout with a real position and backend failure records lat/lng',
+      () async {
+    final repo = _FakeFallEventsRepository();
+    final coordinator = _coordinator(
+      locationProvider: _FakeLocationServiceWithPosition(),
+      eventRecorder: repo,
+      backendGateway: _FakeBackendGateway(shouldFail: true),
+    );
+
+    await coordinator.startAlert(
+      DateTime.now().millisecondsSinceEpoch -
+          const Duration(seconds: 31).inMilliseconds,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    expect(repo.savedEvents.single.status, FallEventStatus.alertFailed);
+    expect(repo.savedEvents.single.latitude, 48.8566);
+    expect(repo.savedEvents.single.longitude, 2.3522);
+
     coordinator.dispose();
   });
 }

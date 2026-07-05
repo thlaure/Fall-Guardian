@@ -33,11 +33,10 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get homeContactsTitle => 'Aidants';
   @override
-  String get homeContactsSubtitle => 'Gérer qui reçoit l’alerte';
+  String homeCaregiverCount(int count) =>
+      count == 1 ? '1 aidant' : '$count aidants';
   @override
   String get homeHistoryTitle => 'Historique des chutes';
-  @override
-  String get homeHistorySubtitle => 'Consulter les chutes passées';
   @override
   String get homeFootnote => 'Surveillance active sur votre montre.\n'
       'Gardez l\'application montre ouverte en arrière-plan.';

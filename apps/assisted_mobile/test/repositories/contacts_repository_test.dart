@@ -171,6 +171,16 @@ void main() {
       expect(prefs.getStringList('contacts'), isNull);
     });
 
+    test('getAll deletes and recovers from a corrupted secure store value',
+        () async {
+      store.data['contacts'] = 'not a valid json list';
+
+      final all = await repo.getAll();
+
+      expect(all, isEmpty);
+      expect(store.data.containsKey('contacts'), isFalse);
+    });
+
     test('add keeps local contact when backend sync fails', () async {
       backend = _FakeBackendGateway(shouldFail: true);
       repo = ContactsRepository(store: store, backendGateway: backend);

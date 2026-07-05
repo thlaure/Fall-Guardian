@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/models/contact.dart';
@@ -103,6 +105,78 @@ void main() {
       // return [] for a different reason — this is detectable only if we check
       // the internal state. We accept that both code paths return [] and the
       // test confirms no exception is raised.
+    });
+
+    // --- Rate-limit timestamp is hydrated from a previous app session --------
+    test('sendFallAlert_loadsPersistedLastSentAt_fromSharedPreferences',
+        () async {
+      final longAgo = DateTime.now().subtract(const Duration(hours: 1));
+      SharedPreferences.setMockInitialValues({
+        'sms_last_sent_at_ms': longAgo.millisecondsSinceEpoch,
+      });
+
+      final service = SmsService();
+      // _lastSentAt is null (reset in setUp); this call must load the
+      // persisted value from SharedPreferences before checking the rate limit.
+      final result = await service.sendFallAlert(
+        contacts: contacts,
+        message: 'Fall detected!',
+      );
+
+      // The persisted timestamp is over an hour old, so the rate limit does
+      // not block this call; it proceeds to (and fails at) the platform send.
+      expect(result, isEmpty);
+    });
+
+    group('on iOS', () {
+      const pigeonChannel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.flutter_sms.SmsHostApi.sendSms',
+        StandardMessageCodec(),
+      );
+
+      setUp(() {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      });
+
+      tearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMessageHandler(pigeonChannel.name, null);
+      });
+
+      test('sendFallAlert_returnsContactNames_whenComposeSheetReportsSent',
+          () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMessageHandler(
+          pigeonChannel.name,
+          (message) async => pigeonChannel.codec.encodeMessage(['sent']),
+        );
+
+        final service = SmsService();
+        final result = await service.sendFallAlert(
+          contacts: contacts,
+          message: 'Fall detected!',
+        );
+
+        expect(result, ['Alice', 'Bob']);
+      });
+
+      test('sendFallAlert_returnsEmptyList_whenComposeSheetIsCancelled',
+          () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMessageHandler(
+          pigeonChannel.name,
+          (message) async => pigeonChannel.codec.encodeMessage(['cancelled']),
+        );
+
+        final service = SmsService();
+        final result = await service.sendFallAlert(
+          contacts: contacts,
+          message: 'Fall detected!',
+        );
+
+        expect(result, isEmpty);
+      });
     });
   });
 }

@@ -34,9 +34,8 @@ abstract class AppLocalizations {
   String get homeStatusUnlinkedTitle;
   String get homeStatusUnlinkedBody;
   String get homeContactsTitle;
-  String get homeContactsSubtitle;
+  String homeCaregiverCount(int count);
   String get homeHistoryTitle;
-  String get homeHistorySubtitle;
   String get homeFootnote;
 
   // ── Contacts ─────────────────────────────────────────────────────────────

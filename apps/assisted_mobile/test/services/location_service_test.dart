@@ -100,6 +100,22 @@ void main() {
       );
     });
 
+    test('requestPermissionIfNeeded_returnsUnableToDetermine_whenCheckThrows',
+        () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(geolocatorChannel, (call) async {
+        if (call.method == 'checkPermission') {
+          throw PlatformException(code: 'ERROR', message: 'boom');
+        }
+        return null;
+      });
+
+      final service = LocationService();
+      final permission = await service.requestPermissionIfNeeded();
+
+      expect(permission, LocationPermission.unableToDetermine);
+    });
+
     test('requestPermissionIfNeeded_requestsWhenDenied', () async {
       var requestCalled = false;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

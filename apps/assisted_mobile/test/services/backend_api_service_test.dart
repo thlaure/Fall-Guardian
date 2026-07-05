@@ -178,6 +178,66 @@ void main() {
     );
   });
 
+  test('debugBaseUrl exposes the resolved backend URL', () {
+    final service = BackendApiService(
+      store: store,
+      baseUrl: 'https://api.example.test',
+    );
+
+    expect(service.debugBaseUrl, 'https://api.example.test');
+  });
+
+  test(
+    'ensureReady throws when no backend URL is configured in release mode',
+    () async {
+      final service = BackendApiService(
+        store: store,
+        releaseMode: true,
+        client: MockClient((request) async {
+          fail('No backend URL must be rejected before an HTTP request.');
+        }),
+      );
+
+      await expectLater(service.ensureReady(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test(
+    'ensureReady throws when no backend URL is configured on iOS dev builds',
+    () async {
+      final service = BackendApiService(
+        store: store,
+        isIOSPlatform: true,
+        client: MockClient((request) async {
+          fail('No backend URL must be rejected before an HTTP request.');
+        }),
+      );
+
+      await expectLater(service.ensureReady(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test('syncContacts ensures device credentials are registered', () async {
+    var registerCalls = 0;
+    final client = MockClient((request) async {
+      expect(request.url.path, '/api/v1/devices/register');
+      registerCalls++;
+      return http.Response(
+        jsonEncode({'deviceId': 'device-1', 'deviceToken': 'token-1'}),
+        201,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+
+    final service = BackendApiService(store: store, client: client);
+    await service.syncContacts(const [
+      Contact(id: '1', name: 'Alice', phone: '+33600000001'),
+    ]);
+
+    expect(registerCalls, 1);
+    expect(store.data['backend_device_id'], 'device-1');
+  });
+
   test('ensureReady rejects insecure backend URL in release mode', () async {
     final service = BackendApiService(
       store: store,
@@ -392,6 +452,83 @@ void main() {
       'POST /api/v1/devices/register',
       'POST /api/v1/fall-alerts',
     ]);
+  });
+
+  test('recordCancelledFallAlert refreshes stale credentials after unauthorized',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      requests.add('${request.method} ${request.url.path}');
+
+      if (request.url.path == '/api/v1/fall-alerts' &&
+          request.headers['authorization'] == 'Bearer stale-token') {
+        return http.Response('unauthorized', 401);
+      }
+
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (request.url.path == '/api/v1/fall-alerts' &&
+          request.headers['authorization'] == 'Bearer fresh-token') {
+        return http.Response('', 201);
+      }
+
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+
+    final service = BackendApiService(store: store, client: client);
+
+    await service.recordCancelledFallAlert(
+      clientAlertId: 'cancelled-alert-1',
+      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+      locale: 'fr',
+      latitude: null,
+      longitude: null,
+    );
+
+    expect(store.data['backend_device_id'], 'fresh-device');
+    expect(requests, [
+      'POST /api/v1/fall-alerts',
+      'POST /api/v1/devices/register',
+      'POST /api/v1/fall-alerts',
+    ]);
+  });
+
+  test('recordCancelledFallAlert throws typed exception on API failure',
+      () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async => http.Response('bad request', 400)),
+    );
+
+    await expectLater(
+      service.recordCancelledFallAlert(
+        clientAlertId: 'cancelled-alert-1',
+        fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
+        locale: 'fr',
+        latitude: null,
+        longitude: null,
+      ),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 400)
+            .having((error) => error.body, 'body', 'bad request'),
+      ),
+    );
   });
 
   test('createInvite posts with stored bearer token', () async {
@@ -619,6 +756,108 @@ void main() {
     expect(result.first['linkedAt'], '2025-01-15T10:00:00+00:00');
   });
 
+  test('getLinkedCaregivers keeps named caregivers visible first', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode([
+            {
+              'linkedAt': '2025-01-15T10:00:00+00:00',
+              'platform': 'android',
+              'caregiverName': null,
+            },
+            {
+              'linkedAt': '2025-01-10T10:00:00+00:00',
+              'platform': 'ios',
+              'caregiverName': 'Marie',
+            },
+          ]),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final result = await service.getLinkedCaregivers();
+
+    expect(result.first['caregiverName'], 'Marie');
+    expect(result.last['caregiverName'], isNull);
+  });
+
+  test(
+    'getLinkedCaregivers keeps named caregivers first regardless of input order',
+    () async {
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+
+      final service = BackendApiService(
+        store: store,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode([
+              {
+                'linkedAt': '2025-01-10T10:00:00+00:00',
+                'platform': 'ios',
+                'caregiverName': 'Marie',
+              },
+              {
+                'linkedAt': '2025-01-15T10:00:00+00:00',
+                'platform': 'android',
+                'caregiverName': null,
+              },
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      final result = await service.getLinkedCaregivers();
+
+      expect(result.first['caregiverName'], 'Marie');
+      expect(result.last['caregiverName'], isNull);
+    },
+  );
+
+  test(
+    'getLinkedCaregivers orders same-name caregivers by most recent link first',
+    () async {
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+
+      final service = BackendApiService(
+        store: store,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode([
+              {
+                'linkedAt': '2025-01-10T10:00:00+00:00',
+                'platform': 'android',
+                'caregiverName': 'Older',
+              },
+              {
+                'linkedAt': '2025-01-15T10:00:00+00:00',
+                'platform': 'ios',
+                'caregiverName': 'Newer',
+              },
+            ]),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      final result = await service.getLinkedCaregivers();
+
+      expect(result.first['caregiverName'], 'Newer');
+      expect(result.last['caregiverName'], 'Older');
+    },
+  );
+
   test('getLinkedCaregivers throws typed exception on API failure', () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
@@ -672,6 +911,19 @@ void main() {
             .having((error) => error.statusCode, 'statusCode', 404)
             .having((error) => error.body, 'body', 'not found'),
       ),
+    );
+  });
+
+  test('BackendApiException.toString includes message, status, and body', () {
+    final error = BackendApiException(
+      'Failed to fetch',
+      statusCode: 503,
+      body: 'unavailable',
+    );
+
+    expect(
+      error.toString(),
+      'BackendApiException(Failed to fetch, 503, unavailable)',
     );
   });
 }
