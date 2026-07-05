@@ -8,11 +8,12 @@ import org.junit.Test
  * Unit tests for FallAlgorithm.
  *
  * Algorithm trigger rule (from source):
- *   fallDetected = freeFallQualifiedLatch && impactActive
+ *   fallDetected = (freeFallQualifiedLatch && impactActive) || (impactActive && tiltActive)
  *
  * Free-fall must be observed first (>=freeFallMinMs) to latch the state;
  * the latch persists until reset() is called. Impact must then occur within
- * the 2000ms impact window. Tilt is tracked but not part of the trigger rule.
+ * the 2000ms impact window. Independently, impact + a steep tilt angle also
+ * triggers, covering falls with no clean free-fall phase.
  */
 class FallAlgorithmTest {
 
@@ -85,8 +86,8 @@ class FallAlgorithmTest {
     }
 
     // ------------------------------------------------------------------
-    // 4. Free-fall + impact while device is horizontally tilted → should trigger.
-    //    Free-fall is required; tilt alone with impact does NOT trigger.
+    // 4. Free-fall + impact while device is horizontally tilted → should trigger
+    //    (both the free-fall+impact path and the impact+tilt path agree here).
     // ------------------------------------------------------------------
     @Test
     fun freeFallPlusImpact_withPriorTilt_triggersFall() {
@@ -97,6 +98,47 @@ class FallAlgorithmTest {
 
         val triggered = algo.processSample(0f, 0f, 30f, 310L)
         assertTrue("Free-fall + impact (with prior horizontal tilt) must trigger a fall", triggered)
+    }
+
+    // ------------------------------------------------------------------
+    // 4b. Impact + steep tilt, with NO free-fall phase at all → must trigger.
+    //     Covers falls that never produce a clean free-fall (e.g. sliding out
+    //     of a chair): impact alone would not trigger, but impact + tilt does.
+    // ------------------------------------------------------------------
+    @Test
+    fun impactPlusTilt_withNoFreeFall_triggersFall() {
+        // Prime gravity to horizontal so tiltAngleDeg ≈ 90° (> 45° threshold).
+        // No free-fall samples at all — freeFallQualifiedLatch stays false.
+        sendSamples(algo, 9.81f, 0f, 0f, durationMs = 200L, startMs = 0L)
+
+        val triggered = algo.processSample(0f, 0f, 30f, 210L)
+        assertTrue(
+            "Impact + steep tilt with no free-fall phase must trigger a fall",
+            triggered,
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // 4c. Same impact + tilt scenario, but with the tilt threshold raised
+    //     above the actual tilt angle → must NOT trigger. Proves the
+    //     tiltThresholdDeg setting genuinely changes detection behavior.
+    // ------------------------------------------------------------------
+    @Test
+    fun impactPlusTilt_belowRaisedThreshold_doesNotTrigger() {
+        val strictAlgo = FallAlgorithm(
+            freeFallThresholdG = 0.5f,
+            impactThresholdG = 2.5f,
+            tiltThresholdDeg = 100f,
+            freeFallMinMs = 80L,
+        )
+        // Same ~90° tilt as 4b, but the threshold is now 100° so it no longer qualifies.
+        sendSamples(strictAlgo, 9.81f, 0f, 0f, durationMs = 200L, startMs = 0L)
+
+        val triggered = strictAlgo.processSample(0f, 0f, 30f, 210L)
+        assertFalse(
+            "Raising tiltThresholdDeg above the actual tilt angle must suppress the trigger",
+            triggered,
+        )
     }
 
     // ------------------------------------------------------------------

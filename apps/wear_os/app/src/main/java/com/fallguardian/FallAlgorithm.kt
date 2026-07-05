@@ -10,8 +10,9 @@ import kotlin.math.sqrt
  *   Phase 2 (Impact):    ||accel|| > impactThresholdG
  *   Phase 3 (Tilt):      angle from upright > tiltThresholdDeg (via gravity vector)
  *
- * Trigger: Phase1 qualified (latched) AND Phase2 active
- * Free-fall is a required precondition; tilt is tracked for future use.
+ * Trigger: (Phase1 qualified [latched] AND Phase2 active) OR (Phase2 active AND Phase3 active)
+ * Free-fall + impact catches the typical fall signature; impact + tilt catches
+ * falls that never produce a clean free-fall phase (e.g. sliding out of a chair).
  *
  * No immobility requirement — fires immediately after the last qualifying phase.
  */
@@ -78,11 +79,14 @@ class FallAlgorithm(
         // Impact window: keep it alive for 2 seconds after detection
         val impactActive = impactDetected && (nowMs - impactTimeMs < 2000L)
 
-        // --- Phase 3: Tilt detection (tracked; requires free-fall latch to trigger) ---
-        val tiltDeg = tiltAngleDeg()
+        // --- Phase 3: Tilt detection ---
+        val tiltActive = tiltAngleDeg() > tiltThresholdDeg
 
-        // --- Trigger rule: free-fall must have been qualified (latch) AND impact is active ---
-        val fallDetected = freeFallQualifiedLatch && impactActive
+        // --- Trigger rule ---
+        // Either the free-fall latch fired and impact is still active, or impact
+        // is active together with a steep tilt (covers falls with no clean
+        // free-fall phase, e.g. sliding out of a chair).
+        val fallDetected = (freeFallQualifiedLatch && impactActive) || (impactActive && tiltActive)
 
         return fallDetected
     }
