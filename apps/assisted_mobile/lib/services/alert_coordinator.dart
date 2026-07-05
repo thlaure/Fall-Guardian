@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:geolocator/geolocator.dart';
 
@@ -247,9 +248,17 @@ class AlertCoordinator {
   }) async {
     try {
       await _backendGateway.cancelFallAlert(clientAlertId: clientAlertId);
-    } catch (_) {
+    } catch (error, stackTrace) {
       // The local cancellation must not be rolled back by a transient backend
-      // failure; local history still records the cancelled fall.
+      // failure; local history still records the cancelled fall. Still worth
+      // logging: a failed cancel here can leave a live alert on caregivers'
+      // phones with no other trace of what happened.
+      developer.log(
+        'cancelFallAlert failed for $clientAlertId',
+        name: 'AlertCoordinator',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -265,9 +274,16 @@ class AlertCoordinator {
         latitude: null,
         longitude: null,
       );
-    } catch (_) {
+    } catch (error, stackTrace) {
       // The local cancellation must not be rolled back by a transient backend
-      // failure; local history still records the cancelled fall.
+      // failure; local history still records the cancelled fall. Still worth
+      // logging for the same reason as _cancelRegisteredFallAlert above.
+      developer.log(
+        'recordCancelledFallAlert failed for $clientAlertId',
+        name: 'AlertCoordinator',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

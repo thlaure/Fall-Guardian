@@ -62,12 +62,16 @@ class _FakeBackendGateway implements AlertBackendGateway {
   _FakeBackendGateway({
     this.shouldFail = false,
     this.failFirstSubmitOnly = false,
+    this.cancelShouldFail = false,
+    this.recordCancelledShouldFail = false,
     this.submitCompleter,
     this.cancelCompleter,
   });
 
   final bool shouldFail;
   final bool failFirstSubmitOnly;
+  final bool cancelShouldFail;
+  final bool recordCancelledShouldFail;
   final Completer<void>? submitCompleter;
   final Completer<void>? cancelCompleter;
 
@@ -125,12 +129,20 @@ class _FakeBackendGateway implements AlertBackendGateway {
     lastTimestamp = fallTimestamp;
     lastLatitude = latitude;
     lastLongitude = longitude;
+
+    if (recordCancelledShouldFail) {
+      throw Exception('backend unavailable');
+    }
   }
 
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
     cancelCount++;
     await cancelCompleter?.future;
+
+    if (cancelShouldFail) {
+      throw Exception('backend unavailable');
+    }
   }
 
   @override
@@ -564,6 +576,57 @@ void main() {
     backendCompleter.complete();
     await cancelFuture;
 
+    coordinator.dispose();
+  });
+
+  test(
+      'cancelFromPhone still finishes locally even when the backend cancel '
+      'call fails', () async {
+    final repo = _FakeFallEventsRepository();
+    final backend = _FakeBackendGateway(cancelShouldFail: true);
+    final coordinator = _coordinator(eventRecorder: repo, backendGateway: backend);
+    var dismissed = false;
+    final sub = coordinator.dismissStream.listen((_) => dismissed = true);
+
+    await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
+    await Future<void>.delayed(Duration.zero);
+
+    await coordinator.cancelFromPhone();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backend.cancelCount, 1);
+    expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+    expect(dismissed, isTrue);
+
+    await sub.cancel();
+    coordinator.dispose();
+  });
+
+  test(
+      'cancelFromPhone still finishes locally even when the pre-registration '
+      'cancelled-record call fails', () async {
+    final repo = _FakeFallEventsRepository();
+    final submitCompleter = Completer<void>();
+    final backend = _FakeBackendGateway(
+      submitCompleter: submitCompleter,
+      recordCancelledShouldFail: true,
+    );
+    final coordinator = _coordinator(eventRecorder: repo, backendGateway: backend);
+    var dismissed = false;
+    final sub = coordinator.dismissStream.listen((_) => dismissed = true);
+
+    await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
+    await Future<void>.delayed(Duration.zero);
+
+    await coordinator.cancelFromPhone();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backend.cancelledRecordCount, 1);
+    expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+    expect(dismissed, isTrue);
+
+    submitCompleter.complete();
+    await sub.cancel();
     coordinator.dispose();
   });
 
