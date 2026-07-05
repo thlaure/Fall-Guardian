@@ -383,7 +383,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
-        // Session activated — ready to receive messages
+        NSLog("[WCSession][Phone] activationDidCompleteWith: state=\(activationState.rawValue) isPaired=\(session.isPaired) isWatchAppInstalled=\(session.isWatchAppInstalled) isReachable=\(session.isReachable) error=\(String(describing: error))")
     }
 
     /// Called when the user's Apple Watch becomes inactive (e.g. watch is removed
@@ -422,6 +422,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         _ session: WCSession,
         didReceiveMessage message: [String: Any]
     ) {
+        NSLog("[WCSession][Phone] didReceiveMessage: event=\(message["event"] as? String ?? "nil")")
         switch message["event"] as? String {
 
         // The watch detected a fall and is starting its 30-second countdown.
@@ -643,6 +644,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             }
             return
         }
+        NSLog("[WCSession][Phone] forwardToFlutter: invoking \(method)")
         DispatchQueue.main.async { [weak self] in
             self?.channel?.invokeMethod(method, arguments: arguments)
         }

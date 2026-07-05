@@ -125,8 +125,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
         // Try real-time delivery.  The error handler (trailing closure `{ _ in }`)
         // fires if the phone cannot be reached right now; we fall back to the queue.
-        WCSession.default.sendMessage(message, replyHandler: nil) { _ in
-            NSLog("[WCSession] sendCancelAlert: sendMessage failed, falling back to transferUserInfo")
+        WCSession.default.sendMessage(message, replyHandler: nil) { error in
+            NSLog("[WCSession] sendCancelAlert: sendMessage failed error=\(error) falling back to transferUserInfo")
             // transferUserInfo queues the message on-device; the OS delivers it when
             // the phone becomes reachable again — guaranteed delivery, but not instant.
             WCSession.default.transferUserInfo(message)
@@ -172,9 +172,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         // (and its iOS counterpart) to start the alert with the correct countdown origin.
         let message: [String: Any] = ["event": "fall_detected", "timestamp": timestamp]
 
-        NSLog("[WCSession] sendFallEvent: isReachable=\(WCSession.default.isReachable)")
-        WCSession.default.sendMessage(message, replyHandler: nil) { _ in
-            NSLog("[WCSession] sendFallEvent: sendMessage failed, falling back to transferUserInfo")
+        NSLog("[WCSession] sendFallEvent: isReachable=\(WCSession.default.isReachable) isCompanionAppInstalled=\(WCSession.default.isCompanionAppInstalled)")
+        WCSession.default.sendMessage(message, replyHandler: nil) { error in
+            NSLog("[WCSession] sendFallEvent: sendMessage failed error=\(error) falling back to transferUserInfo")
             WCSession.default.transferUserInfo(message)
         }
     }
@@ -313,7 +313,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        NSLog("[WCSession] activationDidCompleteWith: state=\(activationState.rawValue) isCompanionAppInstalled=\(session.isCompanionAppInstalled) isReachable=\(session.isReachable) error=\(String(describing: error))")
+    }
 
     /// Called immediately when the phone calls `updateApplicationContext`.
     ///
