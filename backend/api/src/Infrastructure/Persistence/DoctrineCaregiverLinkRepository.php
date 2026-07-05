@@ -28,10 +28,14 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
     {
         /** @var list<CaregiverLink> $result */
         $result = $this->createQueryBuilder('link')
+            ->addSelect('CASE WHEN link.caregiverName IS NULL THEN 1 ELSE 0 END AS HIDDEN missingName')
             ->andWhere('link.protectedDevice = :device')
             ->andWhere('link.status = :status')
             ->setParameter('device', $protectedDevice)
             ->setParameter('status', CaregiverLinkStatus::Active)
+            ->addOrderBy('missingName', 'ASC')
+            ->addOrderBy('link.updatedAt', 'DESC')
+            ->addOrderBy('link.createdAt', 'DESC')
             ->getQuery()
             ->getResult();
 
@@ -79,10 +83,14 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
     {
         /** @var list<CaregiverLink> $result */
         $result = $this->createQueryBuilder('link')
+            ->addSelect('CASE WHEN link.protectedPersonName IS NULL THEN 1 ELSE 0 END AS HIDDEN missingName')
             ->andWhere('link.caregiverDevice = :device')
             ->andWhere('link.status = :status')
             ->setParameter('device', $caregiverDevice)
             ->setParameter('status', CaregiverLinkStatus::Active)
+            ->addOrderBy('missingName', 'ASC')
+            ->addOrderBy('link.updatedAt', 'DESC')
+            ->addOrderBy('link.createdAt', 'DESC')
             ->getQuery()
             ->getResult();
 

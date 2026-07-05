@@ -8,11 +8,12 @@ use ApiPlatform\Metadata\ApiResource;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\OpenApi\Model\Operation;
 use App\Domain\Caregiver\Processor\AcceptInviteProcessor;
+use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(operations: [
     new Post(
         uriTemplate: '/api/v1/invites/{code}/accept',
-        input: false,
+        input: self::class,
         output: false,
         read: false,
         openapi: new Operation(
@@ -26,5 +27,11 @@ use App\Domain\Caregiver\Processor\AcceptInviteProcessor;
 ])]
 final class AcceptInviteInputDTO
 {
-    // code comes from the URI variable, not the body — body is intentionally empty
+    #[Assert\NotBlank(allowNull: true)]
+    #[Assert\Length(min: 2, max: 120)]
+    public ?string $protectedPersonName = null;
+
+    #[Assert\NotBlank(allowNull: true)]
+    #[Assert\Length(min: 2, max: 120)]
+    public ?string $caregiverName = null;
 }

@@ -52,6 +52,10 @@ abstract class AppLocalizations {
   String get linkScreenTitle;
   String get enterInviteCodeTitle;
   String get inviteCodeInstructions;
+  String get protectedPersonNameFieldLabel;
+  String get protectedPersonNameValidation;
+  String get caregiverNameFieldLabel;
+  String get caregiverNameValidation;
   String get codeFieldLabel;
   String get codeFieldValidation;
   String get codeNotFound;

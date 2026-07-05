@@ -137,12 +137,24 @@ class _ProtectedPersonTile extends StatelessWidget {
           backgroundColor: cs.primaryContainer,
           child: Icon(Icons.person_outline, color: cs.onPrimaryContainer),
         ),
-        title: Text(l10n.protectedPersonLabel(index + 1)),
-        subtitle: Text(l10n.statusLinkedBody),
+        title: Text(
+          protectedPerson.protectedPersonName?.trim().isNotEmpty == true
+              ? protectedPerson.protectedPersonName!.trim()
+              : l10n.protectedPersonLabel(index + 1),
+        ),
+        subtitle: Text(
+          l10n.protectedPersonSubtitle(
+            protectedPerson.protectedDevicePlatform,
+            _shortDeviceId(protectedPerson.protectedDeviceId),
+          ),
+        ),
         iconColor: cs.primary,
       ),
     );
   }
+
+  String _shortDeviceId(String value) =>
+      value.length <= 8 ? value : value.substring(0, 8);
 }
 
 class _EmptyProtectedPersonsState extends StatelessWidget {

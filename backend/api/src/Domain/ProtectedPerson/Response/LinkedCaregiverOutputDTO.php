@@ -44,6 +44,8 @@ final readonly class LinkedCaregiverOutputDTO
         public string $id,
         public string $linkedAt,
         public string $platform,
+        public ?string $protectedPersonName,
+        public ?string $caregiverName,
     ) {
     }
 
@@ -53,6 +55,8 @@ final readonly class LinkedCaregiverOutputDTO
             id: $link->getId()->toRfc4122(),
             linkedAt: $link->getCreatedAt()->format(DateTimeInterface::ATOM),
             platform: $link->getCaregiverDevice()->getPlatform(),
+            protectedPersonName: $link->getProtectedPersonName(),
+            caregiverName: $link->getCaregiverName(),
         );
     }
 }

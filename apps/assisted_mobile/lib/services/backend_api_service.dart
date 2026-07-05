@@ -32,10 +32,7 @@ class BackendApiService implements AlertBackendGateway {
   final bool _releaseMode;
   final Duration _requestTimeout;
 
-  // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
-  // Update this to your dev machine's LAN IP when testing on a real device,
-  // or pass --dart-define=BACKEND_BASE_URL=http://<lan-ip>:8002 at build time.
-  static const _devMachineLanIp = '172.16.20.73';
+  String get debugBaseUrl => _baseUrl;
 
   String get _baseUrl {
     if (_baseUrlOverride case final override? when override.isNotEmpty) {
@@ -51,7 +48,13 @@ class BackendApiService implements AlertBackendGateway {
       throw StateError('BACKEND_BASE_URL must be set for release builds.');
     }
 
-    return 'http://$_devMachineLanIp:8002';
+    if (Platform.isIOS) {
+      throw StateError(
+        'BACKEND_BASE_URL must be set for iOS physical development builds.',
+      );
+    }
+
+    return 'http://127.0.0.1:8002';
   }
 
   String _validateBaseUrl(String baseUrl) {
@@ -292,7 +295,12 @@ class BackendApiService implements AlertBackendGateway {
       );
     }
 
-    return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+    final caregivers =
+        (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+
+    caregivers.sort(_namedCaregiversFirst);
+
+    return caregivers;
   }
 
   Future<http.Response> _getLinkedCaregivers(
@@ -406,6 +414,19 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  int _namedCaregiversFirst(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftHasName = '${left['caregiverName'] ?? ''}'.trim().isNotEmpty;
+    final rightHasName = '${right['caregiverName'] ?? ''}'.trim().isNotEmpty;
+    if (leftHasName != rightHasName) {
+      return leftHasName ? -1 : 1;
+    }
+
+    return '${right['linkedAt'] ?? ''}'.compareTo('${left['linkedAt'] ?? ''}');
+  }
 
   Future<http.Response> _send(
     Future<http.Response> request,

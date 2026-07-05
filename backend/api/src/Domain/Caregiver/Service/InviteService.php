@@ -44,8 +44,12 @@ final readonly class InviteService implements InviteServiceInterface
         return $invite;
     }
 
-    public function acceptInvite(string $code, Device $caregiverDevice): CaregiverLink
-    {
+    public function acceptInvite(
+        string $code,
+        Device $caregiverDevice,
+        ?string $protectedPersonName = null,
+        ?string $caregiverName = null,
+    ): CaregiverLink {
         if (!$caregiverDevice->isCaregiver()) {
             throw new DomainException('Only caregiver devices can accept invites.');
         }
@@ -63,19 +67,31 @@ final readonly class InviteService implements InviteServiceInterface
         if ($existing instanceof CaregiverLink) {
             if (CaregiverLinkStatus::Revoked === $existing->getStatus()) {
                 $existing->reactivate();
-                $invite->markUsed();
-                $this->inviteRepository->save($invite);
-                $this->linkRepository->save($existing);
+            }
 
-                return $existing;
+            if (null !== $protectedPersonName) {
+                $existing->renameProtectedPerson($protectedPersonName);
+            }
+
+            if (null !== $caregiverName) {
+                $existing->renameCaregiver($caregiverName);
             }
             $invite->markUsed();
             $this->inviteRepository->save($invite);
+            $this->linkRepository->save($existing);
 
             return $existing;
         }
 
         $link = new CaregiverLink($protectedDevice, $caregiverDevice);
+
+        if (null !== $protectedPersonName) {
+            $link->renameProtectedPerson($protectedPersonName);
+        }
+
+        if (null !== $caregiverName) {
+            $link->renameCaregiver($caregiverName);
+        }
         $invite->markUsed();
 
         $this->inviteRepository->save($invite);

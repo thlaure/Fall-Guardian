@@ -28,6 +28,12 @@ class CaregiverLink
     #[ORM\Column(name: 'updated_at')]
     private DateTimeImmutable $updatedAt;
 
+    #[ORM\Column(name: 'protected_person_name', length: 120, nullable: true)]
+    private ?string $protectedPersonName = null;
+
+    #[ORM\Column(name: 'caregiver_name', length: 120, nullable: true)]
+    private ?string $caregiverName = null;
+
     public function __construct(#[ORM\ManyToOne(targetEntity: Device::class)]
         #[ORM\JoinColumn(name: 'protected_device_id', nullable: false, onDelete: 'CASCADE')]
         private Device $protectedDevice, #[ORM\ManyToOne(targetEntity: Device::class)]
@@ -73,6 +79,30 @@ class CaregiverLink
     public function getUpdatedAt(): DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function getProtectedPersonName(): ?string
+    {
+        return $this->protectedPersonName;
+    }
+
+    public function renameProtectedPerson(?string $name): void
+    {
+        $normalizedName = null === $name ? null : trim($name);
+        $this->protectedPersonName = '' === $normalizedName ? null : $normalizedName;
+        $this->updatedAt = new DateTimeImmutable();
+    }
+
+    public function getCaregiverName(): ?string
+    {
+        return $this->caregiverName;
+    }
+
+    public function renameCaregiver(?string $name): void
+    {
+        $normalizedName = null === $name ? null : trim($name);
+        $this->caregiverName = '' === $normalizedName ? null : $normalizedName;
+        $this->updatedAt = new DateTimeImmutable();
     }
 
     public function revoke(): void

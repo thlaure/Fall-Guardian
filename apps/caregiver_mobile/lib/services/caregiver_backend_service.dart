@@ -32,11 +32,6 @@ class CaregiverBackendService {
   final bool _releaseMode;
   final Duration _requestTimeout;
 
-  // On a physical iOS device 127.0.0.1 resolves to the phone, not the Mac.
-  // Update this to your dev machine's LAN IP when testing on a real device,
-  // or pass --dart-define=BACKEND_BASE_URL=http://<lan-ip>:8002 at build time.
-  static const _devMachineLanIp = '172.16.20.73';
-
   String get _baseUrl {
     if (_baseUrlOverride case final override? when override.isNotEmpty) {
       return _validateBaseUrl(override);
@@ -51,7 +46,13 @@ class CaregiverBackendService {
       throw StateError('BACKEND_BASE_URL must be set for release builds.');
     }
 
-    return 'http://$_devMachineLanIp:8002';
+    if (Platform.isIOS) {
+      throw StateError(
+        'BACKEND_BASE_URL must be set for iOS physical development builds.',
+      );
+    }
+
+    return 'http://127.0.0.1:8002';
   }
 
   String _validateBaseUrl(String baseUrl) {
@@ -98,9 +99,13 @@ class CaregiverBackendService {
       );
     }
 
-    return _decodeCollection(
+    final protectedPersons = _decodeCollection(
       jsonDecode(response.body),
     ).map(LinkedProtectedPerson.fromJson).toList();
+
+    protectedPersons.sort(_namedProtectedPersonsFirst);
+
+    return protectedPersons;
   }
 
   Future<http.Response> _getLinkedProtectedPersons(
@@ -115,12 +120,26 @@ class CaregiverBackendService {
     );
   }
 
-  Future<void> acceptInvite(String code) async {
+  Future<void> acceptInvite(
+    String code, {
+    required String protectedPersonName,
+    required String caregiverName,
+  }) async {
     var credentials = await _credentials();
-    var response = await _acceptInvite(code, credentials);
+    var response = await _acceptInvite(
+      code,
+      credentials,
+      protectedPersonName: protectedPersonName,
+      caregiverName: caregiverName,
+    );
     if (response.statusCode == HttpStatus.unauthorized) {
       credentials = await _credentials(forceRefresh: true);
-      response = await _acceptInvite(code, credentials);
+      response = await _acceptInvite(
+        code,
+        credentials,
+        protectedPersonName: protectedPersonName,
+        caregiverName: caregiverName,
+      );
     }
 
     if (!_isSuccess(response.statusCode)) {
@@ -136,12 +155,18 @@ class CaregiverBackendService {
 
   Future<http.Response> _acceptInvite(
     String code,
-    _CaregiverCredentials credentials,
-  ) {
+    _CaregiverCredentials credentials, {
+    required String protectedPersonName,
+    required String caregiverName,
+  }) {
     return _send(
       _client.post(
         Uri.parse('$_baseUrl/api/v1/invites/$code/accept'),
         headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode({
+          'protectedPersonName': protectedPersonName.trim(),
+          'caregiverName': caregiverName.trim(),
+        }),
       ),
       'Invite acceptance timed out',
     );
@@ -373,6 +398,19 @@ class CaregiverBackendService {
       if (alert['longitude'] != null) 'longitude': '${alert['longitude']}',
     };
   }
+
+  int _namedProtectedPersonsFirst(
+    LinkedProtectedPerson left,
+    LinkedProtectedPerson right,
+  ) {
+    final leftHasName = left.hasProtectedPersonName;
+    final rightHasName = right.hasProtectedPersonName;
+    if (leftHasName != rightHasName) {
+      return leftHasName ? -1 : 1;
+    }
+
+    return left.protectedDeviceId.compareTo(right.protectedDeviceId);
+  }
 }
 
 class CaregiverApiException implements Exception {
@@ -390,6 +428,7 @@ class LinkedProtectedPerson {
   const LinkedProtectedPerson({
     required this.protectedDeviceId,
     required this.protectedDevicePlatform,
+    required this.protectedPersonName,
   });
 
   factory LinkedProtectedPerson.fromJson(Map<String, dynamic> json) {
@@ -397,11 +436,16 @@ class LinkedProtectedPerson {
       protectedDeviceId: '${json['protectedDeviceId'] ?? 'unknown'}',
       protectedDevicePlatform:
           '${json['protectedDevicePlatform'] ?? 'unknown'}',
+      protectedPersonName: (json['protectedPersonName'] as String?)?.trim(),
     );
   }
 
   final String protectedDeviceId;
   final String protectedDevicePlatform;
+  final String? protectedPersonName;
+
+  bool get hasProtectedPersonName =>
+      protectedPersonName != null && protectedPersonName!.isNotEmpty;
 }
 
 class _CaregiverCredentials {
