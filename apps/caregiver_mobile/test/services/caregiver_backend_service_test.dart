@@ -64,6 +64,34 @@ void main() {
   );
 
   test(
+    'ensureRegistered throws when no backend URL is configured in release mode',
+    () async {
+      final service = CaregiverBackendService(
+        releaseMode: true,
+        client: MockClient((request) async {
+          fail('No backend URL must be rejected before an HTTP request.');
+        }),
+      );
+
+      await expectLater(service.ensureRegistered(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test(
+    'ensureRegistered throws when no backend URL is configured on iOS dev builds',
+    () async {
+      final service = CaregiverBackendService(
+        isIOSPlatform: true,
+        client: MockClient((request) async {
+          fail('No backend URL must be rejected before an HTTP request.');
+        }),
+      );
+
+      await expectLater(service.ensureRegistered(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test(
     'ensureRegistered rejects insecure backend URL in release mode',
     () async {
       final service = CaregiverBackendService(
@@ -228,6 +256,32 @@ void main() {
   );
 
   test(
+    'getLinkedProtectedPersons throws typed exception on API failure',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response('unavailable', 503);
+        }),
+      );
+
+      await expectLater(
+        service.getLinkedProtectedPersons(),
+        throwsA(
+          isA<CaregiverApiException>()
+              .having((error) => error.statusCode, 'statusCode', 503)
+              .having((error) => error.body, 'body', 'unavailable'),
+        ),
+      );
+    },
+  );
+
+  test(
     'getLinkedProtectedPersons keeps named protected persons visible first',
     () async {
       FlutterSecureStorage.setMockInitialValues({
@@ -262,6 +316,44 @@ void main() {
 
       expect(protectedPersons.first.protectedDeviceId, 'protected-with-name');
       expect(protectedPersons.first.protectedPersonName, 'Marie');
+      expect(protectedPersons.last.protectedDeviceId, 'protected-without-name');
+    },
+  );
+
+  test(
+    'getLinkedProtectedPersons keeps named protected persons first regardless of input order',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {
+                  'protectedDeviceId': 'protected-with-name',
+                  'protectedDevicePlatform': 'android',
+                  'protectedPersonName': 'Marie',
+                },
+                {
+                  'protectedDeviceId': 'protected-without-name',
+                  'protectedDevicePlatform': 'ios',
+                  'protectedPersonName': null,
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final protectedPersons = await service.getLinkedProtectedPersons();
+
+      expect(protectedPersons.first.protectedDeviceId, 'protected-with-name');
       expect(protectedPersons.last.protectedDeviceId, 'protected-without-name');
     },
   );
@@ -406,6 +498,118 @@ void main() {
     },
   );
 
+  test('acceptInvite throws typed exception on API failure', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+
+    const inviteCode = '669CBEC261CDDF65DD21F4D2A2452689';
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        return http.Response('unavailable', 503);
+      }),
+    );
+
+    await expectLater(
+      service.acceptInvite(
+        inviteCode,
+        protectedPersonName: 'Marie',
+        caregiverName: 'Thomas',
+      ),
+      throwsA(
+        isA<CaregiverApiException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having((error) => error.body, 'body', 'unavailable'),
+      ),
+    );
+  });
+
+  test(
+    'acknowledgeFallAlert refreshes stale credentials after unauthorized response',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'stale-device',
+        'caregiver_device_token': 'stale-token',
+      });
+
+      final requests = <String>[];
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+
+          if (request.url.path == '/api/v1/fall-alerts/alert-1/acknowledge' &&
+              request.headers['Authorization'] == 'Bearer stale-token') {
+            return http.Response('unauthorized', 401);
+          }
+          if (request.url.path == '/api/v1/devices/register') {
+            return http.Response(
+              jsonEncode({
+                'deviceId': 'fresh-device',
+                'deviceToken': 'fresh-token',
+              }),
+              201,
+            );
+          }
+
+          return http.Response('', 204);
+        }),
+      );
+
+      await service.acknowledgeFallAlert('alert-1');
+
+      expect(requests, [
+        'POST /api/v1/fall-alerts/alert-1/acknowledge',
+        'POST /api/v1/devices/register',
+        'POST /api/v1/fall-alerts/alert-1/acknowledge',
+      ]);
+    },
+  );
+
+  test(
+    'registerPushToken refreshes stale credentials after unauthorized response',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'stale-device',
+        'caregiver_device_token': 'stale-token',
+      });
+
+      final requests = <String>[];
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+
+          if (request.url.path == '/api/v1/caregiver/push-token' &&
+              request.headers['Authorization'] == 'Bearer stale-token') {
+            return http.Response('unauthorized', 401);
+          }
+          if (request.url.path == '/api/v1/devices/register') {
+            return http.Response(
+              jsonEncode({
+                'deviceId': 'fresh-device',
+                'deviceToken': 'fresh-token',
+              }),
+              201,
+            );
+          }
+
+          return http.Response('', 204);
+        }),
+      );
+
+      await service.registerPushToken('fcm-token');
+
+      expect(requests, [
+        'POST /api/v1/caregiver/push-token',
+        'POST /api/v1/devices/register',
+        'POST /api/v1/caregiver/push-token',
+      ]);
+    },
+  );
+
   test('getCaregiverAlerts accepts API Platform hydra collection', () async {
     FlutterSecureStorage.setMockInitialValues({
       'caregiver_device_id': 'device-1',
@@ -455,6 +659,56 @@ void main() {
 
     expect(alerts.single['id'], 'alert-1');
   });
+
+  test(
+    'getCaregiverAlerts refreshes stale credentials after unauthorized response',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'stale-device',
+        'caregiver_device_token': 'stale-token',
+      });
+
+      final requests = <String>[];
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+
+          if (request.url.path == '/api/v1/caregiver/alerts' &&
+              request.headers['Authorization'] == 'Bearer stale-token') {
+            return http.Response('unauthorized', 401);
+          }
+          if (request.url.path == '/api/v1/devices/register') {
+            return http.Response(
+              jsonEncode({
+                'deviceId': 'fresh-device',
+                'deviceToken': 'fresh-token',
+              }),
+              201,
+            );
+          }
+
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {'id': 'alert-1'},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final alerts = await service.getCaregiverAlerts();
+
+      expect(alerts.single['id'], 'alert-1');
+      expect(requests, [
+        'GET /api/v1/caregiver/alerts',
+        'POST /api/v1/devices/register',
+        'GET /api/v1/caregiver/alerts',
+      ]);
+    },
+  );
 
   test('getCaregiverAlerts throws typed exception on API failure', () async {
     FlutterSecureStorage.setMockInitialValues({
@@ -555,6 +809,45 @@ void main() {
       expect(alert?['fallTimestamp'], '2026-05-16T09:00:00+00:00');
       expect(alert?['latitude'], '48.8566');
       expect(alert?['longitude'], '2.3522');
+    },
+  );
+
+  test(
+    'getLatestActiveAlertData treats an alert with an unparsable date as oldest',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {
+                  'id': 'dated-alert',
+                  'status': 'received',
+                  'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+                  'acknowledged': false,
+                },
+                {
+                  'id': 'undated-alert',
+                  'status': 'received',
+                  'fallDetectedAt': 'not-a-date',
+                  'acknowledged': false,
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final alert = await service.getLatestActiveAlertData();
+
+      expect(alert?['alertId'], 'dated-alert');
     },
   );
 
@@ -683,6 +976,19 @@ void main() {
             .having((error) => error.statusCode, 'statusCode', 403)
             .having((error) => error.body, 'body', 'forbidden'),
       ),
+    );
+  });
+
+  test('CaregiverApiException.toString includes message, status, and body', () {
+    final error = CaregiverApiException(
+      'Failed to fetch',
+      statusCode: 503,
+      body: 'unavailable',
+    );
+
+    expect(
+      error.toString(),
+      'CaregiverApiException(Failed to fetch, 503, unavailable)',
     );
   });
 }

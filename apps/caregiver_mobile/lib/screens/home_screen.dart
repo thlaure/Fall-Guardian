@@ -1,25 +1,36 @@
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
+import '../services/caregiver_backend_service.dart';
 import 'alert_history_screen.dart';
 import 'protected_persons_screen.dart';
 
 class CaregiverHomeScreen extends StatefulWidget {
-  const CaregiverHomeScreen({super.key, required this.isLinked, this.onLinked});
+  const CaregiverHomeScreen({
+    super.key,
+    required this.isLinked,
+    this.onLinked,
+    this.backend,
+  });
 
   final bool isLinked;
   final VoidCallback? onLinked;
+  final CaregiverBackendService? backend;
 
   @override
   State<CaregiverHomeScreen> createState() => _CaregiverHomeScreenState();
 }
 
 class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
+  late final CaregiverBackendService _backend =
+      widget.backend ?? CaregiverBackendService();
   late bool _linked;
+  int? _protectedPersonsCount;
 
   @override
   void initState() {
     super.initState();
     _linked = widget.isLinked;
+    _loadProtectedPersonsCount();
   }
 
   @override
@@ -30,9 +41,21 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     }
   }
 
+  Future<void> _loadProtectedPersonsCount() async {
+    try {
+      final persons = await _backend.getLinkedProtectedPersons();
+      if (!mounted) return;
+      setState(() => _protectedPersonsCount = persons.length);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _protectedPersonsCount = null);
+    }
+  }
+
   void _onLinked() {
     setState(() => _linked = true);
     widget.onLinked?.call();
+    _loadProtectedPersonsCount();
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(
       context,
@@ -42,7 +65,6 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -71,21 +93,23 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
             _NavButton(
               icon: Icons.people_alt_outlined,
               label: l10n.protectedPersonsButton,
-              subtitle: _linked
-                  ? l10n.statusLinkedBody
-                  : l10n.statusUnlinkedBody,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => ProtectedPersonsScreen(onLinked: _onLinked),
-                ),
-              ),
+              subtitle: _protectedPersonsCount == null
+                  ? null
+                  : l10n.protectedPersonsCount(_protectedPersonsCount!),
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => ProtectedPersonsScreen(onLinked: _onLinked),
+                  ),
+                );
+                await _loadProtectedPersonsCount();
+              },
             ),
             const SizedBox(height: 16),
             _NavButton(
               icon: Icons.history,
               label: l10n.historyTitle,
-              subtitle: l10n.historyEmpty,
               onTap: _linked
                   ? () => Navigator.push(
                       context,
@@ -94,12 +118,6 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                       ),
                     )
                   : null,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              l10n.homeFootnote,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
             ),
           ],
         ),
@@ -178,13 +196,13 @@ class _CaregiverHero extends StatelessWidget {
 class _NavButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback? onTap;
 
   const _NavButton({
     required this.icon,
     required this.label,
-    required this.subtitle,
+    this.subtitle,
     required this.onTap,
   });
 
@@ -221,16 +239,16 @@ class _NavButton extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: cs.onSurfaceVariant,
-                        fontSize: 13,
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

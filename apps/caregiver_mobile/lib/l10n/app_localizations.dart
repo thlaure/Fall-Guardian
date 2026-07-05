@@ -35,7 +35,6 @@ abstract class AppLocalizations {
   String get howItWorksBody;
   String get importantTitle;
   String get importantBody;
-  String get homeFootnote;
 
   // ── Active Alert ──────────────────────────────────────────────────────────
   String get fallDetectedTitle;

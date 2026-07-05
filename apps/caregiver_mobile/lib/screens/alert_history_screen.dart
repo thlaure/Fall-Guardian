@@ -135,6 +135,8 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         final platform =
             '${deviceAlerts.first['protectedDevicePlatform'] ?? 'unknown'}';
         final deviceNumber = index + 1;
+        final protectedPersonName =
+            '${deviceAlerts.first['protectedPersonName'] ?? ''}'.trim();
         final shortDeviceId = deviceId.length <= 8
             ? deviceId
             : deviceId.substring(0, 8);
@@ -144,7 +146,9 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           children: [
             if (index > 0) const SizedBox(height: 24),
             _DeviceHeader(
-              label: l10n.protectedPersonLabel(deviceNumber),
+              label: protectedPersonName.isNotEmpty
+                  ? protectedPersonName
+                  : l10n.protectedPersonLabel(deviceNumber),
               subtitle: l10n.protectedPersonSubtitle(platform, shortDeviceId),
               platform: platform,
               alertCountLabel: l10n.alertCountLabel(deviceAlerts.length),

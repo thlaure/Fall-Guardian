@@ -43,9 +43,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get importantBody =>
       'Gardez les notifications activées pour cette application. Les alertes de chute sont '
       'envoyées comme messages silencieux — votre téléphone doit être allumé et connecté.';
-  @override
-  String get homeFootnote =>
-      'Des applications séparées rendent les flux aidé/aidant plus clairs, plus sûrs et plus faciles à maintenir.';
 
   // ── Active Alert ──────────────────────────────────────────────────────────
   @override
