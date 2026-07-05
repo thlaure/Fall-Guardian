@@ -17,9 +17,6 @@ dependencies:
   # GPS location
   geolocator: ^14.0.3
 
-  # SMS sending
-  flutter_sms: ^3.0.1
-
   # Local persistence
   shared_preferences: ^2.5.5
 

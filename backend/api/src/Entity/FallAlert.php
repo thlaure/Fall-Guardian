@@ -124,6 +124,12 @@ class FallAlert
         return $this->longitude;
     }
 
+    public function updateLocation(?float $latitude, ?float $longitude): void
+    {
+        $this->latitude = $latitude;
+        $this->longitude = $longitude;
+    }
+
     public function getCancelledAt(): ?DateTimeImmutable
     {
         return $this->cancelledAt;

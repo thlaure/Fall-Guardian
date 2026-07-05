@@ -18,12 +18,15 @@ class BackendApiService implements AlertBackendGateway {
     bool? releaseMode,
     Duration? requestTimeout,
     bool? isIOSPlatform,
+    List<Duration>? submitRetryDelays,
   })  : _store = store ?? SecureKeyValueStore(),
         _client = client ?? http.Client(),
         _baseUrlOverride = baseUrl,
         _releaseMode = releaseMode ?? kReleaseMode,
         _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
-        _isIOSPlatform = isIOSPlatform ?? Platform.isIOS;
+        _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
+        _submitRetryDelays = submitRetryDelays ??
+            const [Duration(milliseconds: 500), Duration(seconds: 2)];
 
   static const _deviceIdKey = 'backend_device_id';
   static const _deviceTokenKey = 'backend_device_token';
@@ -34,6 +37,12 @@ class BackendApiService implements AlertBackendGateway {
   final bool _releaseMode;
   final Duration _requestTimeout;
   final bool _isIOSPlatform;
+
+  // The initial fall-alert submission is now the single safety-critical
+  // call (the backend owns the cancel/grace timer once it lands) — retry a
+  // couple of times on transient failure instead of giving up on the first
+  // blip, same idea as the existing 401-refresh-and-retry pattern below.
+  final List<Duration> _submitRetryDelays;
 
   String get debugBaseUrl => _baseUrl;
 
@@ -111,7 +120,43 @@ class BackendApiService implements AlertBackendGateway {
     required String locale,
     required double? latitude,
     required double? longitude,
-    required List<Contact> contacts,
+  }) async {
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await _submitFallAlertOnce(
+          clientAlertId: clientAlertId,
+          fallTimestamp: fallTimestamp,
+          locale: locale,
+          latitude: latitude,
+          longitude: longitude,
+        );
+        // The API acknowledges the alert was accepted; the backend now owns
+        // the grace/cancel window and dispatches the caregiver push itself.
+        return;
+      } catch (error) {
+        final canRetry = attempt < _submitRetryDelays.length &&
+            _isRetryableFailure(error);
+        if (!canRetry) rethrow;
+        await Future<void>.delayed(_submitRetryDelays[attempt]);
+      }
+    }
+  }
+
+  // A 4xx (other than 401, already handled by the credential refresh above)
+  // is a permanent client error that retrying will never fix. Only timeouts
+  // (no status code at all) and 5xx server errors are worth retrying.
+  bool _isRetryableFailure(Object error) {
+    if (error is! BackendApiException) return true;
+    final statusCode = error.statusCode;
+    return statusCode == null || statusCode >= 500;
+  }
+
+  Future<void> _submitFallAlertOnce({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
   }) async {
     var credentials = await _credentials();
     var response = await _submitFallAlert(
@@ -141,9 +186,6 @@ class BackendApiService implements AlertBackendGateway {
         body: response.body,
       );
     }
-
-    // The API acknowledges that the alert was accepted for dispatch. Actual
-    // caregiver push delivery happens asynchronously on the backend worker.
   }
 
   Future<http.Response> _submitFallAlert({
@@ -284,6 +326,39 @@ class BackendApiService implements AlertBackendGateway {
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
         'Failed to cancel fall alert',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  }
+
+  @override
+  Future<void> attachLocation({
+    required String clientAlertId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final token = await _store.read(_deviceTokenKey);
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    final response = await _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/location'),
+        headers: _jsonHeaders(token: token),
+        body: jsonEncode({'latitude': latitude, 'longitude': longitude}),
+      ),
+      'Fall alert location attachment timed out',
+    );
+
+    if (response.statusCode == 404) {
+      return;
+    }
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to attach fall alert location',
         statusCode: response.statusCode,
         body: response.body,
       );

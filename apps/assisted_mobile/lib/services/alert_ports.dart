@@ -33,7 +33,6 @@ abstract class AlertBackendGateway {
     required String locale,
     required double? latitude,
     required double? longitude,
-    required List<Contact> contacts,
   });
 
   Future<void> recordCancelledFallAlert({
@@ -45,6 +44,14 @@ abstract class AlertBackendGateway {
   });
 
   Future<void> cancelFallAlert({required String clientAlertId});
+
+  /// Best-effort location attachment for an already-submitted alert. Called
+  /// once a GPS fix resolves; submitFallAlert must never block on this.
+  Future<void> attachLocation({
+    required String clientAlertId,
+    required double latitude,
+    required double longitude,
+  });
 }
 
 abstract class WatchCommandGateway {

@@ -62,7 +62,13 @@ class _FakeBackendGateway implements AlertBackendGateway {
     required String locale,
     required double? latitude,
     required double? longitude,
-    required List<Contact> contacts,
+  }) async {}
+
+  @override
+  Future<void> attachLocation({
+    required String clientAlertId,
+    required double latitude,
+    required double longitude,
   }) async {}
 }
 

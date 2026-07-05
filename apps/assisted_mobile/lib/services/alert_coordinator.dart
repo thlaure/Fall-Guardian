@@ -2,14 +2,12 @@ import 'dart:async';
 
 import 'package:geolocator/geolocator.dart';
 
-import '../models/contact.dart';
 import '../models/fall_event.dart';
 import 'alert_ports.dart';
 import 'alert_runtime.dart';
 import 'backend_api_service.dart';
 import 'location_service.dart';
 import 'notification_service.dart';
-import '../repositories/contacts_repository.dart';
 import '../repositories/fall_events_repository.dart';
 
 enum AlertPhase {
@@ -46,7 +44,6 @@ class AlertCoordinator {
   /// concrete repositories/plugins. That keeps this class focused on
   /// "what should happen next?" rather than "how do we talk to storage/SMS?".
   AlertCoordinator({
-    required EmergencyContactsStore contactsStore,
     required FallEventRecorder eventRecorder,
     required AlertLocationProvider locationProvider,
     required AlertNotificationGateway notificationGateway,
@@ -55,8 +52,7 @@ class AlertCoordinator {
     required AlertLocaleResolver localeResolver,
     required Clock clock,
     required IdGenerator idGenerator,
-  })  : _contactsStore = contactsStore,
-        _eventRecorder = eventRecorder,
+  })  : _eventRecorder = eventRecorder,
         _locationProvider = locationProvider,
         _notificationGateway = notificationGateway,
         _backendGateway = backendGateway,
@@ -67,7 +63,6 @@ class AlertCoordinator {
 
   factory AlertCoordinator.live() {
     return AlertCoordinator(
-      contactsStore: ContactsRepository(),
       eventRecorder: FallEventsRepository(),
       locationProvider: LocationService(),
       notificationGateway: NotificationService(),
@@ -81,7 +76,6 @@ class AlertCoordinator {
 
   static const _countdownSeconds = 30;
 
-  final EmergencyContactsStore _contactsStore;
   final FallEventRecorder _eventRecorder;
   final AlertLocationProvider _locationProvider;
   final AlertNotificationGateway _notificationGateway;
@@ -99,7 +93,16 @@ class AlertCoordinator {
   AlertUiState? _currentState;
   int? _activeTimestamp;
   String? _activeClientAlertId;
-  bool _submittedToBackend = false;
+
+  // True once the immediate registration below has landed on the backend —
+  // from that point the backend owns the cancel/grace window and will
+  // dispatch the caregiver push itself, so this phone no longer needs to
+  // stay alive for the rest of the countdown.
+  bool _registeredWithBackend = false;
+
+  // Best-effort GPS fix attached to the backend alert once it resolves.
+  // Reused for the local FallEvent record too, purely for display purposes.
+  Position? _lastKnownPosition;
 
   Stream<AlertUiState> get stateStream => _stateController.stream;
   Stream<void> get dismissStream => _dismissController.stream;
@@ -111,17 +114,66 @@ class AlertCoordinator {
     _cancelTimers();
     _activeTimestamp = timestamp;
     _activeClientAlertId = _idGenerator.newId();
-    _submittedToBackend = false;
+    _registeredWithBackend = false;
+    _lastKnownPosition = null;
     _transition(timestamp, AlertPhase.countdown);
 
     final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
     final remainingMs = (_countdownSeconds * 1000 - elapsedMs)
         .clamp(0, _countdownSeconds * 1000);
 
+    // Fallback only: if the immediate registration below never lands (e.g.
+    // no network at all right now), fall back to the legacy local-timeout
+    // escalation once the grace window elapses.
     _timeoutTimer = Timer(
       Duration(milliseconds: remainingMs),
-      () => unawaited(_handleTimeout(timestamp)),
+      () => unawaited(_handleGraceWindowElapsed(timestamp)),
     );
+
+    // Register with the backend immediately — from here it owns the
+    // cancel/grace window, so escalation still fires even if this phone
+    // gets locked before the local timer above would have elapsed.
+    unawaited(_registerWithBackend(timestamp, _activeClientAlertId!));
+  }
+
+  Future<void> _registerWithBackend(int timestamp, String clientAlertId) async {
+    try {
+      await _backendGateway.submitFallAlert(
+        clientAlertId: clientAlertId,
+        fallTimestamp: timestamp,
+        locale: _localeResolver.languageCode(),
+        latitude: null,
+        longitude: null,
+      );
+    } catch (_) {
+      // Stay unregistered — the fallback timer will retry at grace-window
+      // end, exactly like before this immediate-registration existed.
+      return;
+    }
+
+    if (!_isCurrentAlert(timestamp)) return;
+    _registeredWithBackend = true;
+    unawaited(_attachLocationWhenAvailable(timestamp, clientAlertId));
+  }
+
+  Future<void> _attachLocationWhenAvailable(
+    int timestamp,
+    String clientAlertId,
+  ) async {
+    final position = await _locationProvider.getCurrentPosition();
+    if (position == null || !_isCurrentAlert(timestamp)) return;
+
+    _lastKnownPosition = position;
+    try {
+      await _backendGateway.attachLocation(
+        clientAlertId: clientAlertId,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } catch (_) {
+      // Best-effort enhancement data only — the alert itself is already
+      // registered regardless of whether this call succeeds.
+    }
   }
 
   /// Reconciles the active alert after lifecycle interruptions such as the app
@@ -136,7 +188,7 @@ class AlertCoordinator {
 
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
-    await _handleTimeout(timestamp);
+    await _handleGraceWindowElapsed(timestamp);
   }
 
   Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
@@ -158,20 +210,26 @@ class AlertCoordinator {
     }
 
     final clientAlertId = _activeClientAlertId;
-    final wasSubmittedToBackend = _submittedToBackend;
+    final wasRegistered = _registeredWithBackend;
     _transition(timestamp, AlertPhase.cancelled);
     _activeTimestamp = null;
     _activeClientAlertId = null;
-    _submittedToBackend = false;
+    _registeredWithBackend = false;
+    _lastKnownPosition = null;
     _currentState = null;
 
-    if (wasSubmittedToBackend && clientAlertId != null) {
-      await _cancelSubmittedFallAlert(clientAlertId: clientAlertId);
-    } else if (clientAlertId != null) {
-      await _recordCancelledFallAlert(
-        clientAlertId: clientAlertId,
-        timestamp: timestamp,
-      );
+    if (clientAlertId != null) {
+      // Always attempt the real cancel — it's idempotent/404-safe if the
+      // alert never actually landed server-side. When this phone doesn't
+      // yet know registration succeeded, also record a cancelled event so
+      // there's still a backend record if it truly never got through.
+      await _cancelRegisteredFallAlert(clientAlertId: clientAlertId);
+      if (!wasRegistered) {
+        await _recordCancelledFallAlert(
+          clientAlertId: clientAlertId,
+          timestamp: timestamp,
+        );
+      }
     }
 
     final event = FallEvent(
@@ -184,7 +242,7 @@ class AlertCoordinator {
     _dismissController.add(null);
   }
 
-  Future<void> _cancelSubmittedFallAlert({
+  Future<void> _cancelRegisteredFallAlert({
     required String clientAlertId,
   }) async {
     try {
@@ -213,12 +271,25 @@ class AlertCoordinator {
     }
   }
 
-  Future<void> _handleTimeout(int timestamp) async {
+  /// Called once the 30s grace window elapses, either by the local fallback
+  /// timer or by [reconcileActiveAlert] catching up after a backgrounding.
+  Future<void> _handleGraceWindowElapsed(int timestamp) async {
     if (!_isCurrentAlert(timestamp) ||
         _currentState?.phase != AlertPhase.countdown) {
       return;
     }
 
+    if (_registeredWithBackend) {
+      // Already registered immediately at t=0 (see startAlert) — the
+      // backend owns escalation from here. This is just the local "we're
+      // done" UI transition; no second submission needed.
+      await _finishRegisteredAlert(timestamp);
+      return;
+    }
+
+    // Fallback: the immediate registration never landed (e.g. no network at
+    // all when the fall was detected). Do exactly what the fully
+    // client-owned flow used to do — fetch location and try one last time.
     final l10n = _localeResolver.resolve();
     final clientAlertId = _activeClientAlertId;
     _transition(
@@ -236,23 +307,41 @@ class AlertCoordinator {
       statusMessage: l10n.sendingAlert,
     );
 
-    final contacts = await _contactsStore.getAll();
-    if (!_isCurrentAlert(timestamp)) return;
-
-    // Always submit to the backend regardless of contacts: recording the fall
-    // and notifying contacts are two separate backend responsibilities.
-    // With no contacts the backend stores the event without sending any SMS.
     final outcome = await _backendEscalationOutcome(
       clientAlertId: clientAlertId,
       timestamp: timestamp,
       position: position,
-      contacts: contacts,
       locale: _localeResolver.languageCode(),
       alertFailedMessage: l10n.smsFailed,
       alertSubmittedMessage: l10n.alertSubmitted,
     );
     if (outcome == null || !_isCurrentAlert(timestamp)) return;
 
+    await _finishWithOutcome(timestamp, outcome);
+  }
+
+  Future<void> _finishRegisteredAlert(int timestamp) async {
+    final l10n = _localeResolver.resolve();
+
+    await _finishWithOutcome(
+      timestamp,
+      _AlertOutcome(
+        event: FallEvent(
+          id: _idGenerator.newId(),
+          timestamp:
+              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          status: FallEventStatus.alertSent,
+          latitude: _lastKnownPosition?.latitude,
+          longitude: _lastKnownPosition?.longitude,
+        ),
+        phase: AlertPhase.alertSent,
+        message: l10n.alertSubmitted,
+        dismissDelay: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _finishWithOutcome(int timestamp, _AlertOutcome outcome) async {
     await _eventRecorder.add(outcome.event);
     await _notificationGateway.cancelAll();
     if (!_isCurrentAlert(timestamp)) return;
@@ -263,7 +352,8 @@ class AlertCoordinator {
       if (!_isCurrentAlert(timestamp)) return;
       _activeTimestamp = null;
       _activeClientAlertId = null;
-      _submittedToBackend = false;
+      _registeredWithBackend = false;
+      _lastKnownPosition = null;
       _currentState = null;
       _dismissController.add(null);
     });
@@ -273,7 +363,6 @@ class AlertCoordinator {
     required String? clientAlertId,
     required int timestamp,
     required Position? position,
-    required List<Contact> contacts,
     required String locale,
     required String alertFailedMessage,
     required String alertSubmittedMessage,
@@ -289,11 +378,9 @@ class AlertCoordinator {
         locale: locale,
         latitude: position?.latitude,
         longitude: position?.longitude,
-        contacts: contacts,
       );
     } catch (_) {
       if (!_isCurrentAlert(timestamp)) return null;
-      _submittedToBackend = false;
 
       return _AlertOutcome(
         event: FallEvent(
@@ -311,7 +398,7 @@ class AlertCoordinator {
     }
 
     if (!_isCurrentAlert(timestamp)) return null;
-    _submittedToBackend = true;
+    _registeredWithBackend = true;
 
     return _AlertOutcome(
       event: FallEvent(

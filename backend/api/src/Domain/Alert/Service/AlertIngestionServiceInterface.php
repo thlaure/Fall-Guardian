@@ -17,4 +17,6 @@ interface AlertIngestionServiceInterface
     public function cancelAlert(Device $device, string $clientAlertId): ?FallAlert;
 
     public function getAlertForDevice(Device $device, string $alertId): ?FallAlert;
+
+    public function attachLocation(Device $device, string $clientAlertId, ?float $latitude, ?float $longitude): ?FallAlert;
 }
