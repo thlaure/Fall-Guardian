@@ -24,14 +24,14 @@ paths:
 
 ## Backend
 
-- Follow `backend/api/AGENTS.md` for domain, API Platform, CQRS-like handler,
+- Follow `backend/api/CLAUDE.md` for domain, API Platform, CQRS-like handler,
   port, and infrastructure patterns.
 - Preserve the `/api/v1` API prefix.
 - Keep business flow in handlers/services, not controllers or processors.
 
 ## Flutter Apps
 
-- Follow the local `AGENTS.md`.
+- Follow the local `CLAUDE.md`.
 - Keep widgets focused on presentation and simple interaction glue.
 - Keep backend, notification, storage, and platform logic in services.
 - Prefer readable Dart and concise comments for platform behavior, async flows,

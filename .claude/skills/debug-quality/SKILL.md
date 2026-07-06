@@ -1,6 +1,6 @@
 ---
 name: debug-quality
-description: Use when the user reports a formatter, linter, static analysis, test, build, CI, or coverage failure in any Fall Guardian project.
+description: Use when the user reports a formatter, linter, static analysis, test, build, CI, or coverage failure in any Fall Guardian project. See verify-quality for the proactive counterpart, run before declaring work done rather than after a failure.
 ---
 
 # Debug Quality

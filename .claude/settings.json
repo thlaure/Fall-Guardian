@@ -73,6 +73,10 @@
           {
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/out_of_project_write_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/credential_write_guard.py\""
           }
         ]
       }
@@ -84,10 +88,6 @@
           {
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/php_syntax_check.py\""
-          },
-          {
-            "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/hooks/credential_write_guard.py\""
           }
         ]
       }

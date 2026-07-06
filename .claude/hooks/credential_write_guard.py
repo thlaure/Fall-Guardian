@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PostToolUse Write|Edit: block obvious credentials in edited content."""
+"""PreToolUse Write|Edit: block obvious credentials before they hit disk."""
 
 import json
 import re
