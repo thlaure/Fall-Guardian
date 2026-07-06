@@ -5,14 +5,6 @@ description: Use when the user asks for a review, correctness pass, PR review, o
 
 # Review Change
 
-Read first:
-
-- `AGENTS.md`
-- project-local `AGENTS.md` for touched projects
-- `.claude/rules/architecture.md`
-- `.claude/rules/testing.md`
-- `.claude/rules/security.md`
-
 Workflow:
 
 1. Inspect the diff or requested scope.

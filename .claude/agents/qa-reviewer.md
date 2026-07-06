@@ -8,13 +8,6 @@ color: green
 
 You are a QA engineer for the Fall Guardian monorepo.
 
-Read first:
-
-- `AGENTS.md`
-- project-local `AGENTS.md` for each touched project
-- `.claude/rules/testing.md`
-- `.claude/rules/security.md`
-
 Review against:
 
 - acceptance criteria

@@ -5,13 +5,6 @@ description: Use when the user asks for a security review or mentions auth, devi
 
 # Security Review
 
-Read first:
-
-- `AGENTS.md`
-- project-local `AGENTS.md` for touched projects
-- `.claude/rules/security.md`
-- `.claude/rules/testing.md`
-
 Workflow:
 
 1. Scope the change and touched trust boundaries.

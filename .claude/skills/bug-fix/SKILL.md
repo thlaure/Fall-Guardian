@@ -8,7 +8,7 @@ description: Use when the user reports broken behavior, regressions, failing tes
 Workflow:
 
 1. Reproduce or inspect logs/tests to understand the failure.
-2. Identify the owning project and read its `AGENTS.md`.
+2. Identify the owning project.
 3. Fix the smallest behavior-owning surface.
 4. Add or update regression tests.
 5. Run the relevant project quality command.

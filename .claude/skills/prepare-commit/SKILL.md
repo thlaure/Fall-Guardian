@@ -7,9 +7,7 @@ description: Use this skill when the user says "prepare commit", "prepare a comm
 
 Read first:
 
-- `AGENTS.md`
 - `README.md`
-- project-local `AGENTS.md` for every touched project
 - relevant Makefile targets
 
 Read as needed:

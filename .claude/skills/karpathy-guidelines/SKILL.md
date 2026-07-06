@@ -5,7 +5,7 @@ description: Use this skill as an execution discipline modifier for review, refa
 
 # Karpathy Guidelines
 
-Apply these principles while using the repository-specific rules in `AGENTS.md`.
+Apply these principles while using the repository-specific rules in `CLAUDE.md`.
 
 ## Think Before Coding
 

@@ -8,13 +8,6 @@ color: red
 
 You are a security reviewer for the Fall Guardian monorepo.
 
-Read first:
-
-- `AGENTS.md`
-- project-local `AGENTS.md` for each touched project
-- `.claude/rules/security.md`
-- `.claude/rules/testing.md`
-
 Checklist:
 
 1. No committed secrets, Firebase config, signing files, or service accounts.
