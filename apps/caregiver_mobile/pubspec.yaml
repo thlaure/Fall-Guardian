@@ -39,7 +39,7 @@ dependencies:
 
   # Firebase push notifications
   firebase_core: ^4.11.0
-  firebase_messaging: ^16.4.1
+  firebase_messaging: ^16.4.3
 
   # Backend API calls (same version as flutter_app)
   http: ^1.2.1
