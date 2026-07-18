@@ -38,7 +38,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Firebase push notifications
-  firebase_core: ^4.11.0
+  firebase_core: ^4.12.1
   firebase_messaging: ^16.4.1
 
   # Backend API calls (same version as flutter_app)
