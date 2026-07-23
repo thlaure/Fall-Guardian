@@ -10,9 +10,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - apps/wear_os/**
-      - .github/workflows/wear-os-ci.yaml
   workflow_dispatch: ~
 
 concurrency:
@@ -20,8 +17,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect Wear OS changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
+            apps/wear_os \
+            .github/workflows/wear-os-ci.yaml; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
   quality:
-    name: Quality
+    name: Wear OS Checks
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,3 +70,23 @@ jobs:
       - name: Run deterministic checks
         run: make check
 
+  required-quality:
+    name: Wear OS Quality
+    needs:
+      - changes
+      - quality
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Wear OS result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+        run: |
+          test "$CHANGES_RESULT" = "success"
+          if [ "$RELEVANT" = "true" ]; then
+            test "$QUALITY_RESULT" = "success"
+          else
+            test "$QUALITY_RESULT" = "skipped"
+          fi
