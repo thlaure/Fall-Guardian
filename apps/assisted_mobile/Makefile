@@ -62,8 +62,9 @@ run-android-wired: ## Launch Android debug through USB reverse proxy to the loca
 	flutter run --debug $(DEVICE_ARG) --no-resident --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8002
 	$(ADB) $(ANDROID_DEVICE_ARG) reverse tcp:8002 tcp:8002
 
-run-ios-debug: ## Install and launch iOS debug build on a physical device
-	flutter run --debug $(DEVICE_ARG) --no-resident $(IOS_BACKEND_ARG)
+run-ios-debug: ## Safety alias: install a home-screen-safe profile build on physical iOS
+	@echo "Physical iOS debug builds cannot relaunch from the home screen; installing profile instead."
+	@$(MAKE) run-ios-profile
 
 run-ios-profile: ## Install and launch iOS profile build on a physical device
 	flutter run --profile $(DEVICE_ARG) --no-resident $(IOS_BACKEND_ARG)

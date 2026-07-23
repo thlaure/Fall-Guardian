@@ -61,8 +61,10 @@ root Makefile only orchestrates common checks.
 - Docker Compose or Podman Compose for the backend.
 - GitHub CLI if you need to create or inspect pull requests locally.
 
-The backend Makefile chooses `podman compose` when Podman is installed, and
-falls back to `docker compose` otherwise.
+The backend Makefile chooses `podman compose` when Podman is installed, using
+Podman's stable macOS runtime directory (`/private/tmp`) so its external
+Compose provider resolves the machine API socket correctly. It falls back to
+`docker compose` otherwise.
 
 ## Common Commands
 
