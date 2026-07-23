@@ -5,7 +5,8 @@
 GREEN  := \033[0;32m
 CYAN   := \033[0;36m
 RESET  := \033[0m
-COMPOSE ?= $(shell if command -v podman >/dev/null 2>&1; then echo podman compose; else echo docker compose; fi)
+PODMAN_RUNTIME_TMPDIR ?= /private/tmp
+COMPOSE ?= $(shell if command -v podman >/dev/null 2>&1; then echo TMPDIR=$(PODMAN_RUNTIME_TMPDIR) podman compose; else echo docker compose; fi)
 
 help: ## Show this help
 	@echo ""
@@ -91,7 +92,7 @@ coverage-html: ## Generate HTML coverage report (var/reports/phpunit-coverage/in
 	@echo ""
 	@echo "Report: var/reports/phpunit-coverage/index.html"
 
-test-behat: ## Run Behat API tests
+test-behat: test-db ## Run Behat API tests
 	$(COMPOSE) exec app vendor/bin/behat --config behat.yaml.dist --colors
 
 migrate: ## Run database migrations

@@ -27,6 +27,10 @@ scripts/                  workspace automation
 - Keep automated line coverage at or above 90% when practical.
 - Tests must prove behavior, contracts, edge cases, and regressions.
 - Check status before committing. Do not revert user changes.
+- Never hand off a Flutter debug build on a physical iOS device: it cannot be
+  relaunched from the home screen. Use profile (development) or release
+  (production). Debug is allowed only while tooling remains attached, and must
+  be replaced by a profile/release build before declaring deployment complete.
 
 ## Configuration Layout
 
