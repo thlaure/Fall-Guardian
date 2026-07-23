@@ -25,10 +25,10 @@ class AlertAcknowledgement
         #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
         private FallAlert $fallAlert, #[ORM\ManyToOne(targetEntity: Device::class)]
         #[ORM\JoinColumn(name: 'caregiver_device_id', nullable: false, onDelete: 'CASCADE')]
-        private Device $caregiverDevice)
+        private Device $caregiverDevice, ?DateTimeImmutable $acknowledgedAt = null)
     {
         $this->id = Uuid::v7();
-        $this->acknowledgedAt = new DateTimeImmutable();
+        $this->acknowledgedAt = $acknowledgedAt ?? new DateTimeImmutable();
     }
 
     public function getId(): Uuid

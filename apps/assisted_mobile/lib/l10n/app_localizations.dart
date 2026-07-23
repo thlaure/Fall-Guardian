@@ -58,6 +58,8 @@ abstract class AppLocalizations {
   String get sendingAlert;
   String get smsFailed;
   String get alertSubmitted;
+  String get confirmingCancellation;
+  String get cancellationUnconfirmed;
   String get cancelAlert;
 
   // ── History ──────────────────────────────────────────────────────────────
@@ -70,6 +72,7 @@ abstract class AppLocalizations {
   String get statusAlertSent;
   String get statusAlertFailed;
   String get statusCancelled;
+  String get statusCancellationPending;
   String get statusTimedOut;
   String notifiedLabel(String names);
   String locationLabel(String coords);

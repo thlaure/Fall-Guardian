@@ -478,7 +478,10 @@ void main() {
 
       if (request.url.path == '/api/v1/fall-alerts' &&
           request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response('', 201);
+        return http.Response(
+          jsonEncode({'status': 'cancelled'}),
+          201,
+        );
       }
 
       fail('Unexpected request: ${request.method} ${request.url}');
@@ -773,22 +776,9 @@ void main() {
     expect(requestCount, 3);
   });
 
-  test('cancelFallAlert skips API call when no token is stored', () async {
-    var called = false;
-    final service = BackendApiService(
-      store: store,
-      client: MockClient((request) async {
-        called = true;
-        return http.Response('', 204);
-      }),
-    );
-
-    await service.cancelFallAlert(clientAlertId: 'alert-1');
-
-    expect(called, isFalse);
-  });
-
-  test('cancelFallAlert ignores already missing backend alert', () async {
+  test('cancelFallAlert requires the backend to confirm cancelled status',
+      () async {
+    store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
 
     final service = BackendApiService(
@@ -796,18 +786,67 @@ void main() {
       client: MockClient((request) async {
         expect(request.url.path, '/api/v1/fall-alerts/alert-1/cancel');
         expect(request.headers['authorization'], 'Bearer token-1');
-        return http.Response('missing', 404);
+        return http.Response(
+          jsonEncode({'status': 'cancelled'}),
+          201,
+        );
       }),
     );
 
     await service.cancelFallAlert(clientAlertId: 'alert-1');
   });
 
-  test('cancelFallAlert throws typed exception on API failure', () async {
+  test('cancelFallAlert does not treat a missing alert as confirmed', () async {
+    store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
 
     final service = BackendApiService(
       store: store,
+      cancellationRetryDelays: const [],
+      client: MockClient((request) async => http.Response('missing', 404)),
+    );
+
+    await expectLater(
+      service.cancelFallAlert(clientAlertId: 'alert-1'),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 404),
+      ),
+    );
+  });
+
+  test('cancelFallAlert retries an ambiguous failure and confirms cancellation',
+      () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    var requestCount = 0;
+
+    final service = BackendApiService(
+      store: store,
+      cancellationRetryDelays: const [Duration.zero],
+      client: MockClient((request) async {
+        requestCount++;
+        if (requestCount == 1) {
+          return http.Response('temporary failure', 503);
+        }
+        return http.Response(
+          jsonEncode({'status': 'cancelled'}),
+          201,
+        );
+      }),
+    );
+
+    await service.cancelFallAlert(clientAlertId: 'alert-1');
+    expect(requestCount, 2);
+  });
+
+  test('cancelFallAlert throws typed exception on API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+
+    final service = BackendApiService(
+      store: store,
+      cancellationRetryDelays: const [],
       client: MockClient((request) async => http.Response('server error', 500)),
     );
 

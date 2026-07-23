@@ -189,7 +189,24 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
   void _handleAlert(Map<String, dynamic> data) {
     if (!mounted) return;
     if (_activeAlertPresentation.show(data)) {
+      unawaited(_reportAlertReceived(data));
       _presentActiveAlert(data);
+    }
+  }
+
+  Future<void> _reportAlertReceived(Map<String, dynamic> data) async {
+    final alertId = data['alertId'] as String?;
+    if (alertId == null || alertId.isEmpty) return;
+
+    try {
+      await _backend.reportAlertReceived(alertId);
+    } catch (error, stackTrace) {
+      developer.log(
+        'Alert receipt report failed for $alertId',
+        name: '_AppRootState',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

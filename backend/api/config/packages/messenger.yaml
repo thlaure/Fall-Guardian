@@ -14,5 +14,5 @@ when@test:
     framework:
         messenger:
             transports:
-                async: 'sync://'
+                async: 'in-memory://'
                 failed: 'in-memory://'

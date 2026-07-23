@@ -50,6 +50,53 @@ void main() {
       expect(all.first.id, '1');
     });
 
+    test('add replaces a provisional outcome for the same fall', () async {
+      final timestamp = DateTime.utc(2026, 7, 23, 9, 55, 7);
+      await repo.add(
+        FallEvent(
+          id: 'provisional',
+          timestamp: timestamp,
+          status: FallEventStatus.alertSent,
+        ),
+      );
+      await repo.add(
+        FallEvent(
+          id: 'final',
+          timestamp: timestamp,
+          status: FallEventStatus.cancelled,
+        ),
+      );
+
+      final all = await repo.getAll();
+      expect(all, hasLength(1));
+      expect(all.single.id, 'final');
+      expect(all.single.status, FallEventStatus.cancelled);
+    });
+
+    test('getAll repairs contradictory legacy outcomes for the same fall',
+        () async {
+      final timestamp = DateTime.utc(2026, 7, 23, 9, 55, 7);
+      final cancelled = FallEvent(
+        id: 'cancelled',
+        timestamp: timestamp,
+        status: FallEventStatus.cancelled,
+      );
+      final falseAlertSent = FallEvent(
+        id: 'false-alert-sent',
+        timestamp: timestamp,
+        status: FallEventStatus.alertSent,
+      );
+      store.data['fall_events'] = jsonEncode([
+        jsonEncode(cancelled.toJson()),
+        jsonEncode(falseAlertSent.toJson()),
+      ]);
+
+      final all = await repo.getAll();
+      expect(all, hasLength(1));
+      expect(all.single.id, 'cancelled');
+      expect(all.single.status, FallEventStatus.cancelled);
+    });
+
     test('getAll returns events sorted newest first', () async {
       final older = FallEvent(
         id: 'old',

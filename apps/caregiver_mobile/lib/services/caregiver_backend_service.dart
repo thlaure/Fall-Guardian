@@ -209,6 +209,36 @@ class CaregiverBackendService {
     );
   }
 
+  Future<void> reportAlertReceived(String alertId) async {
+    var credentials = await _credentials();
+    var response = await _reportAlertReceived(alertId, credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _reportAlertReceived(alertId, credentials);
+    }
+
+    if (!_isSuccess(response.statusCode)) {
+      throw CaregiverApiException(
+        'Failed to report alert receipt',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  }
+
+  Future<http.Response> _reportAlertReceived(
+    String alertId,
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/fall-alerts/$alertId/receipt'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Fall alert receipt timed out',
+    );
+  }
+
   Future<List<Map<String, dynamic>>> getCaregiverAlerts() async {
     var credentials = await _credentials();
     var response = await _getCaregiverAlerts(credentials);
@@ -385,7 +415,14 @@ class CaregiverBackendService {
   }
 
   bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
-    return alert['acknowledged'] != true && alert['status'] != 'cancelled';
+    if (alert['acknowledged'] == true) {
+      return false;
+    }
+
+    return switch (alert['status']) {
+      'sent' || 'partially_sent' || 'failed' => true,
+      _ => false,
+    };
   }
 
   int _newestAlertFirst(Map<String, dynamic> left, Map<String, dynamic> right) {

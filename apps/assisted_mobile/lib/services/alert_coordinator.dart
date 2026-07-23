@@ -18,7 +18,9 @@ enum AlertPhase {
   alertSent,
   alertFailed,
   timedOutNoSms,
+  cancelling,
   cancelled,
+  cancellationUnconfirmed,
 }
 
 class AlertUiState {
@@ -37,7 +39,9 @@ class AlertUiState {
       phase == AlertPhase.sendingAlert ||
       phase == AlertPhase.alertSent ||
       phase == AlertPhase.alertFailed ||
-      phase == AlertPhase.timedOutNoSms;
+      phase == AlertPhase.timedOutNoSms ||
+      phase == AlertPhase.cancelling ||
+      phase == AlertPhase.cancellationUnconfirmed;
 }
 
 class AlertCoordinator {
@@ -93,6 +97,7 @@ class AlertCoordinator {
   Timer? _dismissTimer;
   AlertUiState? _currentState;
   int? _activeTimestamp;
+  Duration? _countdownStartedAt;
   String? _activeClientAlertId;
 
   // True once the immediate registration below has landed on the backend —
@@ -114,14 +119,13 @@ class AlertCoordinator {
 
     _cancelTimers();
     _activeTimestamp = timestamp;
+    _countdownStartedAt = _clock.elapsed();
     _activeClientAlertId = _idGenerator.newId();
     _registeredWithBackend = false;
     _lastKnownPosition = null;
     _transition(timestamp, AlertPhase.countdown);
 
-    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
-    final remainingMs = (_countdownSeconds * 1000 - elapsedMs)
-        .clamp(0, _countdownSeconds * 1000);
+    final remainingMs = _countdownSeconds * 1000;
 
     // Fallback only: if the immediate registration below never lands (e.g.
     // no network at all right now), fall back to the legacy local-timeout
@@ -184,7 +188,9 @@ class AlertCoordinator {
     if (timestamp == null) return;
     if (_currentState?.phase != AlertPhase.countdown) return;
 
-    final elapsedMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    final startedAt = _countdownStartedAt;
+    if (startedAt == null) return;
+    final elapsedMs = (_clock.elapsed() - startedAt).inMilliseconds;
     if (elapsedMs < _countdownSeconds * 1000) return;
 
     _timeoutTimer?.cancel();
@@ -212,25 +218,46 @@ class AlertCoordinator {
 
     final clientAlertId = _activeClientAlertId;
     final wasRegistered = _registeredWithBackend;
-    _transition(timestamp, AlertPhase.cancelled);
-    _activeTimestamp = null;
-    _activeClientAlertId = null;
-    _registeredWithBackend = false;
-    _lastKnownPosition = null;
-    _currentState = null;
+    final l10n = _localeResolver.resolve();
+    _transition(
+      timestamp,
+      AlertPhase.cancelling,
+      statusMessage: l10n.confirmingCancellation,
+    );
 
+    var cancellationConfirmed = false;
     if (clientAlertId != null) {
       // Always attempt the real cancel — it's idempotent/404-safe if the
       // alert never actually landed server-side. When this phone doesn't
       // yet know registration succeeded, also record a cancelled event so
       // there's still a backend record if it truly never got through.
-      await _cancelRegisteredFallAlert(clientAlertId: clientAlertId);
+      cancellationConfirmed =
+          await _cancelRegisteredFallAlert(clientAlertId: clientAlertId);
       if (!wasRegistered) {
-        await _recordCancelledFallAlert(
-          clientAlertId: clientAlertId,
-          timestamp: timestamp,
-        );
+        cancellationConfirmed = await _recordCancelledFallAlert(
+              clientAlertId: clientAlertId,
+              timestamp: timestamp,
+            ) ||
+            cancellationConfirmed;
       }
+    }
+
+    if (!cancellationConfirmed) {
+      await _finishWithOutcome(
+        timestamp,
+        _AlertOutcome(
+          event: FallEvent(
+            id: _idGenerator.newId(),
+            timestamp:
+                DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+            status: FallEventStatus.cancellationPending,
+          ),
+          phase: AlertPhase.cancellationUnconfirmed,
+          message: l10n.cancellationUnconfirmed,
+          dismissDelay: const Duration(seconds: 5),
+        ),
+      );
+      return;
     }
 
     final event = FallEvent(
@@ -240,29 +267,37 @@ class AlertCoordinator {
     );
     await _eventRecorder.add(event);
     await _notificationGateway.cancelAll();
+    if (!_isCurrentAlert(timestamp)) return;
+    _transition(timestamp, AlertPhase.cancelled);
+    _activeTimestamp = null;
+    _countdownStartedAt = null;
+    _activeClientAlertId = null;
+    _registeredWithBackend = false;
+    _lastKnownPosition = null;
+    _currentState = null;
     _dismissController.add(null);
   }
 
-  Future<void> _cancelRegisteredFallAlert({
+  Future<bool> _cancelRegisteredFallAlert({
     required String clientAlertId,
   }) async {
     try {
       await _backendGateway.cancelFallAlert(clientAlertId: clientAlertId);
+      return true;
     } catch (error, stackTrace) {
-      // The local cancellation must not be rolled back by a transient backend
-      // failure; local history still records the cancelled fall. Still worth
-      // logging: a failed cancel here can leave a live alert on caregivers'
-      // phones with no other trace of what happened.
+      // Never claim a safety-critical cancellation succeeded unless backend
+      // confirmed it. The caller keeps the alert on the safe escalation path.
       developer.log(
         'cancelFallAlert failed for $clientAlertId',
         name: 'AlertCoordinator',
         error: error,
         stackTrace: stackTrace,
       );
+      return false;
     }
   }
 
-  Future<void> _recordCancelledFallAlert({
+  Future<bool> _recordCancelledFallAlert({
     required String clientAlertId,
     required int timestamp,
   }) async {
@@ -274,16 +309,17 @@ class AlertCoordinator {
         latitude: null,
         longitude: null,
       );
+      return true;
     } catch (error, stackTrace) {
-      // The local cancellation must not be rolled back by a transient backend
-      // failure; local history still records the cancelled fall. Still worth
-      // logging for the same reason as _cancelRegisteredFallAlert above.
+      // Same fail-safe rule as the direct cancel path: an unconfirmed
+      // cancellation is treated as potentially dispatched.
       developer.log(
         'recordCancelledFallAlert failed for $clientAlertId',
         name: 'AlertCoordinator',
         error: error,
         stackTrace: stackTrace,
       );
+      return false;
     }
   }
 
@@ -367,6 +403,7 @@ class AlertCoordinator {
     _dismissTimer = Timer(outcome.dismissDelay, () {
       if (!_isCurrentAlert(timestamp)) return;
       _activeTimestamp = null;
+      _countdownStartedAt = null;
       _activeClientAlertId = null;
       _registeredWithBackend = false;
       _lastKnownPosition = null;
@@ -436,6 +473,14 @@ class AlertCoordinator {
   }
 
   bool _isCurrentAlert(int timestamp) => _activeTimestamp == timestamp;
+
+  int get remainingCountdownSeconds {
+    final startedAt = _countdownStartedAt;
+    if (startedAt == null) return 0;
+
+    final elapsedSeconds = (_clock.elapsed() - startedAt).inSeconds;
+    return (_countdownSeconds - elapsedSeconds).clamp(0, _countdownSeconds);
+  }
 
   void _transition(
     int timestamp,

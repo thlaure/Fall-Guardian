@@ -30,7 +30,13 @@ final class FallAlertOutputDTO
         public string $clientAlertId,
         public string $status,
         public string $fallTimestamp,
+        public string $receivedAt,
+        public string $cancelDeadlineAt,
         public ?string $cancelledAt,
+        public ?string $dispatchClaimedAt,
+        public ?string $deliveryReceiptDeadlineAt,
+        public ?string $firstDeliveryReceiptAt,
+        public ?string $acknowledgementDeadlineAt,
     ) {
     }
 
@@ -41,7 +47,13 @@ final class FallAlertOutputDTO
             $alert->getClientAlertId(),
             $alert->getStatus()->value,
             ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
+            ApiDateTimeFormatter::formatUtc($alert->getReceivedAt()),
+            ApiDateTimeFormatter::formatUtc($alert->getCancelDeadlineAt()),
             null === $alert->getCancelledAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getCancelledAt()),
+            null === $alert->getDispatchClaimedAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getDispatchClaimedAt()),
+            null === $alert->getDeliveryReceiptDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getDeliveryReceiptDeadlineAt()),
+            null === $alert->getFirstDeliveryReceiptAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getFirstDeliveryReceiptAt()),
+            null === $alert->getAcknowledgementDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getAcknowledgementDeadlineAt()),
         );
     }
 }

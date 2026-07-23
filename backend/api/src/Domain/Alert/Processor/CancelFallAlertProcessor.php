@@ -9,8 +9,10 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Alert\Request\CancelFallAlertInputDTO;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
+use App\Enum\FallAlertStatus;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -42,6 +44,10 @@ final readonly class CancelFallAlertProcessor implements ProcessorInterface
 
         if (!$alert instanceof \App\Entity\FallAlert) {
             throw new NotFoundHttpException('Alert not found.');
+        }
+
+        if (FallAlertStatus::Cancelled !== $alert->getStatus()) {
+            throw new ConflictHttpException('The cancellation deadline has passed or alert dispatch has started.');
         }
 
         return FallAlertOutputDTO::fromEntity($alert);

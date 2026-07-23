@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 
+import 'caregiver_backend_service.dart';
 import 'pending_alert_store.dart';
 
 /// Top-level handler required by FCM for background/terminated state.
@@ -14,6 +15,19 @@ Future<void> _onBackgroundMessage(RemoteMessage message) async {
   );
   if (_isFallAlert(message.data)) {
     await PendingAlertStore().save(message.data);
+    final alertId = message.data['alertId'] as String?;
+    if (alertId != null && alertId.isNotEmpty) {
+      try {
+        await CaregiverBackendService().reportAlertReceived(alertId);
+      } catch (error, stackTrace) {
+        developer.log(
+          'Background alert receipt report failed for $alertId',
+          name: 'PushNotificationService',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }
   }
   // caregiver_revoked in background: _loadLinkState() on next resume handles it.
 }

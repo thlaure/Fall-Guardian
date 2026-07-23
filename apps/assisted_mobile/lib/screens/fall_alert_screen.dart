@@ -48,13 +48,14 @@ class FallAlertScreen extends StatefulWidget {
 // TickerProviderStateMixin makes this State class itself serve as that source.
 class _FallAlertScreenState extends State<FallAlertScreen>
     with TickerProviderStateMixin {
-  // The total countdown in seconds. This is the authoritative maximum; the
-  // actual remaining time is always computed from the original timestamp.
+  // The total countdown in seconds. Backend owns the actual dispatch deadline;
+  // this value drives only the local cancellation UI.
   static const _countdownSeconds = 30;
 
   // ── Mutable state ─────────────────────────────────────────────────────────
   int _remaining =
       _countdownSeconds; // seconds left — drives the progress ring and number
+  final Stopwatch _screenStopwatch = Stopwatch();
   Timer? _timer; // periodic timer that re-computes _remaining
   StreamSubscription<AlertUiState>?
       _alertStateSub; // state updates from the coordinator
@@ -76,6 +77,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
     // Order matters: set up animation first, then start the countdown, then
     // subscribe to external cancel events.
     _setupPulse();
+    _screenStopwatch.start();
     _startCountdown();
     final currentState = widget.alertCoordinator.currentState;
     if (currentState != null &&
@@ -113,29 +115,22 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
   // ── Countdown logic ───────────────────────────────────────────────────────
   void _startCountdown() {
-    // Poll at 500 ms so the display stays in sync with the watch countdown.
-    // Compute remaining from the original fall timestamp so both devices
-    // show the same number regardless of message delivery latency.
-    //
-    // Why compute from the original timestamp instead of decrementing a counter?
-    // If we just did `_remaining--` every second, any clock drift or message
-    // delay between the watch and the phone would cause the two displays to
-    // diverge. By always subtracting from the shared `fallTimestamp`, both
-    // devices are guaranteed to show the same number.
+    // Poll at 500 ms for a smooth display. Coordinator measures duration using
+    // a monotonic clock, so device wall-clock corrections cannot change the
+    // cancellation window.
     _timer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       // Guard: if the widget has been removed from the tree (e.g. navigation
       // has already popped this screen), stop the timer and do nothing.
       // Calling setState on an unmounted widget throws an error.
       if (!mounted) return;
 
-      final elapsed =
-          DateTime.now().millisecondsSinceEpoch - widget.fallTimestamp;
-
-      // `~/ 1000` is integer division — converts milliseconds to whole seconds.
-      // `.clamp(0, _countdownSeconds)` ensures the value never goes negative
-      // or above 30 (e.g. if the timestamp is slightly in the future).
-      final remaining =
-          (_countdownSeconds - elapsed ~/ 1000).clamp(0, _countdownSeconds);
+      final coordinatorOwnsCountdown =
+          widget.alertCoordinator.currentState?.fallTimestamp ==
+              widget.fallTimestamp;
+      final remaining = coordinatorOwnsCountdown
+          ? widget.alertCoordinator.remainingCountdownSeconds
+          : (_countdownSeconds - _screenStopwatch.elapsed.inSeconds)
+              .clamp(0, _countdownSeconds);
 
       // setState tells Flutter to rebuild the widget with the new _remaining value.
       setState(() => _remaining = remaining);
@@ -170,6 +165,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
   @override
   void dispose() {
+    _screenStopwatch.stop();
     // Always cancel timers and subscriptions in dispose() to prevent them from
     // firing after the widget is gone, which would cause runtime errors.
     _timer?.cancel();

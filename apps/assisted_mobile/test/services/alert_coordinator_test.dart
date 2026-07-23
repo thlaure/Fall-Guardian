@@ -170,11 +170,16 @@ class _FakeClock implements Clock {
   _FakeClock([DateTime? initialNow]) : _now = initialNow ?? DateTime.now();
 
   DateTime _now;
+  Duration _elapsed = Duration.zero;
 
   @override
   DateTime now() => _now;
 
+  @override
+  Duration elapsed() => _elapsed;
+
   void setNow(DateTime value) {
+    _elapsed += value.difference(_now);
     _now = value;
   }
 }
@@ -287,22 +292,21 @@ void main() {
     final repo = _FakeFallEventsRepository();
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway();
+    final clock = _FakeClock();
     final states = <AlertUiState>[];
     final coordinator = _coordinator(
       eventRecorder: repo,
       notificationGateway: notifications,
       backendGateway: backend,
       locationProvider: _FakeLocationServiceWithPosition(),
+      clock: clock,
     );
     final sub = coordinator.stateStream.listen(states.add);
 
-    // fallTimestamp far enough in the past that the local fallback timer
-    // fires almost immediately — but since registration succeeds first
-    // (see startAlert), the fallback timer must take the fast path.
-    await coordinator.startAlert(
-      DateTime.now().millisecondsSinceEpoch -
-          const Duration(seconds: 31).inMilliseconds,
-    );
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+    await Future<void>.delayed(Duration.zero);
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(backend.callCount, 1, reason: 'no second submission needed');
@@ -325,19 +329,20 @@ void main() {
     final repo = _FakeFallEventsRepository();
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway(failFirstSubmitOnly: true);
+    final clock = _FakeClock();
     final states = <AlertUiState>[];
     final coordinator = _coordinator(
       eventRecorder: repo,
       notificationGateway: notifications,
       backendGateway: backend,
       locationProvider: _FakeLocationServiceWithPosition(),
+      clock: clock,
     );
     final sub = coordinator.stateStream.listen(states.add);
 
-    await coordinator.startAlert(
-      DateTime.now().millisecondsSinceEpoch -
-          const Duration(seconds: 31).inMilliseconds,
-    );
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     // First call (immediate registration) failed; fallback attempt succeeded.
@@ -360,18 +365,19 @@ void main() {
     final repo = _FakeFallEventsRepository();
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway(shouldFail: true);
+    final clock = _FakeClock();
     final states = <AlertUiState>[];
     final coordinator = _coordinator(
       eventRecorder: repo,
       notificationGateway: notifications,
       backendGateway: backend,
+      clock: clock,
     );
     final sub = coordinator.stateStream.listen(states.add);
 
-    await coordinator.startAlert(
-      DateTime.now().millisecondsSinceEpoch -
-          const Duration(seconds: 31).inMilliseconds,
-    );
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(backend.callCount, 2);
@@ -466,9 +472,11 @@ void main() {
 
     await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
     await coordinator.cancelFromWatch();
+    await Future<void>.delayed(Duration.zero);
 
     expect(states.map((state) => state.phase), [
       AlertPhase.countdown,
+      AlertPhase.cancelling,
       AlertPhase.cancelled,
     ]);
 
@@ -579,9 +587,8 @@ void main() {
     coordinator.dispose();
   });
 
-  test(
-      'cancelFromPhone still finishes locally even when the backend cancel '
-      'call fails', () async {
+  test('cancelFromPhone fails safe when backend cannot confirm cancellation',
+      () async {
     final repo = _FakeFallEventsRepository();
     final backend = _FakeBackendGateway(cancelShouldFail: true);
     final coordinator =
@@ -596,8 +603,19 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(backend.cancelCount, 1);
-    expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
-    expect(dismissed, isTrue);
+    expect(
+      repo.savedEvents.single.status,
+      FallEventStatus.cancellationPending,
+    );
+    expect(
+      coordinator.currentState?.phase,
+      AlertPhase.cancellationUnconfirmed,
+    );
+    expect(
+      coordinator.currentState?.statusMessage,
+      contains('may still be alerted'),
+    );
+    expect(dismissed, isFalse);
 
     await sub.cancel();
     coordinator.dispose();
@@ -654,17 +672,18 @@ void main() {
       () async {
     final notifications = _FakeNotificationService();
     final backend = _FakeBackendGateway();
+    final clock = _FakeClock();
     final coordinator = _coordinator(
       notificationGateway: notifications,
       backendGateway: backend,
+      clock: clock,
     );
     var dismissed = false;
     final sub = coordinator.dismissStream.listen((_) => dismissed = true);
 
-    await coordinator.startAlert(
-      DateTime.now().millisecondsSinceEpoch -
-          const Duration(seconds: 31).inMilliseconds,
-    );
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(coordinator.currentState?.phase, AlertPhase.alertSent);
@@ -683,16 +702,17 @@ void main() {
       'fallback timeout with a real position submits lat/lng and records '
       'them locally on failure', () async {
     final repo = _FakeFallEventsRepository();
+    final clock = _FakeClock();
     final coordinator = _coordinator(
       locationProvider: _FakeLocationServiceWithPosition(),
       eventRecorder: repo,
       backendGateway: _FakeBackendGateway(shouldFail: true),
+      clock: clock,
     );
 
-    await coordinator.startAlert(
-      DateTime.now().millisecondsSinceEpoch -
-          const Duration(seconds: 31).inMilliseconds,
-    );
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+    clock.setNow(clock.now().add(const Duration(seconds: 31)));
+    await coordinator.reconcileActiveAlert();
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(repo.savedEvents.single.status, FallEventStatus.alertFailed);

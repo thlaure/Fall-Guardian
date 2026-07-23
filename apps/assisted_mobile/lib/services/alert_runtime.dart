@@ -6,8 +6,17 @@ import 'alert_ports.dart';
 import 'watch_communication_service.dart';
 
 class SystemClock implements Clock {
+  SystemClock() {
+    _stopwatch.start();
+  }
+
+  final Stopwatch _stopwatch = Stopwatch();
+
   @override
   DateTime now() => DateTime.now();
+
+  @override
+  Duration elapsed() => _stopwatch.elapsed;
 }
 
 class UuidGenerator implements IdGenerator {

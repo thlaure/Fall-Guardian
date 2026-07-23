@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Behat;
 
+use App\Domain\Alert\Handler\SendFallAlertPushMessageHandler;
+use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Infrastructure\Push\FakePushStore;
 use Behat\Behat\Context\Context;
 use Behat\Behat\Hook\Scope\BeforeScenarioScope;
 use Behat\Gherkin\Node\PyStringNode;
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
 
 use const JSON_THROW_ON_ERROR;
 
@@ -36,6 +40,9 @@ final class ApiContext implements Context
     public function __construct(
         KernelInterface $kernel,
         private readonly FakePushStore $pushStore,
+        private readonly Connection $connection,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly SendFallAlertPushMessageHandler $sendFallAlertPushMessageHandler,
     ) {
         $this->client = new KernelBrowser($kernel);
         $this->client->disableReboot();
@@ -222,6 +229,26 @@ final class ApiContext implements Context
         if ($actual !== $count) {
             throw new RuntimeException(sprintf('Expected %d push message(s) but found %d.', $count, $actual));
         }
+    }
+
+    /**
+     * @When the stored alert :key is dispatched after its grace period
+     */
+    public function theStoredAlertIsDispatchedAfterItsGracePeriod(string $key): void
+    {
+        $alertId = $this->stored[$key] ?? null;
+
+        if (!is_string($alertId)) {
+            throw new RuntimeException(sprintf('Stored alert "%s" was not found.', $key));
+        }
+
+        $this->connection->executeStatement(
+            "UPDATE fall_alerts SET cancel_deadline_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = :id",
+            ['id' => $alertId],
+        );
+        $this->entityManager->clear();
+
+        ($this->sendFallAlertPushMessageHandler)(new SendFallAlertPushMessage($alertId));
     }
 
     /**

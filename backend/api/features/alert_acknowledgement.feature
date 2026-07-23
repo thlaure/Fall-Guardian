@@ -52,6 +52,33 @@ Feature: Alert acknowledgement and caregiver alert history
     When I send a POST request to "/api/v1/fall-alerts/{id}/acknowledge"
     Then the response status code is 204
 
+  Scenario: Linked caregiver can report alert receipt idempotently
+    Given I register a protected person device
+    And I register a caregiver device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/invites"
+    Then the response status code is 201
+    And I store the response JSON field "code" as "inviteCode"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/invites/{inviteCode}/accept"
+    Then the response status code is 204
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "receipt-behat-idem",
+        "fallTimestamp": "2025-01-01T12:00:00+00:00",
+        "locale": "en"
+      }
+      """
+    Then the response status code is 201
+    And I store the response JSON field "id" as "id"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/fall-alerts/{id}/receipt"
+    Then the response status code is 204
+    When I send a POST request to "/api/v1/fall-alerts/{id}/receipt"
+    Then the response status code is 204
+
   Scenario: Unlinked caregiver cannot acknowledge an alert
     Given I register a protected person device
     And I register a caregiver device

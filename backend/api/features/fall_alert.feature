@@ -115,6 +115,8 @@ Feature: Fall alert management
       }
       """
     Then the response status code is 201
+    And I store the response JSON field "id" as "alertId"
+    When the stored alert "alertId" is dispatched after its grace period
     And the fake push inbox contains 1 messages
 
   Scenario: Creating a fall alert without authentication is rejected

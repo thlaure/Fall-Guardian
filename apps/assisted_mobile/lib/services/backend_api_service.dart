@@ -19,6 +19,7 @@ class BackendApiService implements AlertBackendGateway {
     Duration? requestTimeout,
     bool? isIOSPlatform,
     List<Duration>? submitRetryDelays,
+    List<Duration>? cancellationRetryDelays,
   })  : _store = store ?? SecureKeyValueStore(),
         _client = client ?? http.Client(),
         _baseUrlOverride = baseUrl,
@@ -26,7 +27,9 @@ class BackendApiService implements AlertBackendGateway {
         _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
         _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
         _submitRetryDelays = submitRetryDelays ??
-            const [Duration(milliseconds: 500), Duration(seconds: 2)];
+            const [Duration(milliseconds: 500), Duration(seconds: 2)],
+        _cancellationRetryDelays = cancellationRetryDelays ??
+            const [Duration(milliseconds: 200), Duration(milliseconds: 500)];
 
   static const _deviceIdKey = 'backend_device_id';
   static const _deviceTokenKey = 'backend_device_token';
@@ -43,6 +46,7 @@ class BackendApiService implements AlertBackendGateway {
   // couple of times on transient failure instead of giving up on the first
   // blip, same idea as the existing 401-refresh-and-retry pattern below.
   final List<Duration> _submitRetryDelays;
+  final List<Duration> _cancellationRetryDelays;
 
   String get debugBaseUrl => _baseUrl;
 
@@ -220,6 +224,32 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        await _recordCancelledFallAlertOnce(
+          clientAlertId: clientAlertId,
+          fallTimestamp: fallTimestamp,
+          locale: locale,
+          latitude: latitude,
+          longitude: longitude,
+        );
+        return;
+      } catch (error) {
+        final canRetry = attempt < _cancellationRetryDelays.length &&
+            _isRetryableFailure(error);
+        if (!canRetry) rethrow;
+        await Future<void>.delayed(_cancellationRetryDelays[attempt]);
+      }
+    }
+  }
+
+  Future<void> _recordCancelledFallAlertOnce({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {
     var credentials = await _credentials();
     var response = await _recordCancelledFallAlert(
       credentials: credentials,
@@ -248,6 +278,11 @@ class BackendApiService implements AlertBackendGateway {
         body: response.body,
       );
     }
+
+    _requireCancelledResponse(
+      response,
+      'Backend did not confirm the cancelled fall alert',
+    );
   }
 
   Future<http.Response> _recordCancelledFallAlert({
@@ -306,21 +341,37 @@ class BackendApiService implements AlertBackendGateway {
 
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
-    final token = await _store.read(_deviceTokenKey);
-    if (token == null || token.isEmpty) {
-      return;
+    for (var attempt = 0;; attempt++) {
+      try {
+        await _cancelFallAlertOnce(clientAlertId);
+        return;
+      } catch (error) {
+        final canRetry = attempt < _cancellationRetryDelays.length &&
+            _isRetryableFailure(error);
+        if (!canRetry) rethrow;
+        await Future<void>.delayed(_cancellationRetryDelays[attempt]);
+      }
     }
+  }
 
-    final response = await _send(
+  Future<void> _cancelFallAlertOnce(String clientAlertId) async {
+    var credentials = await _credentials();
+    var response = await _send(
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
-        headers: _jsonHeaders(token: token),
+        headers: _jsonHeaders(token: credentials.deviceToken),
       ),
       'Fall alert cancellation timed out',
     );
-
-    if (response.statusCode == 404) {
-      return;
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _send(
+        _client.post(
+          Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
+          headers: _jsonHeaders(token: credentials.deviceToken),
+        ),
+        'Fall alert cancellation timed out',
+      );
     }
 
     if (!_isSuccess(response.statusCode)) {
@@ -330,6 +381,11 @@ class BackendApiService implements AlertBackendGateway {
         body: response.body,
       );
     }
+
+    _requireCancelledResponse(
+      response,
+      'Backend did not confirm fall alert cancellation',
+    );
   }
 
   @override
@@ -496,6 +552,21 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   bool _isSuccess(int statusCode) => statusCode >= 200 && statusCode < 300;
+
+  void _requireCancelledResponse(http.Response response, String message) {
+    try {
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      if (payload['status'] == 'cancelled') return;
+    } catch (_) {
+      // Converted below into a typed safety-critical confirmation failure.
+    }
+
+    throw BackendApiException(
+      message,
+      statusCode: response.statusCode,
+      body: response.body,
+    );
+  }
 
   int _namedCaregiversFirst(
     Map<String, dynamic> left,

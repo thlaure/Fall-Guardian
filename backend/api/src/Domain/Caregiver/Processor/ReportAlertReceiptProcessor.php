@@ -6,11 +6,9 @@ namespace App\Domain\Caregiver\Processor;
 
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
-use App\Domain\Alert\Port\AlertAcknowledgementRepositoryInterface;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
-use App\Domain\Caregiver\Request\AcknowledgeAlertInputDTO;
-use App\Entity\AlertAcknowledgement;
+use App\Domain\Caregiver\Request\ReportAlertReceiptInputDTO;
 use App\Entity\FallAlert;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
@@ -19,15 +17,14 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
- * @implements ProcessorInterface<AcknowledgeAlertInputDTO, null>
+ * @implements ProcessorInterface<ReportAlertReceiptInputDTO, null>
  */
-final readonly class AcknowledgeAlertProcessor implements ProcessorInterface
+final readonly class ReportAlertReceiptProcessor implements ProcessorInterface
 {
     public function __construct(
         private DeviceContextInterface $currentDeviceProvider,
         private FallAlertRepositoryInterface $fallAlertRepository,
         private CaregiverLinkRepositoryInterface $caregiverLinkRepository,
-        private AlertAcknowledgementRepositoryInterface $acknowledgementRepository,
         private EndpointRateLimiterInterface $rateLimiter,
         private ClockInterface $clock,
     ) {
@@ -37,7 +34,6 @@ final readonly class AcknowledgeAlertProcessor implements ProcessorInterface
     {
         $rawId = $uriVariables['id'] ?? '';
         $alertId = is_string($rawId) ? $rawId : '';
-
         $alert = $this->fallAlertRepository->findById($alertId);
 
         if (!$alert instanceof FallAlert) {
@@ -45,23 +41,20 @@ final readonly class AcknowledgeAlertProcessor implements ProcessorInterface
         }
 
         $caregiverDevice = $this->currentDeviceProvider->requireDevice();
-
-        $this->rateLimiter->consume('acknowledge_alert', 20, 60, $caregiverDevice->getPublicId());
+        $this->rateLimiter->consume('report_alert_receipt', 120, 60, $caregiverDevice->getPublicId());
 
         $links = $this->caregiverLinkRepository->findActiveByProtectedDevice($alert->getDevice());
-        $isLinked = array_any($links, static fn ($link) => $link->getCaregiverDevice()->getId()->equals($caregiverDevice->getId()));
+        $isLinked = array_any(
+            $links,
+            static fn ($link): bool => $link->getCaregiverDevice()->getId()->equals($caregiverDevice->getId()),
+        );
 
         if (!$isLinked) {
             throw new AccessDeniedHttpException('You are not linked to this protected person.');
         }
 
-        $existing = $this->acknowledgementRepository->findByCaregiverAndAlert($alert, $caregiverDevice);
-
-        if (!$existing instanceof AlertAcknowledgement) {
-            $alert->markAcknowledged();
-            $ack = new AlertAcknowledgement($alert, $caregiverDevice, $this->clock->now());
-            $this->acknowledgementRepository->save($ack);
-        }
+        $alert->markDeliveryReceived($this->clock->now());
+        $this->fallAlertRepository->save($alert);
 
         return null;
     }
