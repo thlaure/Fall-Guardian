@@ -4,10 +4,89 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/l10n/app_localizations.dart';
+import 'package:fall_guardian/l10n/app_localizations_en.dart';
+import 'package:fall_guardian/models/contact.dart';
+import 'package:fall_guardian/models/fall_event.dart';
 import 'package:fall_guardian/screens/fall_alert_screen.dart';
 import 'package:fall_guardian/services/alert_coordinator.dart';
+import 'package:fall_guardian/services/alert_ports.dart';
+import 'package:fall_guardian/services/alert_runtime.dart';
+import 'package:geolocator/geolocator.dart';
 
-AlertCoordinator _coordinator() => AlertCoordinator.live();
+AlertCoordinator _coordinator() => AlertCoordinator(
+      eventRecorder: _FakeEventRecorder(),
+      locationProvider: _FakeLocationProvider(),
+      notificationGateway: _FakeNotificationGateway(),
+      backendGateway: _FakeBackendGateway(),
+      watchGateway: _FakeWatchGateway(),
+      localeResolver: _EnglishLocaleResolver(),
+      clock: SystemClock(),
+      idGenerator: const UuidGenerator(),
+    );
+
+class _FakeEventRecorder implements FallEventRecorder {
+  @override
+  Future<void> add(FallEvent event) async {}
+}
+
+class _FakeLocationProvider implements AlertLocationProvider {
+  @override
+  Future<Position?> getCurrentPosition() async => null;
+}
+
+class _FakeNotificationGateway implements AlertNotificationGateway {
+  @override
+  Future<void> cancelAll() async {}
+}
+
+class _FakeBackendGateway implements AlertBackendGateway {
+  @override
+  Future<void> ensureReady() async {}
+
+  @override
+  Future<void> syncContacts(List<Contact> contacts) async {}
+
+  @override
+  Future<void> submitFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {}
+
+  @override
+  Future<void> recordCancelledFallAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+    required String locale,
+    required double? latitude,
+    required double? longitude,
+  }) async {}
+
+  @override
+  Future<void> cancelFallAlert({required String clientAlertId}) async {}
+
+  @override
+  Future<void> attachLocation({
+    required String clientAlertId,
+    required double latitude,
+    required double longitude,
+  }) async {}
+}
+
+class _FakeWatchGateway implements WatchCommandGateway {
+  @override
+  Future<void> sendCancelAlert() async {}
+}
+
+class _EnglishLocaleResolver implements AlertLocaleResolver {
+  @override
+  AppLocalizations resolve() => AppLocalizationsEn();
+
+  @override
+  String languageCode() => 'en';
+}
 
 Widget _app(Widget child) => MaterialApp(
       localizationsDelegates: const [
@@ -110,7 +189,7 @@ void main() {
       coordinator.dispose();
     });
 
-    testWidgets('countdown reflects elapsed time from fall timestamp', (
+    testWidgets('countdown ignores an untrusted wall-clock fall timestamp', (
       tester,
     ) async {
       final coordinator = _coordinator();
@@ -122,8 +201,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
       expect(
-        find.text('25').evaluate().isNotEmpty ||
-            find.text('24').evaluate().isNotEmpty,
+        find.text('30').evaluate().isNotEmpty ||
+            find.text('29').evaluate().isNotEmpty,
         isTrue,
       );
       coordinator.dispose();

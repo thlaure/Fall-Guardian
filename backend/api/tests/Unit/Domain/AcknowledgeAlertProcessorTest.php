@@ -18,6 +18,7 @@ use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Uid\Uuid;
@@ -49,6 +50,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
             $this->caregiverLinkRepository,
             $this->acknowledgementRepository,
             $this->rateLimiter,
+            new MockClock('2026-07-23T08:00:00+00:00'),
         );
     }
 

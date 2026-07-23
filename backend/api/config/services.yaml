@@ -36,6 +36,7 @@ services:
     App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverLinkRepository'
     App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverPushTokenRepository'
     App\Infrastructure\RateLimit\EndpointRateLimiterInterface: '@App\Infrastructure\RateLimit\FixedWindowEndpointRateLimiter'
+    Psr\Clock\ClockInterface: '@App\Infrastructure\Time\DatabaseClock'
 
     App\Infrastructure\Push\FakePushStore:
         arguments:

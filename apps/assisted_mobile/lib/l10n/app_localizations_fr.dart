@@ -85,6 +85,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get alertSubmitted =>
       'Alerte envoyée. Les aidants liés peuvent la voir et l’acquitter.';
   @override
+  String get confirmingCancellation => 'Confirmation de l’annulation…';
+  @override
+  String get cancellationUnconfirmed =>
+      'Annulation non confirmée. Vos aidants peuvent encore être alertés.';
+  @override
   String get cancelAlert => 'Je vais bien — Annuler l\'alerte';
 
   // ── History ──────────────────────────────────────────────────────────────
@@ -108,6 +113,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get statusAlertFailed => 'Alerte échouée';
   @override
   String get statusCancelled => 'Annulée par la personne protégée';
+  @override
+  String get statusCancellationPending =>
+      'Confirmation de l’annulation en attente';
   @override
   String get statusTimedOut => 'Délai expiré';
   @override

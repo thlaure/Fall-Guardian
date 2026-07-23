@@ -9,11 +9,13 @@ use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Alert\Request\CreateFallAlertInputDTO;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
+use App\Enum\FallAlertStatus;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DateTimeImmutable;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 /**
  * @implements ProcessorInterface<CreateFallAlertInputDTO, FallAlertOutputDTO>
@@ -59,6 +61,10 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
                 $data->latitude,
                 $data->longitude,
             );
+
+        if ($data->cancelled && FallAlertStatus::Cancelled !== $alert->getStatus()) {
+            throw new ConflictHttpException('The cancellation deadline has passed or alert dispatch has started.');
+        }
 
         return FallAlertOutputDTO::fromEntity($alert);
     }

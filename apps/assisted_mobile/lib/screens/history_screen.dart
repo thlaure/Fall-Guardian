@@ -140,6 +140,11 @@ class _EventTile extends StatelessWidget {
           Colors.green,
           l10n.statusCancelled,
         ),
+      FallEventStatus.cancellationPending => (
+          Icons.sync,
+          Colors.orange,
+          l10n.statusCancellationPending,
+        ),
       FallEventStatus.timedOutNoSms => (
           Icons.timer_off,
           Colors.orangeAccent,

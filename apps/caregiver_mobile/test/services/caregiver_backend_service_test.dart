@@ -776,7 +776,7 @@ void main() {
               'hydra:member': [
                 {
                   'id': 'old-alert',
-                  'status': 'received',
+                  'status': 'sent',
                   'fallDetectedAt': '2026-05-16T08:00:00+00:00',
                   'latitude': null,
                   'longitude': null,
@@ -790,7 +790,7 @@ void main() {
                 },
                 {
                   'id': 'new-alert',
-                  'status': 'received',
+                  'status': 'partially_sent',
                   'fallDetectedAt': '2026-05-16T09:00:00+00:00',
                   'latitude': 48.8566,
                   'longitude': 2.3522,
@@ -828,13 +828,13 @@ void main() {
               'hydra:member': [
                 {
                   'id': 'dated-alert',
-                  'status': 'received',
+                  'status': 'sent',
                   'fallDetectedAt': '2026-05-16T09:00:00+00:00',
                   'acknowledged': false,
                 },
                 {
                   'id': 'undated-alert',
-                  'status': 'received',
+                  'status': 'failed',
                   'fallDetectedAt': 'not-a-date',
                   'acknowledged': false,
                 },
@@ -848,6 +848,37 @@ void main() {
       final alert = await service.getLatestActiveAlertData();
 
       expect(alert?['alertId'], 'dated-alert');
+    },
+  );
+
+  test(
+    'getLatestActiveAlertData ignores received alerts during grace period',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+
+      final service = CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient((request) async {
+          return http.Response(
+            jsonEncode({
+              'hydra:member': [
+                {
+                  'id': 'pending-alert',
+                  'status': 'received',
+                  'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+                  'acknowledged': false,
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+
+      expect(await service.getLatestActiveAlertData(), isNull);
     },
   );
 
@@ -929,6 +960,49 @@ void main() {
         isA<CaregiverApiException>()
             .having((error) => error.statusCode, 'statusCode', 403)
             .having((error) => error.body, 'body', 'forbidden'),
+      ),
+    );
+  });
+
+  test('reportAlertReceived posts bearer-authenticated receipt', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+
+    late http.Request captured;
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        captured = request;
+        return http.Response('', 204);
+      }),
+    );
+
+    await service.reportAlertReceived('alert-1');
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/api/v1/fall-alerts/alert-1/receipt');
+    expect(captured.headers['Authorization'], 'Bearer token-1');
+  });
+
+  test('reportAlertReceived throws typed exception on API failure', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async => http.Response('unavailable', 503)),
+    );
+
+    await expectLater(
+      service.reportAlertReceived('alert-1'),
+      throwsA(
+        isA<CaregiverApiException>()
+            .having((error) => error.statusCode, 'statusCode', 503)
+            .having((error) => error.body, 'body', 'unavailable'),
       ),
     );
   });

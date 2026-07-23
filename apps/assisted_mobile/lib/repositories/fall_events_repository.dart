@@ -13,20 +13,50 @@ class FallEventsRepository implements FallEventRecorder {
 
   Future<List<FallEvent>> getAll() async {
     final raw = await _readRaw();
-    final events = <FallEvent>[];
+    final eventsByTimestamp = <int, FallEvent>{};
     for (final s in raw) {
       try {
-        events.add(FallEvent.fromJson(jsonDecode(s) as Map<String, dynamic>));
+        final event = FallEvent.fromJson(
+          jsonDecode(s) as Map<String, dynamic>,
+        );
+        final key = event.timestamp.millisecondsSinceEpoch;
+        final existing = eventsByTimestamp[key];
+        if (existing == null ||
+            _outcomePriority(event.status) >
+                _outcomePriority(existing.status)) {
+          eventsByTimestamp[key] = event;
+        }
       } catch (_) {
         // skip corrupted entry
       }
     }
+    final events = eventsByTimestamp.values.toList();
     return events..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
+
+  int _outcomePriority(FallEventStatus status) => switch (status) {
+        FallEventStatus.cancelled => 4,
+        FallEventStatus.cancellationPending => 3,
+        FallEventStatus.alertSent => 2,
+        FallEventStatus.alertFailed || FallEventStatus.timedOutNoSms => 1,
+      };
 
   @override
   Future<void> add(FallEvent event) async {
     final raw = await _readRaw();
+    // One fall must have one final local outcome. Async registration,
+    // timeout, and cancellation callbacks can race; replace an earlier
+    // provisional outcome instead of displaying contradictory history rows.
+    raw.removeWhere((encoded) {
+      try {
+        final existing = FallEvent.fromJson(
+          jsonDecode(encoded) as Map<String, dynamic>,
+        );
+        return existing.timestamp.isAtSameMomentAs(event.timestamp);
+      } catch (_) {
+        return false;
+      }
+    });
     raw.add(jsonEncode(event.toJson()));
     await _store.write(_key, jsonEncode(raw));
     await deleteLegacyKey(_key);

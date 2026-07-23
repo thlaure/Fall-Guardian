@@ -84,6 +84,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get alertSubmitted =>
       'Alert sent. Linked caregivers can see and acknowledge it.';
   @override
+  String get confirmingCancellation => 'Confirming cancellation…';
+  @override
+  String get cancellationUnconfirmed =>
+      'Cancellation was not confirmed. Caregivers may still be alerted.';
+  @override
   String get cancelAlert => "I'm OK — Cancel Alert";
 
   // ── History ──────────────────────────────────────────────────────────────
@@ -106,6 +111,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statusAlertFailed => 'Alert Failed';
   @override
   String get statusCancelled => 'Cancelled by protected person';
+  @override
+  String get statusCancellationPending => 'Cancellation confirmation pending';
   @override
   String get statusTimedOut => 'Timed Out';
   @override

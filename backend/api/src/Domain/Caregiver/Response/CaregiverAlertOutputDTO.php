@@ -30,6 +30,8 @@ final readonly class CaregiverAlertOutputDTO
         public string $id,
         public string $status,
         public string $fallDetectedAt,
+        public string $receivedAt,
+        public string $cancelDeadlineAt,
         public ?float $latitude,
         public ?float $longitude,
         public bool $acknowledged,
@@ -37,6 +39,9 @@ final readonly class CaregiverAlertOutputDTO
         public string $protectedDeviceId,
         public string $protectedDevicePlatform,
         public ?string $protectedPersonName,
+        public ?string $deliveryReceiptDeadlineAt,
+        public ?string $firstDeliveryReceiptAt,
+        public ?string $acknowledgementDeadlineAt,
     ) {
     }
 
@@ -49,6 +54,8 @@ final readonly class CaregiverAlertOutputDTO
             $alert->getId()->toRfc4122(),
             $alert->getStatus()->value,
             ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
+            ApiDateTimeFormatter::formatUtc($alert->getReceivedAt()),
+            ApiDateTimeFormatter::formatUtc($alert->getCancelDeadlineAt()),
             $alert->getLatitude(),
             $alert->getLongitude(),
             $acknowledged,
@@ -56,6 +63,9 @@ final readonly class CaregiverAlertOutputDTO
             $alert->getDevice()->getPublicId(),
             $alert->getDevice()->getPlatform(),
             $protectedPersonName,
+            null === $alert->getDeliveryReceiptDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getDeliveryReceiptDeadlineAt()),
+            null === $alert->getFirstDeliveryReceiptAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getFirstDeliveryReceiptAt()),
+            null === $alert->getAcknowledgementDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getAcknowledgementDeadlineAt()),
         );
     }
 }

@@ -15,14 +15,36 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity(repositoryClass: DoctrineFallAlertRepository::class)]
 #[ORM\Table(name: 'fall_alerts')]
 #[ORM\UniqueConstraint(name: 'uniq_alerts_device_client', columns: ['device_id', 'client_alert_id'])]
+#[ORM\Index(name: 'idx_fall_alerts_dispatch_due', columns: ['status', 'cancel_deadline_at', 'dispatch_claimed_at'])]
 class FallAlert
 {
+    public const int GRACE_PERIOD_SECONDS = 30;
+
+    public const int DELIVERY_RECEIPT_TIMEOUT_SECONDS = 15;
+
+    public const int ACKNOWLEDGEMENT_TIMEOUT_SECONDS = 60;
+
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
 
     #[ORM\Column(name: 'received_at')]
     private DateTimeImmutable $receivedAt;
+
+    #[ORM\Column(name: 'cancel_deadline_at')]
+    private DateTimeImmutable $cancelDeadlineAt;
+
+    #[ORM\Column(name: 'dispatch_claimed_at', nullable: true)]
+    private ?DateTimeImmutable $dispatchClaimedAt = null;
+
+    #[ORM\Column(name: 'delivery_receipt_deadline_at', nullable: true)]
+    private ?DateTimeImmutable $deliveryReceiptDeadlineAt = null;
+
+    #[ORM\Column(name: 'first_delivery_receipt_at', nullable: true)]
+    private ?DateTimeImmutable $firstDeliveryReceiptAt = null;
+
+    #[ORM\Column(name: 'acknowledgement_deadline_at', nullable: true)]
+    private ?DateTimeImmutable $acknowledgementDeadlineAt = null;
 
     #[ORM\Column(length: 32, enumType: FallAlertStatus::class)]
     private FallAlertStatus $status = FallAlertStatus::Received;
@@ -41,10 +63,11 @@ class FallAlert
         private DateTimeImmutable $fallDetectedAt, #[ORM\Column(length: 8)]
         private string $locale, #[ORM\Column(nullable: true)]
         private ?float $latitude, #[ORM\Column(nullable: true)]
-        private ?float $longitude)
+        private ?float $longitude, ?DateTimeImmutable $receivedAt = null)
     {
         $this->id = Uuid::v7();
-        $this->receivedAt = new DateTimeImmutable();
+        $this->receivedAt = $receivedAt ?? new DateTimeImmutable();
+        $this->cancelDeadlineAt = $this->receivedAt->modify(sprintf('+%d seconds', self::GRACE_PERIOD_SECONDS));
         $this->pushAttempts = new ArrayCollection();
     }
 
@@ -73,9 +96,54 @@ class FallAlert
         return $this->receivedAt;
     }
 
+    public function getCancelDeadlineAt(): DateTimeImmutable
+    {
+        return $this->cancelDeadlineAt;
+    }
+
+    public function getDispatchClaimedAt(): ?DateTimeImmutable
+    {
+        return $this->dispatchClaimedAt;
+    }
+
+    public function getDeliveryReceiptDeadlineAt(): ?DateTimeImmutable
+    {
+        return $this->deliveryReceiptDeadlineAt;
+    }
+
+    public function getFirstDeliveryReceiptAt(): ?DateTimeImmutable
+    {
+        return $this->firstDeliveryReceiptAt;
+    }
+
+    public function getAcknowledgementDeadlineAt(): ?DateTimeImmutable
+    {
+        return $this->acknowledgementDeadlineAt;
+    }
+
     public function getStatus(): FallAlertStatus
     {
         return $this->status;
+    }
+
+    public function claimForDispatch(DateTimeImmutable $now, DateTimeImmutable $staleBefore): bool
+    {
+        $isDue = FallAlertStatus::Received === $this->status
+            && $now >= $this->cancelDeadlineAt;
+        $isStaleClaim = FallAlertStatus::Dispatching === $this->status
+            && $this->dispatchClaimedAt instanceof DateTimeImmutable
+            && $this->dispatchClaimedAt <= $staleBefore;
+
+        if (!$isDue && !$isStaleClaim) {
+            return false;
+        }
+
+        $this->status = FallAlertStatus::Dispatching;
+        $this->dispatchClaimedAt = $now;
+        $this->deliveryReceiptDeadlineAt = $now->modify(sprintf('+%d seconds', self::DELIVERY_RECEIPT_TIMEOUT_SECONDS));
+        $this->acknowledgementDeadlineAt = $now->modify(sprintf('+%d seconds', self::ACKNOWLEDGEMENT_TIMEOUT_SECONDS));
+
+        return true;
     }
 
     public function markSent(): void
@@ -99,14 +167,22 @@ class FallAlert
      * alert is in a terminal state: a cancel arriving after an acknowledgement
      * must not silently erase it, and vice versa.
      */
-    public function cancel(): void
+    public function cancel(?DateTimeImmutable $now = null): bool
     {
-        if (FallAlertStatus::Acknowledged === $this->status) {
-            return;
+        if (FallAlertStatus::Cancelled === $this->status) {
+            return true;
+        }
+
+        $now ??= new DateTimeImmutable();
+
+        if (FallAlertStatus::Received !== $this->status || $now >= $this->cancelDeadlineAt) {
+            return false;
         }
 
         $this->status = FallAlertStatus::Cancelled;
-        $this->cancelledAt = new DateTimeImmutable();
+        $this->cancelledAt = $now;
+
+        return true;
     }
 
     public function markAcknowledged(): void
@@ -116,6 +192,13 @@ class FallAlert
         }
 
         $this->status = FallAlertStatus::Acknowledged;
+    }
+
+    public function markDeliveryReceived(DateTimeImmutable $receivedAt): void
+    {
+        if (null === $this->firstDeliveryReceiptAt) {
+            $this->firstDeliveryReceiptAt = $receivedAt;
+        }
     }
 
     public function getLocale(): string

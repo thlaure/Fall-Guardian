@@ -10,6 +10,10 @@ void main() {
     expect(l10n.fallAlertBody, contains('saved in history'));
     expect(l10n.statusAlertSent, 'Alert sent to caregivers');
     expect(l10n.statusCancelled, 'Cancelled by protected person');
+    expect(
+      l10n.statusCancellationPending,
+      'Cancellation confirmation pending',
+    );
   });
 
   test('French alert copy explains cancellation and history status', () {
@@ -19,5 +23,9 @@ void main() {
     expect(l10n.fallAlertBody, contains('historique'));
     expect(l10n.statusAlertSent, 'Alerte envoyée aux aidants');
     expect(l10n.statusCancelled, 'Annulée par la personne protégée');
+    expect(
+      l10n.statusCancellationPending,
+      'Confirmation de l’annulation en attente',
+    );
   });
 }

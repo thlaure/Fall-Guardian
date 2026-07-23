@@ -18,6 +18,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Uid\Uuid;
 
 final class SendFallAlertPushMessageHandlerTest extends TestCase
@@ -32,36 +33,38 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
 
     private SendFallAlertPushMessageHandler $handler;
 
+    private MockClock $clock;
+
     protected function setUp(): void
     {
         $this->fallAlertRepository = $this->createMock(FallAlertRepositoryInterface::class);
         $this->linkRepository = $this->createMock(CaregiverLinkRepositoryInterface::class);
         $this->pushTokenRepository = $this->createMock(CaregiverPushTokenRepositoryInterface::class);
         $this->pushGateway = $this->createMock(PushGatewayInterface::class);
+        $this->clock = new MockClock('2026-07-23T08:00:31+00:00');
 
         $this->handler = new SendFallAlertPushMessageHandler(
             $this->fallAlertRepository,
             $this->linkRepository,
             $this->pushTokenRepository,
             $this->pushGateway,
+            $this->clock,
         );
     }
 
     #[Test]
     public function itSkipsUnknownAlert(): void
     {
-        $this->fallAlertRepository->method('findById')->willReturn(null);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn(null);
         $this->pushGateway->expects($this->never())->method('send');
 
         ($this->handler)(new SendFallAlertPushMessage('unknown-id'));
     }
 
     #[Test]
-    public function itSkipsCancelledAlert(): void
+    public function itSkipsAnAlertThatCannotBeClaimedForDispatch(): void
     {
-        $alert = $this->createMock(FallAlert::class);
-        $alert->method('getCancelledAt')->willReturn(new DateTimeImmutable());
-        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn(null);
 
         $this->pushGateway->expects($this->never())->method('send');
 
@@ -73,14 +76,14 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
     {
         $device = $this->createMock(Device::class);
         $alert = $this->createMock(FallAlert::class);
-        $alert->method('getCancelledAt')->willReturn(null);
         $alert->method('getDevice')->willReturn($device);
 
-        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn($alert);
         $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([]);
 
         $this->pushGateway->expects($this->never())->method('send');
-        $this->fallAlertRepository->expects($this->never())->method('save');
+        $alert->expects($this->once())->method('markFailed');
+        $this->fallAlertRepository->expects($this->once())->method('save')->with($alert);
 
         ($this->handler)(new SendFallAlertPushMessage('some-id'));
     }
@@ -99,14 +102,13 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $pushToken->method('getFcmToken')->willReturn('fcm-token-abc');
 
         $alert = $this->createMock(FallAlert::class);
-        $alert->method('getCancelledAt')->willReturn(null);
         $alert->method('getDevice')->willReturn($protectedDevice);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable('2025-01-01T12:00:00+00:00'));
         $alert->method('getLatitude')->willReturn(null);
         $alert->method('getLongitude')->willReturn(null);
 
-        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn($alert);
         $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([$link]);
         $this->pushTokenRepository->method('findByDevice')->with($caregiverDevice)->willReturn($pushToken);
         $this->pushGateway->method('getProviderName')->willReturn('fake');
@@ -139,14 +141,13 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $secondPushToken->method('getFcmToken')->willReturn('second-fcm-token');
 
         $alert = $this->createMock(FallAlert::class);
-        $alert->method('getCancelledAt')->willReturn(null);
         $alert->method('getDevice')->willReturn($protectedDevice);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable('2025-01-01T12:00:00+00:00'));
         $alert->method('getLatitude')->willReturn(48.8566);
         $alert->method('getLongitude')->willReturn(2.3522);
 
-        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn($alert);
         $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([$firstLink, $secondLink]);
         $this->pushTokenRepository
             ->expects($this->exactly(2))
@@ -181,11 +182,10 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $link->method('getCaregiverDevice')->willReturn($caregiverDevice);
 
         $alert = $this->createMock(FallAlert::class);
-        $alert->method('getCancelledAt')->willReturn(null);
         $alert->method('getDevice')->willReturn($protectedDevice);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
 
-        $this->fallAlertRepository->method('findById')->willReturn($alert);
+        $this->fallAlertRepository->method('claimForDispatch')->willReturn($alert);
         $this->linkRepository->method('findActiveByProtectedDevice')->willReturn([$link]);
         $this->pushTokenRepository->method('findByDevice')->willReturn(null);
 

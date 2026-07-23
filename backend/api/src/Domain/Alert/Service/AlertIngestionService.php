@@ -8,9 +8,9 @@ use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
-use App\Enum\FallAlertStatus;
 use App\Shared\DateTime\ApiDateTimeFormatter;
 use DateTimeImmutable;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 
@@ -22,11 +22,12 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
      * escalation still fires even if the assisted phone is locked/suspended
      * before any client-side countdown would have completed.
      */
-    public const int GRACE_PERIOD_SECONDS = 30;
+    public const int GRACE_PERIOD_SECONDS = FallAlert::GRACE_PERIOD_SECONDS;
 
     public function __construct(
         private FallAlertRepositoryInterface $fallAlertRepository,
         private MessageBusInterface $messageBus,
+        private ClockInterface $clock,
     ) {
     }
 
@@ -39,21 +40,21 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
             return $existing;
         }
 
-        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude);
+        $now = $this->clock->now();
+        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now);
         $this->fallAlertRepository->save($alert);
 
         $this->messageBus->dispatch(
             new SendFallAlertPushMessage($alert->getId()->toRfc4122()),
-            [new DelayStamp($this->remainingGraceMs($fallTimestamp))],
+            [new DelayStamp($this->remainingGraceMs($alert, $now))],
         );
 
         return $alert;
     }
 
-    private function remainingGraceMs(DateTimeImmutable $fallTimestamp): int
+    private function remainingGraceMs(FallAlert $alert, DateTimeImmutable $now): int
     {
-        $graceExpiresAt = $fallTimestamp->modify(sprintf('+%d seconds', self::GRACE_PERIOD_SECONDS));
-        $remainingSeconds = (float) $graceExpiresAt->format('U.u') - (float) new DateTimeImmutable()->format('U.u');
+        $remainingSeconds = (float) $alert->getCancelDeadlineAt()->format('U.u') - (float) $now->format('U.u');
 
         return max(0, (int) round($remainingSeconds * 1000));
     }
@@ -62,18 +63,14 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
     {
         $fallTimestamp = ApiDateTimeFormatter::normalizeToUtc($fallTimestamp);
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
+        $now = $this->clock->now();
 
         if ($existing instanceof FallAlert) {
-            if (FallAlertStatus::Cancelled !== $existing->getStatus()) {
-                $existing->cancel();
-                $this->fallAlertRepository->save($existing);
-            }
-
-            return $existing;
+            return $this->fallAlertRepository->cancelPending($device, $clientAlertId, $now) ?? $existing;
         }
 
-        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude);
-        $alert->cancel();
+        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now);
+        $alert->cancel($now);
         $this->fallAlertRepository->save($alert);
 
         return $alert;
@@ -81,16 +78,7 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
 
     public function cancelAlert(Device $device, string $clientAlertId): ?FallAlert
     {
-        $alert = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
-
-        if (!$alert instanceof FallAlert) {
-            return null;
-        }
-
-        $alert->cancel();
-        $this->fallAlertRepository->save($alert);
-
-        return $alert;
+        return $this->fallAlertRepository->cancelPending($device, $clientAlertId, $this->clock->now());
     }
 
     public function getAlertForDevice(Device $device, string $alertId): ?FallAlert

@@ -75,6 +75,35 @@ services:
         networks:
             - app_network
 
+    alert_reconciler:
+        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_prod
+            args:
+                REGISTRY: ${REGISTRY:-}
+        restart: unless-stopped
+        environment:
+            APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
+            TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: ${PUSH_PROVIDER:?PUSH_PROVIDER must be set explicitly (e.g. fcm) - it must not silently default to fake in a deployed environment}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        command: php bin/console app:alerts:reconcile-overdue --watch
+        networks:
+            - app_network
+
     postgres:
         image: postgres:${POSTGRES_VERSION:-16}-alpine
         environment:

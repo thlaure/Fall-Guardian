@@ -1,4 +1,10 @@
-enum FallEventStatus { alertSent, alertFailed, cancelled, timedOutNoSms }
+enum FallEventStatus {
+  alertSent,
+  alertFailed,
+  cancelled,
+  cancellationPending,
+  timedOutNoSms,
+}
 
 class FallEvent {
   final String id;

@@ -66,6 +66,10 @@ abstract class AlertLocaleResolver {
 
 abstract class Clock {
   DateTime now();
+
+  /// Monotonic elapsed time used for durations. Unlike wall time, this cannot
+  /// jump when network time or user settings change.
+  Duration elapsed();
 }
 
 abstract class IdGenerator {
