@@ -663,7 +663,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     private func showFallNotification(timestamp: Int) {
         let content = UNMutableNotificationContent()
         content.title = "⚠️ Fall Detected"
-        content.body = "Open app to cancel — SMS sends in 30 seconds"
+        content.body = "Open app to cancel — linked caregivers will be alerted in 30 seconds"
         content.sound = .default
         if #available(iOS 15.0, *) {
             // timeSensitive bypasses Focus modes without requiring the Critical
