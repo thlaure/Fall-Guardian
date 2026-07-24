@@ -7,14 +7,16 @@ import '../services/caregiver_backend_service.dart';
 import '../utils/api_date_time.dart';
 
 class AlertHistoryScreen extends StatefulWidget {
-  const AlertHistoryScreen({super.key});
+  const AlertHistoryScreen({super.key, this.backend});
+
+  final CaregiverBackendService? backend;
 
   @override
   State<AlertHistoryScreen> createState() => _AlertHistoryScreenState();
 }
 
 class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
-  final _backend = CaregiverBackendService();
+  late final CaregiverBackendService _backend;
   List<Map<String, dynamic>> _alerts = [];
   bool _loading = true;
   String? _error;
@@ -22,10 +24,16 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _backend = widget.backend ?? CaregiverBackendService();
     _load();
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     try {
       final alerts = await _backend.getCaregiverAlerts();
       alerts.sort(_newestFirst);
@@ -33,6 +41,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         setState(() {
           _alerts = alerts;
           _loading = false;
+          _error = null;
         });
       }
     } catch (e) {
@@ -73,16 +82,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
       appBar: AppBar(
         title: Text(l10n.historyTitle),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _loading = true;
-                _error = null;
-              });
-              _load();
-            },
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
       body: _loading
