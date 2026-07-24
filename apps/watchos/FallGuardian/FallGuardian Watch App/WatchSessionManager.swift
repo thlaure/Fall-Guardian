@@ -58,6 +58,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     // MARK: - Singleton
 
     static let shared = WatchSessionManager()
+    private let pendingFallTimestampKey = "pending_watch_fall_timestamp"
 
     // Private init prevents anyone from creating a second instance.
     private override init() {
@@ -141,6 +142,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// Delivery strategy: same as sendCancelAlert (simulator file → sendMessage → transferUserInfo).
     func sendFallEvent(timestamp: Int64) {
+        // Persist first. A system fall can launch this extension before WCSession
+        // finishes activating; activationDidCompleteWith retries the pending event.
+        UserDefaults.standard.set(Double(timestamp), forKey: pendingFallTimestampKey)
+
         // --- Simulator IPC workaround ---
         // Write the timestamp to a file that the iOS sim polls every 1 second.
         // The file name is the agreed-upon contract between both sim processes.
@@ -168,15 +173,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             return
         }
 
-        // Both "event" and "timestamp" are read by the phone's WatchSessionManager
-        // (and its iOS counterpart) to start the alert with the correct countdown origin.
-        let message: [String: Any] = ["event": "fall_detected", "timestamp": timestamp]
-
-        NSLog("[WCSession] sendFallEvent: isReachable=\(WCSession.default.isReachable) isCompanionAppInstalled=\(WCSession.default.isCompanionAppInstalled)")
-        WCSession.default.sendMessage(message, replyHandler: nil) { error in
-            NSLog("[WCSession] sendFallEvent: sendMessage failed error=\(error) falling back to transferUserInfo")
-            WCSession.default.transferUserInfo(message)
-        }
+        deliverPendingFallEvent()
     }
 
     // MARK: - Cancel-status polling (watch waiting for phone to cancel)
@@ -315,6 +312,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         error: Error?
     ) {
         NSLog("[WCSession] activationDidCompleteWith: state=\(activationState.rawValue) isCompanionAppInstalled=\(session.isCompanionAppInstalled) isReachable=\(session.isReachable) error=\(String(describing: error))")
+        if activationState == .activated {
+            deliverPendingFallEvent()
+        }
     }
 
     /// Called immediately when the phone calls `updateApplicationContext`.
@@ -400,5 +400,37 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
         guard let value, value.isFinite, range.contains(value) else { return nil }
         return value
+    }
+
+    /// Delivers a fall saved before WCSession activation. Real-time delivery asks
+    /// for an acknowledgement; background delivery enters Apple's reliable queue.
+    private func deliverPendingFallEvent() {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: pendingFallTimestampKey) != nil else { return }
+        let timestamp = Int64(defaults.double(forKey: pendingFallTimestampKey))
+        guard timestamp > 0, WCSession.default.activationState == .activated else { return }
+
+        let message: [String: Any] = ["event": "fall_detected", "timestamp": timestamp]
+        let clearPending: () -> Void = {
+            guard Int64(defaults.double(forKey: self.pendingFallTimestampKey)) == timestamp else {
+                return
+            }
+            defaults.removeObject(forKey: self.pendingFallTimestampKey)
+        }
+
+        NSLog("[WCSession] deliverPendingFallEvent: isReachable=\(WCSession.default.isReachable) isCompanionAppInstalled=\(WCSession.default.isCompanionAppInstalled)")
+        guard WCSession.default.isReachable else {
+            WCSession.default.transferUserInfo(message)
+            clearPending()
+            return
+        }
+
+        WCSession.default.sendMessage(message) { _ in
+            clearPending()
+        } errorHandler: { error in
+            NSLog("[WCSession] deliverPendingFallEvent: sendMessage failed error=\(error) falling back to transferUserInfo")
+            WCSession.default.transferUserInfo(message)
+            clearPending()
+        }
     }
 }

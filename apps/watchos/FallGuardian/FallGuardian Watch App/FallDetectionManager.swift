@@ -33,12 +33,11 @@ import CoreMotion  // CMMotionManager and CMAccelerometerData — Apple's accele
 /// ensures ContentView, background tasks, and the debug debug simulator all share
 /// the same session rather than competing for the hardware.
 ///
-/// ## Background sensor access
-/// watchOS suspends apps that leave the foreground.  `WKExtendedRuntimeSession`
-/// (referenced below as `extendedSession`) asks the OS for extra CPU and sensor
-/// time so detection keeps running when the user lowers their wrist.  The session
-/// type is stored as `AnyObject?` to avoid importing WatchKit in this file, which
-/// keeps the file compilable in unit-test targets that mock WatchKit.
+/// ## Foreground fallback
+/// Raw accelerometer delivery stops when watchOS suspends this app. Production
+/// background detection is handled by SystemFallDetectionService using Apple's
+/// CMFallDetectionManager. This class remains useful on unsupported devices or
+/// when the wearer declines system Fall Detection permission.
 class FallDetectionManager: NSObject {
 
     // MARK: - Singleton
@@ -57,11 +56,6 @@ class FallDetectionManager: NSObject {
     /// Stateless here means: the algorithm only depends on data you hand it, not
     /// on any global state — making it deterministic and easy to test.
     private let algorithm = FallAlgorithm()
-
-    /// Holds a WKExtendedRuntimeSession so the OS does not suspend the app while
-    /// the watch face is off.  Typed as AnyObject to avoid a WatchKit import in
-    /// this file (WatchKit transitively pulls in UIKit, which breaks pure-logic targets).
-    private var extendedSession: AnyObject?
 
     // MARK: - Callbacks and rate control
 
@@ -160,7 +154,9 @@ class FallDetectionManager: NSObject {
     }
 
     /// Stops the accelerometer, removes the UserDefaults observer, and resets the
-    /// algorithm so no stale state leaks into the next session.
+    /// algorithm so no stale state leaks into the next session. Detection stays
+    /// stopped while an alert is unresolved so another sensor signature cannot
+    /// restart the active incident's countdown.
     func stop() {
         // Unsubscribe from threshold-change notifications first.
         if let observer = defaultsObserver {
@@ -234,7 +230,7 @@ class FallDetectionManager: NSObject {
         // (the wearer might bounce or thrash on the ground, causing repeated spikes).
         if detected && (nowMs - lastFallMs > cooldownMs) {
             lastFallMs = nowMs  // Start the cooldown clock.
-            algorithm.reset()  // Clear latch state — ready for next fall.
+            stop()  // One active incident keeps its original 30-second deadline.
 
             let timestamp = Int64(nowMs)  // Int64 matches the phone's Long type exactly.
 
