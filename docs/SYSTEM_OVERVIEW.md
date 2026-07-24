@@ -2,9 +2,9 @@
 
 > État de référence au 24 juillet 2026.
 >
-> Ce document décrit séparément ce qui existe sur `main`, ce qui est prêt dans
-> une pull request ouverte et ce qui reste à construire. Il constitue la source
-> de vérité produit et architecture du projet.
+> Ce document décrit séparément ce qui existe sur `main`, les limites connues et
+> ce qui reste à construire. Il constitue la source de vérité produit et
+> architecture du projet.
 
 ## 1. Objectif du produit
 
@@ -107,14 +107,14 @@ L'ouverture de l'application ne devra jamais être nécessaire.
 - ✅ conservation explicite d'une annulation non confirmée par le serveur ;
 - ✅ affichage d'un avertissement si les aidants peuvent déjà être prévenus ;
 - ⚠️ la position n'est pas exigée pour créer l'alerte : elle peut arriver après ;
-- ⚠️ certains anciens textes iOS/Android parlent encore d'un SMS, alors qu'aucun
-  SMS n'est envoyé ;
+- ⚠️ un ancien texte Android parle encore d'un SMS, alors qu'aucun SMS n'est
+  envoyé ;
 - ⚠️ le relais réseau vers l'API dépend encore de Flutter.
 
-La pull request
-[#74](https://github.com/thlaure/Fall-Guardian/pull/74) empêche un deuxième
-événement de relancer le délai tant qu'un incident est actif. Elle conserve
-également la même échéance malgré les événements dupliqués.
+Depuis la fusion de la
+[#74](https://github.com/thlaure/Fall-Guardian/pull/74), un deuxième événement
+ne relance plus le délai tant qu'un incident est actif. La même échéance est
+conservée malgré les événements dupliqués.
 
 ### 5.2 Application aidant
 
@@ -135,37 +135,34 @@ La pull request
 - ⚠️ le premier acquittement clôt globalement l'alerte sans montrer clairement
   quel aidant intervient.
 
-La pull request
-[#73](https://github.com/thlaure/Fall-Guardian/pull/73) corrige le chargement de
-l'historique après une erreur et une nouvelle tentative.
+Depuis la fusion de la
+[#73](https://github.com/thlaure/Fall-Guardian/pull/73), le chargement de
+l'historique fonctionne après une erreur suivie d'une nouvelle tentative.
 
 ### 5.3 Apple Watch
 
 Sur `main` :
 
-- ✅ détection personnalisée avec l'accéléromètre lorsque l'app est ouverte ;
+- ✅ utilisation de `CMFallDetectionManager`, le mécanisme système Apple ;
+- ✅ activation au démarrage de l'extension watchOS ;
+- ✅ réception possible d'une chute en arrière-plan ;
+- ✅ persistance et nouvelle tentative d'un événement non transmis ;
+- ✅ détection personnalisée avec l'accéléromètre comme solution de repli
+  lorsque l'app est ouverte ;
 - ✅ transmission temps réel à l'iPhone avec WatchConnectivity ;
 - ✅ transfert différé si le message temps réel ne passe pas ;
 - ✅ compte à rebours et annulation sur la montre ;
 - ✅ retransmission de l'annulation à l'iPhone ;
-- ⚠️ détection non garantie lorsque l'app montre n'est pas ouverte ;
+- ✅ intégration de la cible Watch dans le projet iOS principal ;
 - ⚠️ un simple toucher peut annuler, ce qui favorise les annulations
   accidentelles ;
-- ⚠️ pas d'envoi direct à l'API.
-
-Dans la pull request
-[#75](https://github.com/thlaure/Fall-Guardian/pull/75) :
-
-- 🟡 utilisation de `CMFallDetectionManager`, le mécanisme système Apple ;
-- 🟡 activation au démarrage de l'extension watchOS ;
-- 🟡 réception possible d'une chute en arrière-plan ;
-- 🟡 persistance et nouvelle tentative d'un événement non transmis ;
-- 🟡 conservation de l'algorithme accéléromètre comme solution de repli au
-  premier plan ;
-- 🟡 intégration de la cible Watch dans le projet iOS principal ;
+- ⚠️ pas d'envoi direct à l'API ;
 - ⚠️ installation physique bloquée tant qu'Apple n'a pas approuvé la capacité
   Fall Detection pour l'identifiant de l'app ;
 - ⚠️ comportement exact des résolutions Apple à valider sur une vraie montre.
+
+Ces fonctions ont rejoint `main` avec la
+[#75](https://github.com/thlaure/Fall-Guardian/pull/75).
 
 ### 5.4 Montre Wear OS
 
@@ -397,16 +394,16 @@ La documentation OpenAPI locale est accessible sur
   Core Motion Simulator ;
 - ⚠️ l'approbation Apple Fall Detection est encore en attente.
 
-## 11. Pull requests ouvertes avant la suite
+## 11. Changements récemment fusionnés
 
 | PR | Contenu | État fonctionnel |
 | --- | --- | --- |
-| [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Rechargement de l'historique aidant après erreur | Prête, non fusionnée |
-| [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Un seul délai pour un incident actif | Prête, non fusionnée |
-| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Détection Apple en arrière-plan | Prête côté code, signature physique en attente d'Apple |
+| [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Rechargement de l'historique aidant après erreur | ✅ Fusionnée sur `main` |
+| [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Un seul délai pour un incident actif et correction du texte iOS | ✅ Fusionnée sur `main` |
+| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Détection Apple en arrière-plan | ✅ Fusionnée sur `main`, validation physique en attente d'Apple |
 
-Ces PR sont indépendantes. Elles doivent être fusionnées et revalidées avant les
-changements d'architecture ci-dessous.
+Les changements d'architecture ci-dessous peuvent maintenant partir de cette
+base commune.
 
 ## 12. Problèmes connus
 
@@ -426,7 +423,7 @@ changements d'architecture ci-dessous.
 
 ### Expérience personne aidée
 
-- 🔴 remplacer les textes mentionnant un SMS ;
+- 🔴 remplacer le texte Android restant qui mentionne un SMS ;
 - 🔴 remplacer l'annulation par simple toucher par un gros bouton
   « Je vais bien » avec appui long d'environ 1,5 seconde et retour haptique ;
 - 🔴 afficher des états utiles :
@@ -434,8 +431,7 @@ changements d'architecture ci-dessous.
   « hors connexion » ;
 - 🔴 localiser les écrans montre ;
 - 🔴 expliquer clairement une annulation trop tardive ;
-- 🔴 éviter qu'un événement dupliqué redémarre le compte à rebours
-  (PR #74 couvre le cœur de ce point).
+- ✅ empêcher un événement dupliqué de redémarrer le compte à rebours.
 
 ### Expérience aidant
 
@@ -531,9 +527,9 @@ Politique proposée :
 
 ### Phase 0 — stabiliser l'existant
 
-- fusionner les PR #73, #74 et #75 après CI ;
-- corriger tous les textes SMS ;
-- confirmer que le compte à rebours ne redémarre jamais ;
+- ✅ PR #73, #74 et #75 fusionnées après CI ;
+- corriger le texte SMS Android restant ;
+- ✅ compte à rebours conservé lors des événements dupliqués ;
 - tester iPhone verrouillé + vraie Apple Watch ;
 - tester Android verrouillé, processus supprimé et redémarrage ;
 - enregistrer les résultats dans cette documentation.
@@ -689,4 +685,3 @@ Ne jamais décrire une fonctionnalité comme disponible avant sa fusion sur
 | Prise en charge | Futur état indiquant quel aidant agit |
 | Relais | Transmission montre → téléphone → serveur |
 | Envoi direct | Transmission montre → serveur sans téléphone |
-
