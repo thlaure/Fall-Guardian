@@ -1,4 +1,4 @@
-.PHONY: help install format format-check analyze test coverage coverage-check quality check build-android build-ios run-android-debug run-android-wired run-ios-debug run-ios-profile logs-flutter logs-android logs-ios-console clean
+.PHONY: help install format format-check analyze test coverage coverage-check watch-config-check quality check build-android build-ios run-android-debug run-android-wired run-ios-debug run-ios-profile logs-flutter logs-android logs-ios-console clean
 
 .DEFAULT_GOAL := help
 
@@ -44,7 +44,10 @@ coverage: ## Run Flutter tests with coverage output
 coverage-check: coverage ## Require at least 90% line coverage
 	dart run tool/check_lcov.dart coverage/lcov.info 90 lib/l10n/ lib/screens/ lib/services/watch_communication_service.dart lib/services/notification_service.dart lib/services/secure_store.dart lib/services/location_service.dart
 
-quality: format-check analyze coverage-check ## Run deterministic quality checks
+watch-config-check: ## Verify the iOS build embeds its Apple Watch companion
+	dart run tool/check_watch_embedding.dart
+
+quality: format-check analyze coverage-check watch-config-check ## Run deterministic quality checks
 
 check: quality ## Run the default verification set
 
