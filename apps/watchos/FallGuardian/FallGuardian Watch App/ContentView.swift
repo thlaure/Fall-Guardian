@@ -31,6 +31,7 @@ import SwiftUI      // Apple's declarative UI framework for all Apple platforms.
 import Observation  // Provides the @Observable macro used on ContentViewModel.
                     // Replaces the older @ObservedObject/@Published pattern on iOS 17+.
 import WatchKit     // WKInterfaceDevice.current().play() — haptic feedback API.
+import CoreMotion
 
 // MARK: - ContentView (the SwiftUI view)
 
@@ -150,9 +151,10 @@ struct ContentView: View {
                 .font(.headline)
                 .foregroundColor(.white)
 
-            Text("Monitoring active")
+            Text(viewModel.monitoringStatusText)
                 .font(.caption)
                 .foregroundColor(Color(red: 0.820, green: 0.878, blue: 0.843))  // Light mint
+                .multilineTextAlignment(.center)
 
             // DEBUG only — stripped from App Store / release builds.
             // `#if DEBUG` is evaluated at compile time, not runtime, so the button
@@ -194,6 +196,10 @@ class ContentViewModel {
     /// Starts at 30 (or less if there was network latency) and counts down to 0.
     var remainingSeconds: Int = 30
 
+    /// Makes the important difference between system background monitoring and
+    /// the foreground accelerometer fallback visible to the wearer.
+    var monitoringStatusText: String = "Checking permission…"
+
     // MARK: - Private state
 
     /// The background task that drives the countdown timer.
@@ -225,11 +231,6 @@ class ContentViewModel {
     /// app warm-up.  `startIfNeeded()` guards against double-starting and only
     /// runs the side-effecting setup once the view is actually on screen.
     func startIfNeeded() {
-        // Start the accelerometer pipeline if it isn't running yet.
-        if !FallDetectionManager.shared.isRunning {
-            FallDetectionManager.shared.start()
-        }
-
         // Wire the fall-detected callback.  Using `[weak self]` breaks the
         // reference cycle: FallDetectionManager holds the closure, closure
         // holds self, self holds the reference to FallDetectionManager.
@@ -238,6 +239,19 @@ class ContentViewModel {
             // The callback may arrive on any thread — dispatch to main for UI safety.
             DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp) }
         }
+
+        // Apple's system service keeps working when the Watch UI is closed.
+        // Raw accelerometer detection remains a foreground-only fallback when
+        // Fall Detection is unavailable or permission is denied.
+        let systemService = SystemFallDetectionService.shared
+        systemService.onFallDetected = { [weak self] timestamp in
+            self?.alertDidFire(timestamp: timestamp)
+        }
+        systemService.onAuthorizationChanged = { [weak self] status in
+            self?.applyFallDetectionAuthorization(status)
+        }
+        systemService.requestAuthorizationIfNeeded()
+        applyFallDetectionAuthorization(systemService.authorizationStatus)
 
         // Wire the cancel callback from the phone.
         // `notifyPhone: false` prevents the ping-pong loop: the phone already
@@ -302,6 +316,7 @@ class ContentViewModel {
     /// to the phone so the full alert flow (watch countdown + phone notification)
     /// is exercised end-to-end.
     func simulateFall() {
+        guard !isAlertActive else { return }
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)  // ms since epoch
         alertDidFire(timestamp: timestamp)                          // Update this device's UI.
         WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)  // Notify the phone.
@@ -317,6 +332,7 @@ class ContentViewModel {
         WatchSessionManager.shared.stopPolling() // Stop waiting for a phone cancel.
         isAlertActive = false                    // Switch UI back to idleView.
         remainingSeconds = 30                    // Reset so the next alert starts at 30.
+        startForegroundFallbackIfNeeded()
         if notifyPhone {
             // Tell the phone to dismiss its FallAlertScreen.
             WatchSessionManager.shared.sendCancelAlert()
@@ -341,6 +357,7 @@ class ContentViewModel {
     ///    - Note: the SMS is sent by the PHONE, not the watch — the watch just
     ///      dismisses its own UI when time runs out.
     private func alertDidFire(timestamp: Int64) {
+        guard !isAlertActive else { return }
         fallTimestamp = timestamp
         isAlertActive = true
 
@@ -380,10 +397,42 @@ class ContentViewModel {
                     await MainActor.run {
                         WatchSessionManager.shared.stopPolling()
                         isAlertActive = false  // SwiftUI switches back to idleView.
+                        startForegroundFallbackIfNeeded()
                     }
                     return  // Exit the loop — task is done.
                 }
             }
         }
+    }
+
+    private func applyFallDetectionAuthorization(_ status: CMAuthorizationStatus) {
+        guard SystemFallDetectionService.shared.isAvailable else {
+            monitoringStatusText = "Open-app monitoring only"
+            startForegroundFallbackIfNeeded()
+            return
+        }
+
+        switch status {
+        case .authorized:
+            monitoringStatusText = "Background monitoring active"
+            FallDetectionManager.shared.stop()
+        case .notDetermined:
+            monitoringStatusText = "Permission required"
+            startForegroundFallbackIfNeeded()
+        case .denied, .restricted:
+            monitoringStatusText = "Open-app monitoring only"
+            startForegroundFallbackIfNeeded()
+        @unknown default:
+            monitoringStatusText = "Open-app monitoring only"
+            startForegroundFallbackIfNeeded()
+        }
+    }
+
+    private func startForegroundFallbackIfNeeded() {
+        guard !SystemFallDetectionService.shared.usesSystemDetection else {
+            FallDetectionManager.shared.stop()
+            return
+        }
+        FallDetectionManager.shared.start()
     }
 }

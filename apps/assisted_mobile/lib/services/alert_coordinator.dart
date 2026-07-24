@@ -114,8 +114,11 @@ class AlertCoordinator {
   Stream<void> get dismissStream => _dismissController.stream;
   AlertUiState? get currentState => _currentState;
 
-  Future<void> startAlert(int timestamp) async {
-    if (_activeTimestamp == timestamp) return;
+  Future<bool> startAlert(int timestamp) async {
+    // One unresolved incident owns one fixed grace-window deadline. Sensor
+    // re-triggers and duplicate watch transports must not replace it, restart
+    // its timer, or create another backend alert.
+    if (_activeTimestamp != null) return false;
 
     _cancelTimers();
     _activeTimestamp = timestamp;
@@ -139,6 +142,7 @@ class AlertCoordinator {
     // cancel/grace window, so escalation still fires even if this phone
     // gets locked before the local timer above would have elapsed.
     unawaited(_registerWithBackend(timestamp, _activeClientAlertId!));
+    return true;
   }
 
   Future<void> _registerWithBackend(int timestamp, String clientAlertId) async {
