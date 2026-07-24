@@ -8,9 +8,9 @@ persistence into focused projects inside one monorepo.
 
 ```text
 watch detects possible fall
--> assisted mobile app starts a cancellable countdown
--> uncancelled alert is submitted to the backend API
--> backend stores the alert and notifies linked caregiver devices
+-> assisted mobile app immediately registers the alert with the backend API
+-> backend owns the cancellable 30-second grace period
+-> after the grace period, backend notifies linked caregiver devices
 -> caregiver app shows the active alert and history
 -> caregiver can acknowledge the alert
 ```
@@ -136,6 +136,10 @@ When testing on a wired Android device, the mobile Makefiles can reverse
 `localhost:8002` through ADB with their `run-android-wired` targets.
 
 ## More Documentation
+
+Start with the system-level reference:
+
+- `docs/SYSTEM_OVERVIEW.md`
 
 Read the project README closest to the code you are changing:
 
