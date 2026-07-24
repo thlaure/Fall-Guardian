@@ -149,7 +149,8 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     // notification strings. We use the navigator's context rather than the
     // widget's own context because this method can be called at any time,
     // including after the widget has been rebuilt.
-    await _alertCoordinator.startAlert(timestamp);
+    final started = await _alertCoordinator.startAlert(timestamp);
+    if (!started) return;
 
     // Android background alerts are owned by WearDataListenerService's native
     // full-screen notification. iOS background alerts are owned by

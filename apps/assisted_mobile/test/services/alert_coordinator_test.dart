@@ -236,11 +236,39 @@ void main() {
     final coordinator = _coordinator();
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    await coordinator.startAlert(timestamp);
+    final started = await coordinator.startAlert(timestamp);
 
+    expect(started, isTrue);
     expect(coordinator.currentState?.fallTimestamp, timestamp);
     expect(coordinator.currentState?.phase, AlertPhase.countdown);
     expect(coordinator.currentState?.isSending, isFalse);
+
+    coordinator.dispose();
+  });
+
+  test(
+      'startAlert keeps the original deadline when another detection arrives '
+      'before the incident resolves', () async {
+    final backend = _FakeBackendGateway();
+    final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+    final coordinator = _coordinator(
+      backendGateway: backend,
+      clock: clock,
+    );
+    final originalTimestamp = clock.now().millisecondsSinceEpoch;
+
+    expect(await coordinator.startAlert(originalTimestamp), isTrue);
+    await Future<void>.delayed(Duration.zero);
+    clock.setNow(clock.now().add(const Duration(seconds: 12)));
+
+    final repeatedTimestamp = clock.now().millisecondsSinceEpoch;
+    expect(await coordinator.startAlert(repeatedTimestamp), isFalse);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(coordinator.currentState?.fallTimestamp, originalTimestamp);
+    expect(coordinator.remainingCountdownSeconds, 18);
+    expect(backend.callCount, 1);
+    expect(backend.lastTimestamp, originalTimestamp);
 
     coordinator.dispose();
   });
