@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 use App\Infrastructure\Persistence\DoctrineFallAlertRepository;
 use DateTimeImmutable;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -63,7 +65,10 @@ class FallAlert
         private DateTimeImmutable $fallDetectedAt, #[ORM\Column(length: 8)]
         private string $locale, #[ORM\Column(nullable: true)]
         private ?float $latitude, #[ORM\Column(nullable: true)]
-        private ?float $longitude, ?DateTimeImmutable $receivedAt = null)
+        private ?float $longitude, ?DateTimeImmutable $receivedAt = null, #[ORM\Column(options: ['default' => 1])]
+        private int $revision = 1, #[ORM\Column(name: 'detection_source', length: 32, enumType: FallDetectionSource::class, options: ['default' => 'assisted_phone'])]
+        private FallDetectionSource $detectionSource = FallDetectionSource::AssistedPhone, #[ORM\Column(length: 32, enumType: FallResolution::class, options: ['default' => 'unknown'])]
+        private FallResolution $resolution = FallResolution::Unknown)
     {
         $this->id = Uuid::v7();
         $this->receivedAt = $receivedAt ?? new DateTimeImmutable();
@@ -225,6 +230,37 @@ class FallAlert
     public function getCancelledAt(): ?DateTimeImmutable
     {
         return $this->cancelledAt;
+    }
+
+    public function getRevision(): int
+    {
+        return $this->revision;
+    }
+
+    public function getDetectionSource(): FallDetectionSource
+    {
+        return $this->detectionSource;
+    }
+
+    public function getResolution(): FallResolution
+    {
+        return $this->resolution;
+    }
+
+    public function applyNewerIncidentMetadata(
+        int $revision,
+        FallDetectionSource $detectionSource,
+        FallResolution $resolution,
+    ): bool {
+        if ($revision <= $this->revision) {
+            return false;
+        }
+
+        $this->revision = $revision;
+        $this->detectionSource = $detectionSource;
+        $this->resolution = $resolution;
+
+        return true;
     }
 
     /** @return Collection<int, PushAttempt> */

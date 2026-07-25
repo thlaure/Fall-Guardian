@@ -10,6 +10,8 @@ use App\Domain\Alert\Request\CreateFallAlertInputDTO;
 use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DateTimeImmutable;
@@ -52,6 +54,9 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
                 $data->locale,
                 $data->latitude,
                 $data->longitude,
+                $data->revision,
+                FallDetectionSource::from($data->detectionSource),
+                FallResolution::from($data->resolution),
             )
             : $this->alertIngestionService->createAlert(
                 $device,
@@ -60,6 +65,9 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
                 $data->locale,
                 $data->latitude,
                 $data->longitude,
+                $data->revision,
+                FallDetectionSource::from($data->detectionSource),
+                FallResolution::from($data->resolution),
             );
 
         if ($data->cancelled && FallAlertStatus::Cancelled !== $alert->getStatus()) {

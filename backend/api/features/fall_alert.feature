@@ -15,6 +15,42 @@ Feature: Fall alert management
     And the response JSON field "id" is not empty
     And the response JSON field "status" equals "received"
     And the response JSON field "clientAlertId" equals "fa-behat-001"
+    And the response JSON field "revision" equals 1
+    And the response JSON field "detectionSource" equals "assisted_phone"
+    And the response JSON field "resolution" equals "unknown"
+
+  Scenario: Protected person can report cross-transport incident metadata
+    Given I register a protected person device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "fa-behat-watch-contract",
+        "fallTimestamp": "2026-07-25T06:00:00+00:00",
+        "locale": "fr",
+        "revision": 3,
+        "detectionSource": "apple_watch",
+        "resolution": "unresponsive"
+      }
+      """
+    Then the response status code is 201
+    And the response JSON field "revision" equals 3
+    And the response JSON field "detectionSource" equals "apple_watch"
+    And the response JSON field "resolution" equals "unresponsive"
+
+  Scenario: Fall alert rejects an unsupported detection source
+    Given I register a protected person device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "fa-behat-invalid-source",
+        "fallTimestamp": "2026-07-25T06:00:00+00:00",
+        "locale": "en",
+        "detectionSource": "unknown_watch"
+      }
+      """
+    Then the response status code is 422
 
   Scenario: Creating the same alert twice is idempotent
     Given I register a protected person device

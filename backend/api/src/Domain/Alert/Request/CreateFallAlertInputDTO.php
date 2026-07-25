@@ -47,4 +47,13 @@ final class CreateFallAlertInputDTO
 
     #[Assert\Type('bool')]
     public bool $cancelled = false;
+
+    #[Assert\Positive]
+    public int $revision = 1;
+
+    #[Assert\Choice(choices: ['assisted_phone', 'apple_watch', 'wear_os'])]
+    public string $detectionSource = 'assisted_phone';
+
+    #[Assert\Choice(choices: ['unknown', 'confirmed', 'dismissed', 'unresponsive', 'rejected'])]
+    public string $resolution = 'unknown';
 }

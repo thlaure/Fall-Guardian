@@ -37,6 +37,9 @@ final class FallAlertOutputDTO
         public ?string $deliveryReceiptDeadlineAt,
         public ?string $firstDeliveryReceiptAt,
         public ?string $acknowledgementDeadlineAt,
+        public int $revision,
+        public string $detectionSource,
+        public string $resolution,
     ) {
     }
 
@@ -54,6 +57,9 @@ final class FallAlertOutputDTO
             null === $alert->getDeliveryReceiptDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getDeliveryReceiptDeadlineAt()),
             null === $alert->getFirstDeliveryReceiptAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getFirstDeliveryReceiptAt()),
             null === $alert->getAcknowledgementDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getAcknowledgementDeadlineAt()),
+            $alert->getRevision(),
+            $alert->getDetectionSource()->value,
+            $alert->getResolution()->value,
         );
     }
 }
