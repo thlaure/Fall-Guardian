@@ -7,7 +7,7 @@ namespace App\Domain\Companion\Processor;
 use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Companion\Request\ClaimCompanionEnrollmentInputDTO;
-use App\Domain\Companion\Service\CompanionEnrollmentService;
+use App\Domain\Companion\Service\CompanionEnrollmentServiceInterface;
 use App\Domain\Device\Response\DeviceRegistrationOutputDTO;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DomainException;
@@ -18,7 +18,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 final readonly class ClaimCompanionEnrollmentProcessor implements ProcessorInterface
 {
     public function __construct(
-        private CompanionEnrollmentService $service,
+        private CompanionEnrollmentServiceInterface $service,
         private EndpointRateLimiterInterface $rateLimiter,
     ) {
     }

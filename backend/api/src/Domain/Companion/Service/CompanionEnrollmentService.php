@@ -15,7 +15,7 @@ use DomainException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Uid\Uuid;
 
-final readonly class CompanionEnrollmentService
+final readonly class CompanionEnrollmentService implements CompanionEnrollmentServiceInterface
 {
     public const int TTL_SECONDS = 300;
 

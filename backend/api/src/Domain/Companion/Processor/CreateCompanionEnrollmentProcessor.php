@@ -8,7 +8,7 @@ use ApiPlatform\Metadata\Operation;
 use ApiPlatform\State\ProcessorInterface;
 use App\Domain\Companion\Request\CreateCompanionEnrollmentInputDTO;
 use App\Domain\Companion\Response\CreateCompanionEnrollmentOutputDTO;
-use App\Domain\Companion\Service\CompanionEnrollmentService;
+use App\Domain\Companion\Service\CompanionEnrollmentServiceInterface;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use DomainException;
@@ -19,7 +19,7 @@ use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 final readonly class CreateCompanionEnrollmentProcessor implements ProcessorInterface
 {
     public function __construct(
-        private CompanionEnrollmentService $service,
+        private CompanionEnrollmentServiceInterface $service,
         private DeviceContextInterface $deviceContext,
         private EndpointRateLimiterInterface $rateLimiter,
     ) {
