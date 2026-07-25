@@ -268,7 +268,10 @@ class _FallGuardianAppState extends State<FallGuardianApp>
       // The first screen shown when the app launches.
       // We pass _onFallDetected so the HomeScreen can trigger a simulated fall
       // (useful for testing the full alert flow without a real watch).
-      home: HomeScreen(onSimulateFall: _onFallDetected),
+      home: HomeScreen(
+        onSimulateFall: _onFallDetected,
+        backendApi: _backendApi,
+      ),
     );
   }
 }

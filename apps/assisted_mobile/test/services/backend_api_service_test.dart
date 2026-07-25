@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 
 import 'package:fall_guardian/models/contact.dart';
 import 'package:fall_guardian/services/backend_api_service.dart';
+import 'package:fall_guardian/services/companion_enrollment_service.dart';
 import 'package:fall_guardian/services/secure_store.dart';
 
 class _FakeStore implements KeyValueStore {
@@ -186,6 +187,125 @@ void main() {
     );
 
     expect(service.debugBaseUrl, 'https://api.example.test');
+  });
+
+  test('creates platform-bound companion enrollment with device bearer',
+      () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    final client = MockClient((request) async {
+      expect(request.method, 'POST');
+      expect(request.url.path, '/api/v1/companion-enrollments');
+      expect(request.headers['authorization'], 'Bearer token-1');
+      expect(jsonDecode(request.body), {'platform': 'watchos'});
+      return http.Response(
+        jsonEncode({
+          'enrollmentToken': 'a' * 64,
+          'expiresAt': '2026-07-25T10:05:00+00:00',
+        }),
+        201,
+      );
+    });
+    final service = BackendApiService(
+      store: store,
+      client: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    final enrollment = await service.createCompanionEnrollment(
+      CompanionPlatform.watchOS,
+    );
+
+    expect(enrollment.token, 'a' * 64);
+    expect(enrollment.expiresAt.toUtc(), DateTime.utc(2026, 7, 25, 10, 5));
+  });
+
+  test('refreshes stale credentials before retrying companion enrollment',
+      () async {
+    store.data['backend_device_id'] = 'stale-device';
+    store.data['backend_device_token'] = 'stale-token';
+    var enrollmentCalls = 0;
+    final client = MockClient((request) async {
+      if (request.url.path == '/api/v1/companion-enrollments') {
+        enrollmentCalls++;
+        if (request.headers['authorization'] == 'Bearer stale-token') {
+          return http.Response('unauthorized', 401);
+        }
+        expect(request.headers['authorization'], 'Bearer fresh-token');
+        return http.Response(
+          jsonEncode({
+            'enrollmentToken': 'b' * 64,
+            'expiresAt': '2026-07-25T10:05:00Z',
+          }),
+          201,
+        );
+      }
+      if (request.url.path == '/api/v1/devices/register') {
+        return http.Response(
+          jsonEncode({
+            'deviceId': 'fresh-device',
+            'deviceToken': 'fresh-token',
+          }),
+          201,
+        );
+      }
+      fail('Unexpected request: ${request.method} ${request.url}');
+    });
+    final service = BackendApiService(
+      store: store,
+      client: client,
+      baseUrl: 'https://api.example.test',
+    );
+
+    final enrollment = await service.createCompanionEnrollment(
+      CompanionPlatform.wearOS,
+    );
+
+    expect(enrollment.token, 'b' * 64);
+    expect(enrollmentCalls, 2);
+    expect(store.data['backend_device_token'], 'fresh-token');
+  });
+
+  test('rejects malformed companion enrollment response', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    final service = BackendApiService(
+      store: store,
+      client: MockClient(
+        (_) async => http.Response('{"enrollmentToken": ""}', 201),
+      ),
+      baseUrl: 'https://api.example.test',
+    );
+
+    await expectLater(
+      service.createCompanionEnrollment(CompanionPlatform.watchOS),
+      throwsA(
+        isA<BackendApiException>().having(
+          (error) => error.message,
+          'message',
+          'Invalid companion enrollment response',
+        ),
+      ),
+    );
+  });
+
+  test('reports companion enrollment API failure', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    final service = BackendApiService(
+      store: store,
+      client: MockClient((_) async => http.Response('rate limited', 429)),
+      baseUrl: 'https://api.example.test',
+    );
+
+    await expectLater(
+      service.createCompanionEnrollment(CompanionPlatform.wearOS),
+      throwsA(
+        isA<BackendApiException>()
+            .having((error) => error.statusCode, 'statusCode', 429)
+            .having((error) => error.body, 'body', 'rate limited'),
+      ),
+    );
   });
 
   test(

@@ -8,9 +8,11 @@ import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
 import 'alert_ports.dart';
+import 'companion_enrollment_service.dart';
 import 'secure_store.dart';
 
-class BackendApiService implements AlertBackendGateway {
+class BackendApiService
+    implements AlertBackendGateway, CompanionEnrollmentBackendGateway {
   BackendApiService({
     KeyValueStore? store,
     http.Client? client,
@@ -115,6 +117,54 @@ class BackendApiService implements AlertBackendGateway {
   @override
   Future<void> syncContacts(List<Contact> contacts) async {
     await _credentials();
+  }
+
+  @override
+  Future<CompanionEnrollment> createCompanionEnrollment(
+    CompanionPlatform platform,
+  ) async {
+    var credentials = await _credentials();
+    var response = await _createCompanionEnrollment(credentials, platform);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _createCompanionEnrollment(credentials, platform);
+    }
+
+    if (!_isSuccess(response.statusCode)) {
+      throw BackendApiException(
+        'Failed to create companion enrollment',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+
+    try {
+      final payload = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = payload['enrollmentToken'] as String;
+      final expiresAt = DateTime.parse(payload['expiresAt'] as String);
+      if (token.isEmpty) throw const FormatException('Empty enrollment token');
+      return CompanionEnrollment(token: token, expiresAt: expiresAt);
+    } on Object catch (error) {
+      throw BackendApiException(
+        'Invalid companion enrollment response',
+        statusCode: response.statusCode,
+        body: error.toString(),
+      );
+    }
+  }
+
+  Future<http.Response> _createCompanionEnrollment(
+    _BackendCredentials credentials,
+    CompanionPlatform platform,
+  ) {
+    return _send(
+      _client.post(
+        Uri.parse('$_baseUrl/api/v1/companion-enrollments'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+        body: jsonEncode({'platform': platform.apiValue}),
+      ),
+      'Companion enrollment request timed out',
+    );
   }
 
   @override

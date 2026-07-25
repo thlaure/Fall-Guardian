@@ -494,6 +494,41 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     // MARK: - Sending Messages to the Watch
 
+    /// Queue a short-lived enrollment token for the single paired Apple Watch.
+    ///
+    /// The payload is validated before crossing the native boundary and is
+    /// never written to logs or phone storage. If immediate delivery fails,
+    /// WatchConnectivity queues the same message for background delivery.
+    func sendCompanionEnrollment(_ enrollment: [String: Any]) -> Bool {
+        guard WCSession.isSupported(),
+              WCSession.default.activationState == .activated,
+              WCSession.default.isPaired,
+              WCSession.default.isWatchAppInstalled,
+              enrollment["type"] as? String == "companionEnrollment",
+              enrollment["schemaVersion"] as? Int == 1,
+              enrollment["platform"] as? String == "watchos",
+              let token = enrollment["enrollmentToken"] as? String,
+              token.count == 64,
+              let expiresAt = enrollment["expiresAt"] as? String,
+              !expiresAt.isEmpty else {
+            return false
+        }
+
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(
+                enrollment,
+                replyHandler: nil,
+                errorHandler: { _ in
+                    WCSession.default.transferUserInfo(enrollment)
+                }
+            )
+        } else {
+            WCSession.default.transferUserInfo(enrollment)
+        }
+
+        return true
+    }
+
     /// Send a cancel-alert signal to the paired Apple Watch.
     ///
     /// Called by AppDelegate when Flutter invokes "sendCancelAlert" on the channel

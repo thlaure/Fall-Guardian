@@ -79,6 +79,15 @@ class MainActivity : FlutterActivity() {
                     sendCancelAlertToWatch()
                     result.success(null)
                 }
+                "sendCompanionEnrollment" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val args = call.arguments as? Map<String, Any>
+                    if (args == null) {
+                        result.error("INVALID_ARGS", "Missing enrollment payload", null)
+                    } else {
+                        sendCompanionEnrollmentToWatch(args, result)
+                    }
+                }
                 // Direct SMS send via Android SmsManager — no compose UI shown.
                 // Flutter calls this on Android instead of flutter_sms (which
                 // always opens the SMS app in v3.0.1).
@@ -222,6 +231,59 @@ class MainActivity : FlutterActivity() {
                 if (nodes.isEmpty()) Log.w("MainActivity", "sendCancelAlertToWatch: no connected nodes")
             }
             .addOnFailureListener { e -> Log.e("MainActivity", "sendCancelAlertToWatch: getNodeClient failed", e) }
+    }
+
+    /**
+     * Sends a short-lived enrollment token to exactly one connected Wear OS node.
+     *
+     * Broadcasting an authentication token to every paired watch would let the
+     * wrong watch consume it. Zero or multiple nodes therefore produce a
+     * recoverable Flutter error instead of an ambiguous success.
+     */
+    private fun sendCompanionEnrollmentToWatch(
+        enrollment: Map<String, Any>,
+        result: MethodChannel.Result
+    ) {
+        val valid = enrollment["type"] == "companionEnrollment" &&
+            (enrollment["schemaVersion"] as? Number)?.toInt() == 1 &&
+            enrollment["platform"] == "wearos" &&
+            (enrollment["enrollmentToken"] as? String)?.length == 64 &&
+            (enrollment["expiresAt"] as? String).isNullOrBlank().not()
+        if (!valid) {
+            result.error("INVALID_ARGS", "Invalid companion enrollment payload", null)
+            return
+        }
+
+        val payload = org.json.JSONObject(enrollment).toString().toByteArray(Charsets.UTF_8)
+        Wearable.getNodeClient(this).connectedNodes
+            .addOnSuccessListener { nodes ->
+                if (nodes.size != 1) {
+                    result.error(
+                        "WATCH_UNAVAILABLE",
+                        "Expected one connected Wear OS watch, found ${nodes.size}",
+                        null
+                    )
+                    return@addOnSuccessListener
+                }
+
+                Wearable.getMessageClient(this)
+                    .sendMessage(nodes.single().id, "/companion_enrollment", payload)
+                    .addOnSuccessListener { result.success(null) }
+                    .addOnFailureListener {
+                        result.error(
+                            "WATCH_DELIVERY_FAILED",
+                            "Could not send enrollment to Wear OS watch",
+                            null
+                        )
+                    }
+            }
+            .addOnFailureListener {
+                result.error(
+                    "WATCH_UNAVAILABLE",
+                    "Could not inspect connected Wear OS watches",
+                    null
+                )
+            }
     }
 
     private fun sendThresholdsToWatch(thresholds: Map<String, Any>) {

@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fall_guardian/services/companion_enrollment_service.dart';
 import 'package:fall_guardian/services/watch_communication_service.dart';
 
 void main() {
@@ -109,6 +110,57 @@ void main() {
 
       // Must not throw.
       await WatchCommunicationService.sendCancelAlert();
+    });
+
+    test('sendCompanionEnrollment invokes versioned channel contract',
+        () async {
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        captured = call;
+        return null;
+      });
+      final enrollment = CompanionEnrollment(
+        token: 'a' * 64,
+        expiresAt: DateTime.parse('2026-07-25T10:05:00Z'),
+      );
+
+      await WatchCommunicationService.sendCompanionEnrollment(
+        CompanionEnrollmentMessage(
+          platform: CompanionPlatform.watchOS,
+          enrollment: enrollment,
+        ),
+      );
+
+      expect(captured?.method, 'sendCompanionEnrollment');
+      expect(captured?.arguments, {
+        'type': 'companionEnrollment',
+        'schemaVersion': 1,
+        'platform': 'watchos',
+        'enrollmentToken': 'a' * 64,
+        'expiresAt': '2026-07-25T10:05:00.000Z',
+      });
+    });
+
+    test('sendCompanionEnrollment exposes native delivery errors', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'WATCH_UNAVAILABLE');
+      });
+      final enrollment = CompanionEnrollment(
+        token: 'a' * 64,
+        expiresAt: DateTime.parse('2026-07-25T10:05:00Z'),
+      );
+
+      await expectLater(
+        WatchCommunicationService.sendCompanionEnrollment(
+          CompanionEnrollmentMessage(
+            platform: CompanionPlatform.watchOS,
+            enrollment: enrollment,
+          ),
+        ),
+        throwsA(isA<PlatformException>()),
+      );
     });
 
     test('pushThresholds sends the threshold payload', () async {

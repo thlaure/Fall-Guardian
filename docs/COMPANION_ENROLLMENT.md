@@ -3,8 +3,9 @@
 > État de référence au 25 juillet 2026.
 >
 > Le support serveur est disponible sur `main` depuis la PR
-> [#79](https://github.com/thlaure/Fall-Guardian/pull/79). Les applications
-> téléphone, watchOS et Wear OS ne consomment pas encore ce parcours.
+> [#79](https://github.com/thlaure/Fall-Guardian/pull/79). L'application
+> téléphone peut créer et transmettre l'enrôlement. Les apps watchOS et Wear OS
+> ne le consomment pas encore.
 
 ## 1. Objectif
 
@@ -156,9 +157,13 @@ La montre répond uniquement avec :
 
 ### Wear OS
 
-Le téléphone utilise `MessageClient` pour le chemin immédiat et `DataClient`
-comme repli durable court. Le message reprend le même schéma logique. L'élément
-Data Layer doit être supprimé après succès ou expiration.
+Le téléphone utilise `MessageClient` pour le chemin immédiat et exige exactement
+une montre connectée. Il refuse d'envoyer un secret si aucun nœud ou plusieurs
+nœuds sont présents, afin d'éviter que la mauvaise montre consomme le jeton.
+
+Un repli `DataClient` durable court pourra être ajouté avec le consommateur
+Wear OS. Il devra cibler sans ambiguïté la montre attendue et supprimer
+l'élément après succès ou expiration.
 
 ## 5. UX minimale
 
@@ -188,11 +193,11 @@ tant que téléphone et montre utilisent leur canal d'association natif.
 
 ### PR A — orchestration téléphone
 
-- ajouter client API de création d'enrôlement dans l'app personne aidée ;
-- ajouter action et états « Connecter la montre » ;
-- transmettre le message versionné vers watchOS et Wear OS ;
-- ajouter tests Flutter et tests des ponts natifs ;
-- ne pas inclure encore l'envoi direct des alertes.
+- ✅ ajouter client API de création d'enrôlement dans l'app personne aidée ;
+- ✅ ajouter action et états « Connecter la montre » ;
+- ✅ transmettre le message versionné vers watchOS et Wear OS ;
+- ✅ ajouter tests Flutter et compiler les ponts natifs ;
+- ✅ ne pas inclure encore l'envoi direct des alertes.
 
 ### PR B — consommation watchOS
 

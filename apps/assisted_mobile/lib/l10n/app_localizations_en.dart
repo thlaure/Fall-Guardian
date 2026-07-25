@@ -126,6 +126,27 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsSaved => 'Settings saved';
   @override
+  String get watchConnectionSection => 'Watch connection';
+  @override
+  String get watchNotConnected => 'Watch not connected';
+  @override
+  String get watchConnectionStarting => 'Starting secure connection…';
+  @override
+  String get watchConnectionWaiting => 'Waiting for the watch to finish setup';
+  @override
+  String get watchConnectionFailed =>
+      'Could not send setup to the watch. Check that it is nearby.';
+  @override
+  String get watchConnectionExpired => 'Watch setup expired. Try again.';
+  @override
+  String get connectWatch => 'Connect watch';
+  @override
+  String get retryWatchConnection => 'Try again';
+  @override
+  String watchConnectionExpires(DateTime expiresAt) => 'Setup expires at '
+      '${expiresAt.hour.toString().padLeft(2, '0')}:'
+      '${expiresAt.minute.toString().padLeft(2, '0')}';
+  @override
   String get thresholdsSection => 'Fall Detection Thresholds';
   @override
   String get thresholdsInfo =>
