@@ -1,340 +1,347 @@
-# Fall Guardian — documentation fonctionnelle et technique
+# Fall Guardian — functional and technical documentation
 
-> État de référence au 25 juillet 2026.
+> Reference status as of July 25, 2026.
 >
-> Ce document décrit séparément ce qui existe sur `main`, les limites connues et
-> ce qui reste à construire. Il constitue la source de vérité produit et
-> architecture du projet.
+> This document separately describes what exists on `main`, known
+> limitations, and what remains to be built. It is the product and
+> architecture source of truth for the project, including the merged-PR
+> changelog (§11) and phased roadmap (§14). The current handoff state and
+> single next actionable task live in `CURRENT_STATUS.md` instead — update
+> there, not here. The watch-enrollment contract and its PR breakdown live
+> in `docs/COMPANION_ENROLLMENT.md`.
 
-## 1. Objectif du produit
+## 1. Product goal
 
-Fall Guardian aide une personne à risque de chute et ses aidants.
+Fall Guardian helps a person at risk of falling and their caregivers.
 
-Le système doit :
+The system must:
 
-1. détecter une chute possible depuis une Apple Watch ou une montre Wear OS ;
-2. avertir immédiatement la personne et lui laisser une courte possibilité
-   d'indiquer qu'elle va bien ;
-3. transmettre l'incident même si le téléphone est verrouillé et l'application
-   n'est pas affichée ;
-4. prévenir les aidants si l'incident n'est pas annulé ;
-5. montrer aux aidants l'état de l'incident et qui le prend en charge ;
-6. conserver un historique fiable.
+1. detect a possible fall from an Apple Watch or a Wear OS watch;
+2. immediately alert the person and give them a short window to indicate
+   that they are okay;
+3. transmit the incident even if the phone is locked and the application
+   is not displayed;
+4. notify caregivers if the incident is not cancelled;
+5. show caregivers the incident's status and who is handling it;
+6. keep a reliable history.
 
-Fall Guardian ne remplace pas les fonctions natives Apple/Android d'appel aux
-services d'urgence. À ce jour, l'application prévient des aidants enregistrés ;
-elle n'appelle pas automatiquement les services d'urgence et n'envoie pas de
-SMS.
+Fall Guardian does not replace native Apple/Android emergency-services
+calling functions. As of today, the application notifies registered
+caregivers; it does not automatically call emergency services and does
+not send SMS messages.
 
-## 2. Légende
+## 2. Legend
 
-| Marqueur | Signification |
+| Marker | Meaning |
 | --- | --- |
-| ✅ | Disponible sur `main` |
-| 🟡 | Développé dans une pull request ouverte, pas encore sur `main` |
-| 🔴 | À implémenter |
-| ⚠️ | Limite ou risque connu |
+| ✅ | Available on `main` |
+| 🟡 | Developed in an open pull request, not yet on `main` |
+| 🔴 | To be implemented |
+| ⚠️ | Known limitation or risk |
 
-## 3. Vue d'ensemble
+## 3. Overview
 
-### Système actuel
-
-```mermaid
-flowchart LR
-    W["Apple Watch ou montre Wear OS"] -->|"événement de chute"| P["Téléphone de la personne aidée"]
-    P -->|"création immédiate de l'alerte"| API["API Fall Guardian"]
-    P -.->|"annulation pendant le délai"| API
-    API -->|"après 30 s si non annulée"| PUSH["Notification push"]
-    PUSH --> C["Application aidant"]
-    C -->|"réception et acquittement"| API
-```
-
-La montre détecte la chute, puis transmet l'événement au téléphone. L'application
-de la personne aidée enregistre immédiatement l'alerte sur le serveur. Le serveur
-conserve une fenêtre d'annulation de 30 secondes. À son expiration, il notifie
-les aidants liés à la personne.
-
-Ce parcours fonctionne bien lorsque le code Flutter du téléphone peut démarrer
-et joindre le serveur. Il n'offre pas encore toutes les garanties requises quand
-l'application est arrêtée, après un redémarrage, ou lorsque la montre est seule.
-
-### Architecture cible
+### Current system
 
 ```mermaid
 flowchart LR
-    W["Montre"] -->|"HTTPS direct si Internet"| API["API Fall Guardian"]
-    W -->|"relais Bluetooth / WatchConnectivity"| P["Téléphone verrouillé"]
-    P -->|"HTTPS natif"| API
-    API -->|"déduplication par incident"| I["Incident unique"]
-    I -->|"délai puis push"| C["Aidants"]
-    W -.->|"annulation sur les deux chemins"| API
-    P -.->|"annulation sur les deux chemins"| API
+    W["Apple Watch or Wear OS watch"] -->|"fall event"| P["Assisted person's phone"]
+    P -->|"immediate alert creation"| API["Fall Guardian API"]
+    P -.->|"cancellation during the delay"| API
+    API -->|"after 30s if not cancelled"| PUSH["Push notification"]
+    PUSH --> C["Caregiver application"]
+    C -->|"reception and acknowledgement"| API
 ```
 
-La montre tentera deux chemins avec le même identifiant d'incident :
+The watch detects the fall, then transmits the event to the phone. The
+assisted person's application immediately registers the alert on the
+server. The server keeps a 30-second cancellation window. When it
+expires, it notifies the caregivers linked to the person.
 
-- envoi direct si elle possède du Wi-Fi ou une connexion cellulaire ;
-- relais par le téléphone si celui-ci est à portée et possède Internet.
+This path works well when the phone's Flutter code can start and reach
+the server. It does not yet offer all the guarantees required when the
+application is stopped, after a restart, or when the watch is alone.
 
-Le premier envoi reçu créera l'incident. Les suivants seront dédupliqués.
-L'ouverture de l'application ne devra jamais être nécessaire.
+### Target architecture
 
-## 4. Composants
+```mermaid
+flowchart LR
+    W["Watch"] -->|"direct HTTPS if Internet"| API["Fall Guardian API"]
+    W -->|"Bluetooth / WatchConnectivity relay"| P["Locked phone"]
+    P -->|"native HTTPS"| API
+    API -->|"deduplication by incident"| I["Single incident"]
+    I -->|"delay then push"| C["Caregivers"]
+    W -.->|"cancellation on both paths"| API
+    P -.->|"cancellation on both paths"| API
+```
 
-| Composant | Technologie | Rôle |
+The watch will attempt two paths with the same incident identifier:
+
+- direct submission if it has Wi-Fi or a cellular connection;
+- relay through the phone if it is in range and has Internet.
+
+The first submission received will create the incident. Subsequent ones
+will be deduplicated. Opening the application must never be necessary.
+
+## 4. Components
+
+| Component | Technology | Role |
 | --- | --- | --- |
-| Application personne aidée | Flutter, iOS et Android | Configuration, réception des événements montre, état de l'alerte, annulation, historique local |
-| Application aidant | Flutter, iOS et Android | Association avec une personne, réception push, alertes actives, historique, acquittement |
-| Apple Watch | Swift/watchOS | Détection de chute, interface locale, transmission à l'iPhone |
-| Montre Wear OS | Kotlin/Wear OS | Détection par accéléromètre, interface locale, transmission au téléphone Android |
-| API | Symfony 7.4, API Platform, PostgreSQL | Identités, associations, incidents, délai d'annulation, notifications et historique |
-| Notifications | Firebase Cloud Messaging | Transmission des alertes aux téléphones des aidants |
+| Assisted person application | Flutter, iOS and Android | Configuration, watch event reception, alert status, cancellation, local history |
+| Caregiver application | Flutter, iOS and Android | Linking with a person, push reception, active alerts, history, acknowledgement |
+| Apple Watch | Swift/watchOS | Fall detection, local interface, transmission to the iPhone |
+| Wear OS watch | Kotlin/Wear OS | Accelerometer-based detection, local interface, transmission to the Android phone |
+| API | Symfony 7.4, API Platform, PostgreSQL | Identities, links, incidents, cancellation delay, notifications, and history |
+| Notifications | Firebase Cloud Messaging | Transmitting alerts to caregivers' phones |
 
-## 5. Fonctionnalités actuelles
+## 5. Current features
 
-### 5.1 Application de la personne aidée
+### 5.1 Assisted person application
 
-- ✅ enregistrement sécurisé du téléphone auprès de l'API ;
-- ✅ réception d'un événement de chute venant de la montre ;
-- ✅ création d'un `clientAlertId` unique ;
-- ✅ enregistrement immédiat de l'alerte auprès du serveur ;
-- ✅ compte à rebours local de 30 secondes ;
-- ✅ annulation locale et demande d'annulation au serveur ;
-- ✅ ajout différé de la position GPS quand elle devient disponible ;
-- ✅ nouvelle tentative locale si le premier enregistrement échoue ;
-- ✅ reprise du compte à rebours après suspension du timer Flutter ;
-- ✅ historique local des détections et de leur résultat ;
-- ✅ conservation explicite d'une annulation non confirmée par le serveur ;
-- ✅ affichage d'un avertissement si les aidants peuvent déjà être prévenus ;
-- ✅ création d'un enrôlement compagnon et transmission versionnée vers la
-  montre associée depuis les paramètres ;
-- ⚠️ la position n'est pas exigée pour créer l'alerte : elle peut arriver après ;
-- ⚠️ un ancien texte Android parle encore d'un SMS, alors qu'aucun SMS n'est
-  envoyé ;
-- ⚠️ le relais réseau vers l'API dépend encore de Flutter.
+- ✅ secure phone registration with the API;
+- ✅ reception of a fall event from the watch;
+- ✅ creation of a unique `clientAlertId`;
+- ✅ immediate alert registration with the server;
+- ✅ local 30-second countdown;
+- ✅ local cancellation and cancellation request to the server;
+- ✅ deferred addition of GPS location once available;
+- ✅ local retry if the first registration fails;
+- ✅ countdown resumption after the Flutter timer is suspended;
+- ✅ local history of detections and their outcome;
+- ✅ explicit retention of a cancellation not confirmed by the server;
+- ✅ display of a warning if caregivers may already have been notified;
+- ✅ creation of a companion enrollment and versioned transmission to the
+  associated watch from settings;
+- ⚠️ location is not required to create the alert: it can arrive later;
+- ⚠️ old Android text still mentions an SMS, even though no SMS is sent;
+- ⚠️ the network relay to the API still depends on Flutter.
 
-Depuis la fusion de la
-[#74](https://github.com/thlaure/Fall-Guardian/pull/74), un deuxième événement
-ne relance plus le délai tant qu'un incident est actif. La même échéance est
-conservée malgré les événements dupliqués.
+Since the merge of
+[#74](https://github.com/thlaure/Fall-Guardian/pull/74), a second event
+no longer restarts the delay while an incident is active. The same
+deadline is kept despite duplicate events.
 
-### 5.2 Application aidant
+### 5.2 Caregiver application
 
-- ✅ enregistrement sécurisé du téléphone aidant ;
-- ✅ enregistrement du jeton de notification push ;
-- ✅ association à une personne via un code d'invitation ;
-- ✅ prise en charge de plusieurs personnes aidées ;
-- ✅ stockage durable des notifications reçues ;
-- ✅ déduplication d'une même alerte présentée plusieurs fois ;
-- ✅ écran d'alerte active ;
-- ✅ envoi d'un accusé de réception au serveur ;
-- ✅ acquittement d'une alerte ;
-- ✅ historique des alertes ;
-- ✅ liste des personnes suivies ;
-- ✅ reprise des notifications reçues avant l'ouverture de l'interface ;
-- ⚠️ l'écran affiche encore des coordonnées brutes et un identifiant technique ;
-- ⚠️ « Acquitter » ne signifie pas clairement « je prends en charge » ;
-- ⚠️ le premier acquittement clôt globalement l'alerte sans montrer clairement
-  quel aidant intervient.
+- ✅ secure registration of the caregiver phone;
+- ✅ registration of the push notification token;
+- ✅ linking to a person via an invite code;
+- ✅ support for multiple assisted persons;
+- ✅ durable storage of received notifications;
+- ✅ deduplication of the same alert presented multiple times;
+- ✅ active alert screen;
+- ✅ sending a receipt to the server;
+- ✅ acknowledging an alert;
+- ✅ alert history;
+- ✅ list of followed people;
+- ✅ resumption of notifications received before the interface opens;
+- ⚠️ the screen still shows raw coordinates and a technical identifier;
+- ⚠️ "Acknowledge" does not clearly mean "I am taking charge";
+- ⚠️ the first acknowledgement globally closes the alert without clearly
+  showing which caregiver is responding.
 
-Depuis la fusion de la
-[#73](https://github.com/thlaure/Fall-Guardian/pull/73), le chargement de
-l'historique fonctionne après une erreur suivie d'une nouvelle tentative.
+Since the merge of
+[#73](https://github.com/thlaure/Fall-Guardian/pull/73), history loading
+works after an error followed by a retry.
 
 ### 5.3 Apple Watch
 
-Sur `main` :
+On `main`:
 
-- ✅ utilisation de `CMFallDetectionManager`, le mécanisme système Apple ;
-- ✅ activation au démarrage de l'extension watchOS ;
-- ✅ réception possible d'une chute en arrière-plan ;
-- ✅ persistance et nouvelle tentative d'un événement non transmis ;
-- ✅ détection personnalisée avec l'accéléromètre comme solution de repli
-  lorsque l'app est ouverte ;
-- ✅ transmission temps réel à l'iPhone avec WatchConnectivity ;
-- ✅ transfert différé si le message temps réel ne passe pas ;
-- ✅ compte à rebours et annulation sur la montre ;
-- ✅ retransmission de l'annulation à l'iPhone ;
-- ✅ intégration de la cible Watch dans le projet iOS principal ;
-- ⚠️ un simple toucher peut annuler, ce qui favorise les annulations
-  accidentelles ;
-- ⚠️ pas d'envoi direct à l'API ;
-- ⚠️ installation physique bloquée tant qu'Apple n'a pas approuvé la capacité
-  Fall Detection pour l'identifiant de l'app ;
-- ⚠️ comportement exact des résolutions Apple à valider sur une vraie montre.
+- ✅ use of `CMFallDetectionManager`, Apple's system mechanism;
+- ✅ activation at watchOS extension startup;
+- ✅ possible reception of a fall in the background;
+- ✅ persistence and retry of an event that was not transmitted;
+- ✅ custom detection with the accelerometer as a fallback when the app
+  is open;
+- ✅ real-time transmission to the iPhone with WatchConnectivity;
+- ✅ deferred transfer if the real-time message does not go through;
+- ✅ countdown and cancellation on the watch;
+- ✅ retransmission of the cancellation to the iPhone;
+- ✅ integration of the Watch target into the main iOS project;
+- ⚠️ a simple tap can cancel, which favors accidental cancellations;
+- ⚠️ no direct submission to the API;
+- ⚠️ physical installation blocked until Apple approves the Fall
+  Detection capability for the app identifier;
+- ⚠️ exact behavior of Apple resolutions still to be validated on a real
+  watch.
 
-Ces fonctions ont rejoint `main` avec la
+These features joined `main` with
 [#75](https://github.com/thlaure/Fall-Guardian/pull/75).
 
-### 5.4 Montre Wear OS
+### 5.4 Wear OS watch
 
-- ✅ service au premier plan pour surveiller l'accéléromètre en continu ;
-- ✅ détection basée sur chute libre, impact et changement d'inclinaison ;
-- ✅ redémarrage du service après démarrage de la montre ;
-- ✅ compte à rebours et annulation locale ;
-- ✅ message immédiat au téléphone Android ;
-- ✅ donnée urgente persistée dans le Data Layer en solution de repli ;
-- ⚠️ pas d'envoi direct à l'API ;
-- ⚠️ si le processus de l'app téléphone est tué, Android peut afficher une
-  notification, mais l'enregistrement serveur attend encore le démarrage de
-  l'activité Flutter.
+- ✅ foreground service to continuously monitor the accelerometer;
+- ✅ detection based on free fall, impact, and tilt change;
+- ✅ service restart after the watch boots;
+- ✅ countdown and local cancellation;
+- ✅ immediate message to the Android phone;
+- ✅ urgent data persisted in the Data Layer as a fallback;
+- ⚠️ no direct submission to the API;
+- ⚠️ if the phone app's process is killed, Android may show a
+  notification, but server registration still waits for the Flutter
+  activity to start.
 
-### 5.5 API et serveur
+### 5.5 API and server
 
-- ✅ identité distincte pour téléphone de personne aidée et téléphone aidant ;
-- ✅ identité stable de personne protégée partagée par ses appareils ;
-- ✅ rattachement de plusieurs téléphones ou montres à la même personne ;
-- ✅ authentification par jeton d'appareil, stocké sous forme de hash HMAC ;
-- ✅ enrôlement sécurisé d'une montre avec jeton limité à cinq minutes,
-  lié à `watchos` ou `wearos` et consommable une seule fois ;
-- ✅ identifiants propres à chaque montre, sans copier le jeton du téléphone ;
-- ✅ invitations et liens entre personnes aidées et aidants ;
-- ✅ création idempotente d'une alerte pour une personne et un `clientAlertId` ;
-- ✅ déduplication d'un incident reçu depuis plusieurs appareils ;
-- ✅ fenêtre d'annulation serveur de 30 secondes ;
-- ✅ planification différée de l'envoi avec Symfony Messenger ;
-- ✅ annulation avant l'échéance ;
-- ✅ ajout différé de la localisation ;
-- ✅ envoi push à tous les aidants actifs liés ;
-- ✅ suivi d'une tentative d'envoi pour chaque aidant ;
-- ✅ statuts d'incident et historique ;
-- ✅ accusé de réception push idempotent ;
-- ✅ acquittement aidant idempotent ;
-- ✅ délai prévu de 15 secondes pour la réception push ;
-- ✅ délai prévu de 60 secondes pour l'acquittement ;
-- ⚠️ l'escalade automatique après ces délais reste incomplète.
+- ✅ distinct identity for the assisted person's phone and the
+  caregiver's phone;
+- ✅ stable protected person identity shared across their devices;
+- ✅ linking multiple phones or watches to the same person;
+- ✅ authentication via device token, stored as an HMAC hash;
+- ✅ secure watch enrollment with a token limited to five minutes, bound
+  to `watchos` or `wearos` and usable only once;
+- ✅ credentials specific to each watch, without copying the phone's
+  token;
+- ✅ invitations and links between assisted persons and caregivers;
+- ✅ idempotent alert creation for a person and a `clientAlertId`;
+- ✅ deduplication of an incident received from multiple devices;
+- ✅ 30-second server cancellation window;
+- ✅ deferred dispatch scheduling with Symfony Messenger;
+- ✅ cancellation before the deadline;
+- ✅ deferred location addition;
+- ✅ push sending to all linked active caregivers;
+- ✅ tracking of a send attempt for each caregiver;
+- ✅ incident statuses and history;
+- ✅ idempotent push receipt;
+- ✅ idempotent caregiver acknowledgement;
+- ✅ planned 15-second delay for push reception;
+- ✅ planned 60-second delay for acknowledgement;
+- ⚠️ automatic escalation after these delays remains incomplete.
 
-## 6. Cycle de vie actuel d'une alerte
+## 6. Current alert lifecycle
 
-### 6.1 Détection et création
+### 6.1 Detection and creation
 
-1. La montre détecte une chute possible.
-2. Elle crée ou transmet un horodatage de chute.
-3. Le téléphone crée un `clientAlertId`.
-4. Le téléphone envoie immédiatement l'alerte à l'API, sans attendre la fin du
-   compte à rebours.
-5. Le serveur enregistre :
-   - l'heure de réception ;
-   - l'échéance d'annulation, 30 secondes plus tard ;
-   - l'état initial `received`.
-6. Le serveur programme le traitement après l'échéance.
-7. La localisation est ajoutée plus tard si disponible.
+1. The watch detects a possible fall.
+2. It creates or transmits a fall timestamp.
+3. The phone creates a `clientAlertId`.
+4. The phone immediately sends the alert to the API, without waiting for
+   the countdown to finish.
+5. The server records:
+   - the reception time;
+   - the cancellation deadline, 30 seconds later;
+   - the initial `received` state.
+6. The server schedules processing after the deadline.
+7. The location is added later if available.
 
-Le compte à rebours local sert à l'interface et comme solution de repli si le
-premier appel échoue. Il ne doit pas provoquer un deuxième enregistrement si le
-serveur connaît déjà l'alerte.
+The local countdown serves the interface and acts as a fallback if the
+first call fails. It must not trigger a second registration if the
+server already knows about the alert.
 
-### 6.2 Annulation
+### 6.2 Cancellation
 
-1. La personne indique qu'elle va bien sur la montre ou le téléphone.
-2. Les timers locaux s'arrêtent.
-3. Le téléphone demande l'annulation au serveur.
-4. Le serveur accepte uniquement si l'alerte est encore `received` et si
-   l'échéance n'est pas dépassée.
-5. Sans confirmation serveur, l'interface conserve l'état
-   `cancellationPending` et avertit que des aidants peuvent être contactés.
+1. The person indicates that they are okay on the watch or the phone.
+2. The local timers stop.
+3. The phone requests cancellation from the server.
+4. The server accepts only if the alert is still `received` and the
+   deadline has not passed.
+5. Without server confirmation, the interface keeps the
+   `cancellationPending` state and warns that caregivers may be
+   contacted.
 
-Une annulation après l'échéance ne doit pas être présentée comme une annulation
-réussie. Dans l'architecture cible, elle deviendra une mise à jour « personne en
-sécurité ».
+A cancellation after the deadline must not be presented as a successful
+cancellation. In the target architecture, it will become a "person is
+safe" update.
 
 ### 6.3 Notification
 
-1. À l'expiration du délai, le serveur réclame l'alerte pour traitement.
-2. Il recherche tous les aidants actifs liés à la personne.
-3. Il crée une tentative d'envoi par aidant.
-4. Il transmet la notification via Firebase Cloud Messaging.
-5. L'alerte devient `sent`, `partially_sent` ou `failed`.
-6. L'app aidant transmet un reçu lorsqu'elle traite la notification.
-7. Un aidant peut acquitter l'alerte.
+1. When the delay expires, the server claims the alert for processing.
+2. It looks up all active caregivers linked to the person.
+3. It creates a send attempt per caregiver.
+4. It transmits the notification via Firebase Cloud Messaging.
+5. The alert becomes `sent`, `partially_sent`, or `failed`.
+6. The caregiver app sends a receipt when it processes the notification.
+7. A caregiver can acknowledge the alert.
 
-Un fournisseur push qui accepte un message ne prouve pas que le téléphone l'a
-reçu. Le reçu de l'app et la prise en charge sont donc deux états distincts.
+A push provider accepting a message does not prove that the phone
+received it. The app's receipt and handling are therefore two distinct
+states.
 
-## 7. États serveur actuels
+## 7. Current server states
 
-| État | Sens |
+| State | Meaning |
 | --- | --- |
-| `received` | Alerte créée, encore annulable |
-| `dispatching` | Envoi aux aidants en cours |
-| `sent` | Toutes les notifications prévues ont été acceptées par le fournisseur |
-| `partially_sent` | Une partie des notifications a échoué |
-| `failed` | Aucun envoi prévu n'a abouti |
-| `cancelled` | Annulation confirmée avant l'échéance |
-| `acknowledged` | Au moins un aidant a acquitté l'alerte |
+| `received` | Alert created, still cancellable |
+| `dispatching` | Sending to caregivers in progress |
+| `sent` | All planned notifications were accepted by the provider |
+| `partially_sent` | Some notifications failed |
+| `failed` | No planned send succeeded |
+| `cancelled` | Cancellation confirmed before the deadline |
+| `acknowledged` | At least one caregiver acknowledged the alert |
 
-À terme, l'interface devra distinguer clairement :
+Eventually, the interface will need to clearly distinguish:
 
 ```text
-détectée
-→ enregistrée sur le serveur
-→ annulée
-ou
-→ envoyée
-→ reçue
-→ prise en charge
-→ résolue
+detected
+→ registered on the server
+→ cancelled
+or
+→ sent
+→ received
+→ handled
+→ resolved
 ```
 
-## 8. Connectivité et comportement
+## 8. Connectivity and behavior
 
-### Comportement actuel
+### Current behavior
 
-| Situation | Résultat actuel |
+| Situation | Current result |
 | --- | --- |
-| Montre à portée, téléphone avec Internet, apps actives | Parcours complet |
-| Montre sans Wi-Fi, téléphone à portée avec réseau mobile | Relais montre → téléphone possible |
-| iPhone verrouillé, app iOS en arrière-plan | Réveil natif observé en simulateur ; test physique requis |
-| App téléphone Android visible ou processus vivant | Relais possible |
-| Processus Android tué | Notification locale possible, création serveur non garantie |
-| Montre seule avec Wi-Fi/cellulaire | Pas d'envoi direct aujourd'hui |
-| Aucun réseau sur montre et téléphone | Transmission impossible ; événement local seulement |
-| iPhone redémarré avant premier déverrouillage | WatchConnectivity peut être retardé |
-| App explicitement forcée à l'arrêt | Garanties système réduites |
+| Watch in range, phone with Internet, apps active | Full path |
+| Watch without Wi-Fi, phone in range with mobile network | Watch → phone relay possible |
+| Locked iPhone, iOS app in background | Native wake-up observed on simulator; physical test required |
+| Android phone app visible or process alive | Relay possible |
+| Android process killed | Local notification possible, server creation not guaranteed |
+| Watch alone with Wi-Fi/cellular | No direct submission today |
+| No network on watch and phone | Transmission impossible; local event only |
+| iPhone restarted before first unlock | WatchConnectivity may be delayed |
+| App explicitly force-stopped | Reduced system guarantees |
 
-Le cas du jardin, avec la montre sans Wi-Fi mais l'iPhone sur la personne,
-doit fonctionner ainsi :
+The garden scenario, with the watch without Wi-Fi but the iPhone on the
+person, must work as follows:
 
 ```text
-montre
+watch
 → Bluetooth / WatchConnectivity
-→ iPhone verrouillé
-→ réseau mobile de l'iPhone
-→ serveur
+→ locked iPhone
+→ iPhone's mobile network
+→ server
 ```
 
-Le Wi-Fi de la maison n'est pas nécessaire. Une Apple Watch cellulaire n'est
-nécessaire que si la personne peut s'éloigner sans son iPhone.
+Home Wi-Fi is not necessary. A cellular Apple Watch is only necessary if
+the person can move away without their iPhone.
 
-### Garantie physique
+### Physical guarantee
 
-Aucun logiciel ne peut transmettre si ni la montre ni le téléphone ne disposent
-d'un chemin réseau ou radio. Dans ce cas, l'alarme locale, la persistance et les
-nouvelles tentatives sont les seules protections possibles.
+No software can transmit if neither the watch nor the phone has a
+network or radio path. In that case, the local alarm, persistence, and
+retries are the only possible protections.
 
-Les fonctions Apple Fall Detection et Emergency SOS restent une couche de
-sécurité native indépendante de Fall Guardian.
+Apple's Fall Detection and Emergency SOS features remain a native safety
+layer independent of Fall Guardian.
 
-## 9. Données et sécurité
+## 9. Data and security
 
-### Identité
+### Identity
 
-Le serveur reconnaît actuellement :
+The server currently recognizes:
 
-- une identité stable par personne protégée ;
-- les appareils `protected_person` rattachés à cette identité ;
-- les montres `watchos` et `wearos` rattachées à cette même identité ;
-- les appareils `caregiver` ;
-- les liens actifs entre eux ;
-- les jetons push des aidants.
+- a stable identity per protected person;
+- `protected_person` devices linked to that identity;
+- `watchos` and `wearos` watches linked to that same identity;
+- `caregiver` devices;
+- active links between them;
+- caregivers' push tokens.
 
-Les jetons d'authentification ne sont pas stockés en clair. Les secrets,
-certificats, profils de signature et fichiers Firebase privés ne doivent jamais
-être ajoutés au dépôt.
+Authentication tokens are not stored in plaintext. Secrets, certificates,
+signing profiles, and private Firebase files must never be added to the
+repository.
 
-### Contrat d'incident
+### Incident contract
 
-Le contrat de création accepte maintenant :
+The creation contract now accepts:
 
 ```text
 clientAlertId
@@ -344,43 +351,44 @@ revision
 detectionSource
 resolution
 locale
-latitude et longitude (optionnelles)
+latitude and longitude (optional)
 ```
 
-`revision`, `detectionSource` et `resolution` restent optionnels pour préserver
-la compatibilité avec les applications déjà installées. Leurs valeurs par
-défaut sont respectivement `1`, `assisted_phone` et `unknown`.
+`revision`, `detectionSource`, and `resolution` remain optional to
+preserve compatibility with already-installed applications. Their
+default values are `1`, `assisted_phone`, and `unknown`, respectively.
 
-Le serveur retourne notamment :
+The server notably returns:
 
 ```text
 receivedAt
 cancelDeadlineAt
 ```
 
-Les doublons sont identifiés par personne protégée + `clientAlertId`. Une révision
-plus récente met à jour les métadonnées de l'incident sans recréer l'alerte ni
-redéclencher la notification. Une annulation portant une révision plus ancienne
-que celle déjà enregistrée est refusée. Les aidants et l'historique sont
-retrouvés au niveau de la personne, même lorsque l'incident provient d'un autre
-appareil compagnon.
+Duplicates are identified by protected person + `clientAlertId`. A more
+recent revision updates the incident's metadata without recreating the
+alert or re-triggering the notification. A cancellation carrying a
+revision older than the one already recorded is rejected. Caregivers and
+history are found at the person level, even when the incident comes from
+a different companion device.
 
-L'API d'enrôlement permet maintenant à un téléphone authentifié de créer un
-jeton à usage unique pour une plateforme. La montre échange ce jeton dans les
-cinq minutes contre ses propres `deviceId` et `deviceToken`. Le serveur ne
-stocke que le hash HMAC du jeton d'enrôlement. Une plateforme incorrecte ne le
-consomme pas ; un jeton expiré ou déjà utilisé est refusé. L'intégration de ce
-parcours est disponible côté téléphone ; sa consommation reste à implémenter
-dans les apps watchOS et Wear OS.
+The enrollment API now lets an authenticated phone create a single-use
+token for a platform. The watch exchanges this token within five minutes
+for its own `deviceId` and `deviceToken`. The server only stores the
+HMAC hash of the enrollment token. An incorrect platform does not
+consume it; an expired or already-used token is rejected. Integration of
+this path is available on the phone side; its consumption still needs to
+be implemented in the watchOS and Wear OS apps.
 
-Le contrat détaillé et l'ordre d'implémentation client sont décrits dans
-[`COMPANION_ENROLLMENT.md`](COMPANION_ENROLLMENT.md).
+The detailed contract and the client implementation order are described
+in [`COMPANION_ENROLLMENT.md`](COMPANION_ENROLLMENT.md).
 
-Tous les écrans devront utiliser `cancelDeadlineAt` comme échéance autoritative.
+All screens will need to use `cancelDeadlineAt` as the authoritative
+deadline.
 
-### API actuelle
+### Current API
 
-Principaux points d'entrée :
+Main endpoints:
 
 ```text
 POST   /api/v1/devices/register
@@ -402,260 +410,260 @@ DELETE /api/v1/protected/linked-caregivers/{id}
 GET    /health
 ```
 
-La documentation OpenAPI locale est accessible sur
+Local OpenAPI documentation is accessible at
 `http://localhost:8002/docs`.
 
-## 10. Ce qui a été vérifié
+## 10. What has been verified
 
-- ✅ tests unitaires, intégration et scénarios Behat du backend ;
-- ✅ enregistrement des deux types d'appareils ;
-- ✅ invitations, acceptation et cas invalides ;
-- ✅ création idempotente d'alerte ;
-- ✅ annulation et validation des coordonnées ;
-- ✅ distribution push et historique ;
-- ✅ reçus et acquittements idempotents ;
-- ✅ contrat d'incident versionné et déduplication multi-appareils ;
-- ✅ création et consommation d'un enrôlement compagnon sécurisé ;
-- ✅ création et transmission de l'enrôlement depuis l'app personne aidée ;
-- ✅ tests Flutter et analyse statique des applications mobiles ;
-- ✅ lint, tests et build Wear OS ;
-- ✅ analyse, build et tests watchOS ;
-- ✅ chaîne Watch simulée → iPhone → Flutter ;
-- ✅ lancement/réveil de l'app iPhone en arrière-plan observé en simulateur ;
-- ⚠️ `transferUserInfo` et le comportement téléphone verrouillé nécessitent de
-  vrais appareils ;
-- ⚠️ la simulation système Apple d'une chute rencontre une erreur de parsing
-  Core Motion Simulator ;
-- ⚠️ l'approbation Apple Fall Detection est encore en attente.
+- ✅ backend unit, integration, and Behat scenario tests;
+- ✅ registration of both device types;
+- ✅ invitations, acceptance, and invalid cases;
+- ✅ idempotent alert creation;
+- ✅ cancellation and coordinate validation;
+- ✅ push distribution and history;
+- ✅ idempotent receipts and acknowledgements;
+- ✅ versioned incident contract and multi-device deduplication;
+- ✅ creation and consumption of a secure companion enrollment;
+- ✅ enrollment creation and transmission from the assisted person app;
+- ✅ Flutter tests and static analysis of the mobile applications;
+- ✅ Wear OS lint, tests, and build;
+- ✅ watchOS analysis, build, and tests;
+- ✅ simulated Watch → iPhone → Flutter chain;
+- ✅ iPhone app launch/wake-up in the background observed on simulator;
+- ⚠️ `transferUserInfo` and locked-phone behavior require real devices;
+- ⚠️ Apple's system fall simulation runs into a Core Motion Simulator
+  parsing error;
+- ⚠️ Apple Fall Detection approval is still pending.
 
-## 11. Changements récemment fusionnés
+## 11. Recently merged changes
 
-| PR | Contenu | État fonctionnel |
+| PR | Content | Functional status |
 | --- | --- | --- |
-| [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Rechargement de l'historique aidant après erreur | ✅ Fusionnée sur `main` |
-| [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Un seul délai pour un incident actif et correction du texte iOS | ✅ Fusionnée sur `main` |
-| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Détection Apple en arrière-plan | ✅ Fusionnée sur `main`, validation physique en attente d'Apple |
-| [#76](https://github.com/thlaure/Fall-Guardian/pull/76) | Documentation fonctionnelle et architecture cible | ✅ Fusionnée sur `main` |
-| [#77](https://github.com/thlaure/Fall-Guardian/pull/77) | Contrat d'incident versionné et échéance serveur | ✅ Fusionnée sur `main` |
-| [#78](https://github.com/thlaure/Fall-Guardian/pull/78) | Identité stable et déduplication multi-appareils | ✅ Fusionnée sur `main` |
-| [#79](https://github.com/thlaure/Fall-Guardian/pull/79) | Enrôlement sécurisé watchOS et Wear OS côté serveur | ✅ Fusionnée sur `main` |
-| [#80](https://github.com/thlaure/Fall-Guardian/pull/80) | Contrat client et plan d'intégration des montres | ✅ Fusionnée sur `main` |
-| [#81](https://github.com/thlaure/Fall-Guardian/pull/81) | Création et transmission de l'enrôlement depuis l'app aidée | ✅ Fusionnée sur `main` |
+| [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Reloading caregiver history after an error | ✅ Merged into `main` |
+| [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Single delay for an active incident and iOS text fix | ✅ Merged into `main` |
+| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Background Apple detection | ✅ Merged into `main`, physical validation pending from Apple |
+| [#76](https://github.com/thlaure/Fall-Guardian/pull/76) | Functional documentation and target architecture | ✅ Merged into `main` |
+| [#77](https://github.com/thlaure/Fall-Guardian/pull/77) | Versioned incident contract and server deadline | ✅ Merged into `main` |
+| [#78](https://github.com/thlaure/Fall-Guardian/pull/78) | Stable identity and multi-device deduplication | ✅ Merged into `main` |
+| [#79](https://github.com/thlaure/Fall-Guardian/pull/79) | Secure server-side watchOS and Wear OS enrollment | ✅ Merged into `main` |
+| [#80](https://github.com/thlaure/Fall-Guardian/pull/80) | Client contract and watch integration plan | ✅ Merged into `main` |
+| [#81](https://github.com/thlaure/Fall-Guardian/pull/81) | Enrollment creation and transmission from the assisted app | ✅ Merged into `main` |
 
-Les changements d'architecture ci-dessous peuvent maintenant partir de cette
-base commune.
+The architecture changes below can now build on this common base.
 
-## 12. Problèmes connus
+## 12. Known issues
 
-### Fiabilité
+### Reliability
 
-- 🔴 la montre ne contacte pas directement le serveur ;
-- 🔴 les relais natifs téléphone dépendent encore de Flutter ;
-- 🔴 le cas Android avec processus tué n'est pas sûr ;
-- 🔴 la file hors connexion n'est pas unifiée et durable de bout en bout ;
-- 🔴 les apps montres ne consomment pas encore le nouvel enrôlement compagnon ;
-- 🔴 la politique de nouvelle notification sans réponse aidant est incomplète ;
-- ⚠️ l'heure de départ du délai diffère entre certaines interfaces montre et le
-  serveur ;
-- ⚠️ une alerte tardive et une annulation tardive n'ont pas encore une règle
-  partagée par tous les composants.
+- 🔴 the watch does not contact the server directly;
+- 🔴 native phone relays still depend on Flutter;
+- 🔴 the Android killed-process case is not reliable;
+- 🔴 the offline queue is not unified and durable end to end;
+- 🔴 the watch apps do not yet consume the new companion enrollment;
+- 🔴 the renotification policy when there is no caregiver response is
+  incomplete;
+- ⚠️ the delay's start time differs between some watch interfaces and
+  the server;
+- ⚠️ a late alert and a late cancellation do not yet have a rule shared
+  by all components.
 
-### Expérience personne aidée
+### Assisted person experience
 
-- 🔴 remplacer le texte Android restant qui mentionne un SMS ;
-- 🔴 remplacer l'annulation par simple toucher par un gros bouton
-  « Je vais bien » avec appui long d'environ 1,5 seconde et retour haptique ;
-- 🔴 afficher des états utiles :
-  « transmission en cours », « alerte enregistrée », « aidants avertis »,
-  « hors connexion » ;
-- 🔴 localiser les écrans montre ;
-- 🔴 expliquer clairement une annulation trop tardive ;
-- ✅ empêcher un événement dupliqué de redémarrer le compte à rebours.
+- 🔴 replace the remaining Android text that mentions an SMS;
+- 🔴 replace the single-tap cancellation with a large "I'm OK" button
+  with an approximately 1.5-second long press and haptic feedback;
+- 🔴 display useful states:
+  "transmitting", "alert registered", "caregivers notified",
+  "offline";
+- 🔴 localize the watch screens;
+- 🔴 clearly explain a cancellation that is too late;
+- ✅ prevent a duplicate event from restarting the countdown.
 
-### Expérience aidant
+### Caregiver experience
 
-- 🔴 remplacer « Acquitter » par des actions compréhensibles :
-  « J'ai vu », « Je m'en occupe », « Personne en sécurité »,
-  « Secours contactés » ;
-- 🔴 montrer qui prend l'incident en charge ;
-- 🔴 afficher nom, carte, adresse, précision et heure de la position ;
-- 🔴 ajouter des actions d'appel et d'itinéraire ;
-- 🔴 mettre à jour la position en direct sur un écran déjà ouvert ;
-- 🔴 présenter le nom de la personne avant les identifiants techniques ;
-- 🔴 expliquer l'absence de réponse et les nouvelles tentatives.
+- 🔴 replace "Acknowledge" with understandable actions:
+  "I've seen it", "I'm on it", "Person is safe",
+  "Emergency services contacted";
+- 🔴 show who is handling the incident;
+- 🔴 display the location's name, map, address, accuracy, and time;
+- 🔴 add call and directions actions;
+- 🔴 update the location live on an already-open screen;
+- 🔴 present the person's name before technical identifiers;
+- 🔴 explain the lack of response and the retries.
 
-### Produit, sécurité et conformité
+### Product, security, and compliance
 
-- 🔴 définir et tester la politique de faux positifs ;
-- 🔴 valider les résolutions Apple sur une montre physique :
-  `rejected`, `unresponsive`, `dismissed`, `confirmed` ;
-- 🔴 documenter clairement que le service ne contacte pas automatiquement les
-  secours ;
-- 🔴 finaliser les règles de conservation des données et de suppression ;
-- 🔴 faire valider le parcours médical et d'urgence avant commercialisation.
+- 🔴 define and test the false-positive policy;
+- 🔴 validate Apple resolutions on a physical watch:
+  `rejected`, `unresponsive`, `dismissed`, `confirmed`;
+- 🔴 clearly document that the service does not automatically contact
+  emergency services;
+- 🔴 finalize the data retention and deletion rules;
+- 🔴 have the medical and emergency path validated before
+  commercialization.
 
-## 13. Architecture cible détaillée
+## 13. Detailed target architecture
 
-### 13.1 Identité compagnon
+### 13.1 Companion identity
 
-Le serveur possède maintenant une identité de personne protégée stable et des
-identités distinctes pour ses appareils compagnons. Chaque montre doit obtenir
-ses propres identifiants via l'enrôlement à usage unique. Le jeton complet du
-téléphone ne doit jamais être copié sur la montre.
+The server now has a stable protected person identity and distinct
+identities for its companion devices. Each watch must obtain its own
+credentials via single-use enrollment. The phone's full token must never
+be copied to the watch.
 
-Le serveur déduplique sur :
+The server deduplicates on:
 
 ```text
 protectedPersonId + clientAlertId
 ```
 
-et non plus sur :
+and no longer on:
 
 ```text
 deviceId + clientAlertId
 ```
 
-### 13.2 Double transport
+### 13.2 Dual transport
 
-Pour chaque incident :
+For each incident:
 
-1. la montre persiste l'incident avant tout envoi ;
-2. elle tente immédiatement HTTPS si Internet est disponible ;
-3. elle tente en parallèle le relais vers le téléphone ;
-4. le téléphone persiste puis envoie avec du code natif ;
-5. le serveur accepte le premier message et déduplique les autres ;
-6. l'annulation emprunte elle aussi les deux chemins ;
-7. chaque composant conserve et retente tant que le serveur n'a pas confirmé.
+1. the watch persists the incident before any submission;
+2. it immediately attempts HTTPS if Internet is available;
+3. it attempts the relay to the phone in parallel;
+4. the phone persists then sends with native code;
+5. the server accepts the first message and deduplicates the others;
+6. cancellation also takes both paths;
+7. each component persists and retries until the server has confirmed.
 
-Implémentation prévue :
+Planned implementation:
 
-- watchOS : `URLSession` + file persistante + WatchConnectivity ;
-- iOS : `URLSession` natif + file persistante, indépendante de Flutter ;
-- Wear OS : HTTPS direct + Data Layer ;
-- Android : `WearableListenerService` + travail natif persistant/expéditif.
+- watchOS: `URLSession` + persistent queue + WatchConnectivity;
+- iOS: native `URLSession` + persistent queue, independent of Flutter;
+- Wear OS: direct HTTPS + Data Layer;
+- Android: `WearableListenerService` + persistent/expedited native work.
 
-### 13.3 Incidents hors connexion
+### 13.3 Offline incidents
 
-- chute non annulée reçue après le délai : notification immédiate aux aidants ;
-- chute annulée hors connexion : synchronisation de l'historique sans prévenir
-  les aidants ;
-- messages reçus dans le désordre : la révision la plus élevée gagne ;
-- absence de réseau : alarme locale, état « hors connexion », persistance et
-  nouvelles tentatives.
+- fall not cancelled, received after the delay: immediate notification
+  to caregivers;
+- fall cancelled offline: history synchronization without notifying
+  caregivers;
+- messages received out of order: the highest revision wins;
+- no network: local alarm, "offline" state, persistence, and retries.
 
-### 13.4 Prise en charge aidant
+### 13.4 Caregiver handling
 
-Évolution de l'état métier :
+Business state evolution:
 
 ```text
-push envoyé
-→ reçu par téléphone
-→ vu par aidant
-→ pris en charge par un aidant identifié
-→ personne en sécurité ou secours contactés
+push sent
+→ received by phone
+→ seen by caregiver
+→ taken over by an identified caregiver
+→ person is safe or emergency services contacted
 ```
 
-Politique proposée :
+Proposed policy:
 
-1. notifier tous les aidants ;
-2. attendre un reçu pendant 15 secondes, puis retenter si nécessaire ;
-3. sans prise en charge après 60 secondes, renotifier et escalader ;
-4. informer la personne aidée de l'état ;
-5. ne jamais arrêter silencieusement l'escalade.
+1. notify all caregivers;
+2. wait for a receipt for 15 seconds, then retry if necessary;
+3. without handling after 60 seconds, renotify and escalate;
+4. inform the assisted person of the status;
+5. never silently stop the escalation.
 
-## 14. Plan d'implémentation
+## 14. Implementation plan
 
-### Phase 0 — stabiliser l'existant
+### Phase 0 — stabilize the existing system
 
-- ✅ PR #73 à #81 fusionnées après CI ;
-- corriger le texte SMS Android restant ;
-- ✅ compte à rebours conservé lors des événements dupliqués ;
-- tester iPhone verrouillé + vraie Apple Watch ;
-- tester Android verrouillé, processus supprimé et redémarrage ;
-- enregistrer les résultats dans cette documentation.
+- ✅ PRs #73 to #81 merged after CI;
+- fix the remaining Android SMS text;
+- ✅ countdown preserved during duplicate events;
+- test locked iPhone + real Apple Watch;
+- test locked Android, killed process, and restart;
+- record the results in this documentation.
 
-### Phase 1 — contrat et modèle serveur
+### Phase 1 — server contract and model
 
-- ✅ ajouter l'identité stable de personne protégée et le support serveur de
-  plusieurs appareils compagnons ;
-- ✅ créer l'enrôlement serveur sécurisé d'une montre : jeton haché, limité à
-  cinq minutes, lié à une plateforme et consommable une seule fois ;
-- ✅ dédupliquer par personne + incident ;
-- ✅ ajouter `revision`, `detectionSource` et `resolution` sans casser les anciens
-  clients ; `locale` existait déjà ;
-- ✅ retourner l'échéance serveur autoritative ;
-- ⚠️ définir les règles d'événements tardifs et désordonnés : révisions plus
-  récentes et annulations anciennes couvertes, transitions complètes restantes ;
-- ajouter tests unitaires, intégration et contrats au fil des incréments.
+- ✅ add the stable protected person identity and server support for
+  multiple companion devices;
+- ✅ create secure server-side watch enrollment: hashed token, limited to
+  five minutes, bound to a platform, and usable only once;
+- ✅ deduplicate by person + incident;
+- ✅ add `revision`, `detectionSource`, and `resolution` without breaking
+  older clients; `locale` already existed;
+- ✅ return the authoritative server deadline;
+- ⚠️ define rules for late and out-of-order events: newer revisions and
+  older cancellations covered, full transitions still remaining;
+- add unit, integration, and contract tests as increments progress.
 
-### Phase 2 — relais natif téléphone
+### Phase 2 — native phone relay
 
-- ✅ intégrer la création d'enrôlement dans l'app personne aidée ;
-- ✅ transmettre le jeton éphémère à la montre associée ;
-- implémenter file persistante et transport natif iOS ;
-- implémenter réception et transport natifs Android ;
-- transmettre sans ouvrir Flutter ;
-- synchroniser l'état vers Flutter lorsqu'il démarre ;
-- couvrir verrouillage, app tuée, redémarrage et absence réseau.
+- ✅ integrate enrollment creation into the assisted person app;
+- ✅ transmit the ephemeral token to the associated watch;
+- implement a persistent queue and native iOS transport;
+- implement native Android reception and transport;
+- transmit without opening Flutter;
+- synchronize state to Flutter when it starts;
+- cover locking, killed app, restart, and no network.
 
-### Phase 3 — envoi direct montre
+### Phase 3 — direct watch submission
 
-- consommer l'enrôlement et stocker les identifiants propres à chaque montre ;
-- ajouter envoi HTTPS et file persistante watchOS ;
-- ajouter envoi HTTPS et file persistante Wear OS ;
-- lancer direct et relais en parallèle ;
-- synchroniser création, confirmation et annulation.
+- consume the enrollment and store credentials specific to each watch;
+- add HTTPS submission and a persistent queue for watchOS;
+- add HTTPS submission and a persistent queue for Wear OS;
+- launch direct and relay submissions in parallel;
+- synchronize creation, confirmation, and cancellation.
 
-### Phase 4 — UX de sécurité
+### Phase 4 — safety UX
 
-- remplacer l'annulation accidentelle par appui long ;
-- unifier les états et l'échéance sur montre et téléphone ;
-- afficher clairement la connectivité ;
-- améliorer écran aidant, carte, appels et prise en charge ;
-- localiser toutes les interfaces.
+- replace accidental cancellation with a long press;
+- unify states and the deadline across watch and phone;
+- clearly display connectivity;
+- improve the caregiver screen, map, calls, and handling;
+- localize all interfaces.
 
-### Phase 5 — escalade et exploitation
+### Phase 5 — escalation and operations
 
-- automatiser les nouvelles tentatives selon reçus et prise en charge ;
-- ajouter supervision des incidents bloqués et des échecs push ;
-- définir métriques, journaux et alertes techniques ;
-- tester charge, pertes réseau, doublons et désordre ;
-- finaliser sécurité, confidentialité et conformité.
+- automate retries based on receipts and handling;
+- add monitoring for stuck incidents and push failures;
+- define metrics, logs, and technical alerts;
+- test load, network loss, duplicates, and out-of-order delivery;
+- finalize security, privacy, and compliance.
 
-## 15. Matrice minimale d'acceptation
+## 15. Minimum acceptance matrix
 
-Chaque plateforme doit couvrir au minimum :
+Each platform must cover at minimum:
 
-| Scénario | Résultat attendu |
+| Scenario | Expected result |
 | --- | --- |
-| Montre avec Internet, téléphone absent | Création directe, délai unique, notification |
-| Montre sans Internet, téléphone verrouillé avec Internet | Relais natif, sans ouverture de l'app |
-| Direct et relais simultanés | Un seul incident |
-| Même chute transmise plusieurs fois | Même identifiant et même échéance |
-| Annulation avant échéance | Aucun aidant prévenu |
-| Annulation reçue avant ancien message de chute | L'incident ne ressuscite pas |
-| Chute hors connexion non annulée | Alerte immédiate au retour réseau |
-| Chute hors connexion annulée | Historique synchronisé, aucun push |
-| Position refusée ou lente | Alerte créée sans blocage |
-| Téléphone redémarré | File reprise automatiquement |
-| App forcée à l'arrêt | Chemin direct montre utilisé si disponible |
-| Aucun réseau | Alarme locale et état hors connexion |
-| Push non reçu | Nouvelle tentative/escalade |
-| Aucun aidant ne prend en charge | Renotification et escalade visible |
+| Watch with Internet, phone absent | Direct creation, single delay, notification |
+| Watch without Internet, locked phone with Internet | Native relay, without opening the app |
+| Simultaneous direct and relay | A single incident |
+| Same fall transmitted multiple times | Same identifier and same deadline |
+| Cancellation before the deadline | No caregiver notified |
+| Cancellation received before an older fall message | The incident does not come back to life |
+| Offline fall not cancelled | Immediate alert when network returns |
+| Offline fall cancelled | History synchronized, no push |
+| Location refused or slow | Alert created without blocking |
+| Phone restarted | Queue resumed automatically |
+| App force-stopped | Direct watch path used if available |
+| No network | Local alarm and offline state |
+| Push not received | Retry/escalation |
+| No caregiver takes charge | Renotification and visible escalation |
 
-Les tests physiques doivent inclure :
+Physical tests must include:
 
-- iPhone verrouillé dans une poche ;
-- Android verrouillé avec processus supprimé ;
-- montre hors Wi-Fi mais téléphone en 4G/5G ;
-- montre cellulaire sans téléphone ;
-- perte et retour réseau pendant le délai ;
-- chute suivie d'une annulation presque simultanée ;
-- plusieurs aidants et plusieurs appareils.
+- locked iPhone in a pocket;
+- locked Android with the process killed;
+- watch without Wi-Fi but phone on 4G/5G;
+- cellular watch without a phone;
+- network loss and recovery during the delay;
+- fall followed by a near-simultaneous cancellation;
+- multiple caregivers and multiple devices.
 
-## 16. Développement local
+## 16. Local development
 
-Depuis la racine :
+From the root:
 
 ```sh
 make help
@@ -663,7 +671,7 @@ make status
 make quality
 ```
 
-Contrôles ciblés :
+Targeted checks:
 
 ```sh
 make quality-api
@@ -673,61 +681,59 @@ make quality-wear-os
 make quality-watchos
 ```
 
-API locale :
+Local API:
 
 ```text
-Base :          http://localhost:8002/api/v1
-Documentation : http://localhost:8002/docs
-Santé :         http://localhost:8002/health
+Base:          http://localhost:8002/api/v1
+Documentation: http://localhost:8002/docs
+Health:        http://localhost:8002/health
 ```
 
-Le backend possède une fausse boîte de notifications pour les essais locaux.
-Les commandes exactes d'installation et d'exécution restent documentées dans le
-README de chaque projet.
+The backend has a fake notification mailbox for local trials. The exact
+installation and run commands remain documented in each project's
+README.
 
-## 17. Décisions encore à valider
+## 17. Decisions still to be validated
 
-1. Quelle règle appliquer à chaque résolution système Apple :
-   `confirmed`, `dismissed`, `unresponsive`, `rejected` ?
-2. Qui reçoit une nouvelle notification si aucun aidant ne prend en charge ?
-3. Après combien de temps faut-il escalader et de quelle façon ?
-4. Une annulation tardive signifie-t-elle « personne en sécurité » ou
-   « faux positif » ?
-5. Combien de temps conserver incidents, positions et journaux techniques ?
-6. Quelles fonctions sont disponibles sans consentement de localisation ?
-7. Quel parcours guidera un aidant vers les services d'urgence locaux ?
-8. Quelle langue est autoritative quand montre et téléphone diffèrent ?
-9. Quel mécanisme permet de révoquer une montre perdue ?
-10. Quelle promesse commerciale peut être formulée sans présenter le système
-    comme un remplacement des services d'urgence ?
+1. Which rule to apply to each Apple system resolution:
+   `confirmed`, `dismissed`, `unresponsive`, `rejected`?
+2. Who receives a renotification if no caregiver takes charge?
+3. After how long should escalation happen, and in what way?
+4. Does a late cancellation mean "person is safe" or "false positive"?
+5. How long should incidents, locations, and technical logs be kept?
+6. Which functions are available without location consent?
+7. What path will guide a caregiver to local emergency services?
+8. Which language is authoritative when the watch and phone differ?
+9. What mechanism allows revoking a lost watch?
+10. What commercial promise can be made without presenting the system as
+    a replacement for emergency services?
 
-## 18. Règles de mise à jour de ce document
+## 18. Rules for updating this document
 
-Toute PR qui modifie un parcours majeur doit mettre à jour ce fichier si elle
-change :
+Any PR that modifies a major path must update this file if it changes:
 
-- le comportement visible ;
-- le cycle de vie d'une alerte ;
-- les garanties hors connexion ou arrière-plan ;
-- un statut d'implémentation ;
-- une limite connue ;
-- le contrat entre montre, téléphone et serveur ;
-- le plan de déploiement ou de validation.
+- visible behavior;
+- an alert's lifecycle;
+- offline or background guarantees;
+- an implementation status;
+- a known limitation;
+- the contract between watch, phone, and server;
+- the deployment or validation plan.
 
-Ne jamais décrire une fonctionnalité comme disponible avant sa fusion sur
-`main`. Utiliser le statut 🟡 pour du code présent uniquement dans une PR.
+Never describe a feature as available before it is merged into `main`.
+Use the 🟡 status for code present only in a PR.
 
-## 19. Glossaire
+## 19. Glossary
 
-| Terme | Définition |
+| Term | Definition |
 | --- | --- |
-| Personne aidée | Personne portant la montre et protégée par le système |
-| Aidant | Proche ou professionnel recevant les alertes |
-| Incident | Enregistrement unique correspondant à une chute possible |
-| `clientAlertId` | Identifiant créé côté client et partagé entre les transports |
-| Délai de grâce | Période de 30 secondes pendant laquelle l'alerte peut être annulée |
-| Reçu | Confirmation que l'application aidant a traité la notification |
-| Acquittement | Action actuelle indiquant qu'un aidant a vu l'alerte |
-| Prise en charge | Futur état indiquant quel aidant agit |
-| Relais | Transmission montre → téléphone → serveur |
-| Envoi direct | Transmission montre → serveur sans téléphone |
+| Assisted person | Person wearing the watch and protected by the system |
+| Caregiver | Family member or professional receiving the alerts |
+| Incident | Single record corresponding to a possible fall |
+| `clientAlertId` | Identifier created client-side and shared across transports |
+| Grace period | 30-second period during which the alert can be cancelled |
+| Receipt | Confirmation that the caregiver app has processed the notification |
+| Acknowledgement | Current action indicating that a caregiver has seen the alert |
+| Handling | Future state indicating which caregiver is acting |
+| Relay | Watch → phone → server transmission |
+| Direct submission | Watch → server transmission without a phone |

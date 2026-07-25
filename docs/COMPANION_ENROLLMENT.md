@@ -1,34 +1,39 @@
-# Enrôlement des montres — contrat et plan d'intégration
+# Watch enrollment — contract and integration plan
 
-> État de référence au 25 juillet 2026.
+> Reference status as of July 25, 2026.
 >
-> Le support serveur est disponible sur `main` depuis la PR
-> [#79](https://github.com/thlaure/Fall-Guardian/pull/79). L'application
-> téléphone peut créer et transmettre l'enrôlement. Les apps watchOS et Wear OS
-> ne le consomment pas encore.
+> Server support has been available on `main` since PR
+> [#79](https://github.com/thlaure/Fall-Guardian/pull/79). The phone
+> application can create and transmit the enrollment. The watchOS and Wear
+> OS apps do not consume it yet.
+>
+> This file owns the enrollment contract and its client PR breakdown (§6).
+> The overall system roadmap phases live in `docs/SYSTEM_OVERVIEW.md` (§14);
+> the current handoff state and next actionable task live in
+> `CURRENT_STATUS.md`.
 
-## 1. Objectif
+## 1. Goal
 
-Chaque montre doit devenir un appareil authentifié propre, rattaché à la même
-personne protégée que le téléphone. La montre ne reçoit jamais le jeton durable
-du téléphone.
+Each watch must become its own authenticated device, linked to the same
+protected person as the phone. The watch never receives the phone's
+durable token.
 
-Le parcours doit fonctionner sans saisie manuelle d'un secret long :
+The flow must work without manual entry of a long secret:
 
-1. le téléphone authentifié demande un enrôlement pour sa plateforme ;
-2. l'API retourne un jeton éphémère valable cinq minutes ;
-3. le téléphone transmet ce jeton à la montre associée ;
-4. la montre échange le jeton contre ses propres identifiants ;
-5. elle stocke ces identifiants de manière sécurisée ;
-6. elle peut ensuite envoyer directement incidents et annulations à l'API.
+1. the authenticated phone requests an enrollment for its platform;
+2. the API returns an ephemeral token valid for five minutes;
+3. the phone transmits this token to the associated watch;
+4. the watch exchanges the token for its own credentials;
+5. it stores these credentials securely;
+6. it can then send incidents and cancellations directly to the API.
 
-## 2. Contrat API disponible
+## 2. Available API contract
 
-### 2.1 Créer un enrôlement depuis le téléphone
+### 2.1 Create an enrollment from the phone
 
 ```http
 POST /api/v1/companion-enrollments
-Authorization: Bearer <deviceToken du téléphone>
+Authorization: Bearer <phone's deviceToken>
 Content-Type: application/json
 
 {
@@ -36,116 +41,118 @@ Content-Type: application/json
 }
 ```
 
-`platform` accepte uniquement `watchos` ou `wearos`.
+`platform` only accepts `watchos` or `wearos`.
 
-Réponse `201` :
+Response `201`:
 
 ```json
 {
-  "enrollmentToken": "<jeton de 64 caractères>",
+  "enrollmentToken": "<64-character token>",
   "expiresAt": "2026-07-25T10:05:00+00:00"
 }
 ```
 
-Seul un appareil rattaché à une personne protégée peut créer cet enrôlement.
-Un appareil aidant reçoit une erreur `422`. La création est limitée en débit
-par appareil protégé.
+Only a device linked to a protected person can create this enrollment. A
+caregiver device receives a `422` error. Creation is rate-limited per
+protected device.
 
-### 2.2 Consommer l'enrôlement depuis la montre
+### 2.2 Consume the enrollment from the watch
 
-Cet appel est public car la montre ne possède pas encore d'identifiants.
+This call is public because the watch does not yet have credentials.
 
 ```http
 POST /api/v1/companion-enrollments/claim
 Content-Type: application/json
 
 {
-  "enrollmentToken": "<jeton reçu du téléphone>",
+  "enrollmentToken": "<token received from the phone>",
   "platform": "watchos",
   "appVersion": "1.0.0"
 }
 ```
 
-Réponse `201` :
+Response `201`:
 
 ```json
 {
-  "deviceId": "<identifiant propre à la montre>",
-  "deviceToken": "<secret propre à la montre>"
+  "deviceId": "<watch-specific identifier>",
+  "deviceToken": "<watch-specific secret>"
 }
 ```
 
-Un jeton expiré, déjà utilisé ou présenté pour la mauvaise plateforme reçoit
-une erreur `404`. Une tentative avec mauvaise plateforme ne consomme pas le
-jeton. La consommation est atomique : deux demandes simultanées ne peuvent pas
-créer deux appareils.
+An expired token, one already used, or one presented for the wrong
+platform receives a `404` error. An attempt with the wrong platform does
+not consume the token. Consumption is atomic: two simultaneous requests
+cannot create two devices.
 
-### 2.3 Garanties serveur
+### 2.3 Server guarantees
 
-- durée de vie : cinq minutes ;
-- usage unique ;
-- plateforme imposée ;
-- stockage du jeton d'enrôlement uniquement sous forme de hash HMAC ;
-- rattachement automatique de la montre à la personne protégée ;
-- identifiants durables distincts pour téléphone et montre ;
-- déduplication des alertes par personne protégée + `clientAlertId`.
+- lifetime: five minutes;
+- single use;
+- platform enforced;
+- enrollment token stored only as an HMAC hash;
+- automatic linking of the watch to the protected person;
+- distinct durable credentials for phone and watch;
+- alert deduplication by protected person + `clientAlertId`.
 
-## 3. Responsabilités des clients
+## 3. Client responsibilities
 
-### Téléphone de la personne aidée
+### Assisted person's phone
 
-- proposer « Connecter la montre » seulement après enregistrement du téléphone ;
-- choisir la plateforme correcte sans laisser l'utilisateur la modifier ;
-- demander un nouvel enrôlement à chaque tentative ;
-- transmettre `enrollmentToken` et `expiresAt` via le canal local officiel ;
-- ne jamais persister le jeton éphémère au-delà du parcours ;
-- afficher attente, succès, expiration et nouvelle tentative ;
-- ne jamais transmettre son propre `deviceToken`.
+- offer "Connect the watch" only after the phone is registered;
+- choose the correct platform without letting the user change it;
+- request a new enrollment on each attempt;
+- transmit `enrollmentToken` and `expiresAt` via the official local
+  channel;
+- never persist the ephemeral token beyond the flow;
+- display waiting, success, expiration, and retry states;
+- never transmit its own `deviceToken`.
 
-### Montre
+### Watch
 
-- accepter uniquement un message d'enrôlement provenant de l'app associée ;
-- vérifier plateforme et expiration avant l'appel réseau ;
-- appeler `/claim` immédiatement ;
-- stocker `deviceId` et `deviceToken` dans le stockage sécurisé natif ;
-- confirmer le succès au téléphone sans lui renvoyer `deviceToken` ;
-- conserver les identifiants après redémarrage ;
-- remplacer proprement des identifiants invalides lors d'un nouvel enrôlement ;
-- ne jamais journaliser jeton d'enrôlement ou jeton d'appareil.
+- accept only an enrollment message coming from the associated app;
+- verify platform and expiration before the network call;
+- call `/claim` immediately;
+- store `deviceId` and `deviceToken` in native secure storage;
+- confirm success to the phone without sending back `deviceToken`;
+- retain the credentials after a restart;
+- cleanly replace invalid credentials during a new enrollment;
+- never log the enrollment token or the device token.
 
-### Stockage recommandé
+### Recommended storage
 
-| Plateforme | Secret durable | Données non sensibles |
+| Platform | Durable secret | Non-sensitive data |
 | --- | --- | --- |
-| watchOS | Keychain de l'extension | `deviceId`, version du schéma, date d'enrôlement |
-| Wear OS | Android Keystore + stockage chiffré | `deviceId`, version du schéma, date d'enrôlement |
-| iOS | Keychain existant | aucun jeton d'enrôlement durable |
-| Android | Keystore/stockage sécurisé existant | aucun jeton d'enrôlement durable |
+| watchOS | Extension Keychain | `deviceId`, schema version, enrollment date |
+| Wear OS | Android Keystore + encrypted storage | `deviceId`, schema version, enrollment date |
+| iOS | Existing Keychain | no durable enrollment token |
+| Android | Existing Keystore/secure storage | no durable enrollment token |
 
-## 4. Transport local de l'enrôlement
+## 4. Local enrollment transport
 
 ### watchOS
 
-Le téléphone crée le jeton, puis l'envoie avec `WCSession.sendMessage` si la
-montre est joignable. `transferUserInfo` sert de repli avant expiration.
+The phone creates the token, then sends it with `WCSession.sendMessage`
+if the watch is reachable. `transferUserInfo` serves as a fallback
+before expiration.
 
-Message proposé :
+Proposed message:
 
 ```json
 {
   "type": "companionEnrollment",
   "schemaVersion": 1,
   "platform": "watchos",
-  "enrollmentToken": "<jeton>",
+  "enrollmentToken": "<token>",
   "expiresAt": "2026-07-25T10:05:00+00:00"
 }
 ```
 
-L'URL de production doit venir de la configuration signée de l'application,
-pas du message reçu. Une URL de développement peut rester une option de build
-explicite.
+The production URL must come from the application's signed
+configuration, not from the received message. A development URL can
+remain an explicit build option.
 
-La montre répond uniquement avec :
+The watch replies only with:
 
 ```json
 {
@@ -157,103 +164,105 @@ La montre répond uniquement avec :
 
 ### Wear OS
 
-Le téléphone utilise `MessageClient` pour le chemin immédiat et exige exactement
-une montre connectée. Il refuse d'envoyer un secret si aucun nœud ou plusieurs
-nœuds sont présents, afin d'éviter que la mauvaise montre consomme le jeton.
+The phone uses `MessageClient` for the immediate path and requires
+exactly one connected watch. It refuses to send a secret if zero or
+multiple nodes are present, to avoid the wrong watch consuming the
+token.
 
-Un repli `DataClient` durable court pourra être ajouté avec le consommateur
-Wear OS. Il devra cibler sans ambiguïté la montre attendue et supprimer
-l'élément après succès ou expiration.
+A short-lived durable `DataClient` fallback can be added with the Wear
+OS consumer. It will need to unambiguously target the expected watch and
+remove the item after success or expiration.
 
-## 5. UX minimale
+## 5. Minimal UX
 
-État téléphone :
+Phone state:
 
 ```text
-Montre non connectée
-→ Connexion en cours
-→ Montre connectée
+Watch not connected
+→ Connecting
+→ Watch connected
 ```
 
-Erreurs récupérables :
+Recoverable errors:
 
-- montre hors de portée : garder l'écran ouvert et permettre « Réessayer » ;
-- jeton expiré : créer automatiquement un nouveau jeton ;
-- Internet absent sur montre : conserver l'état « Connexion en attente », puis
-  créer un nouveau jeton lorsque la montre retrouve un chemin réseau ;
-- identifiants déjà présents : afficher « Montre connectée » et proposer une
-  reconnexion explicite ;
-- changement de téléphone : permettre un nouvel enrôlement sans dupliquer les
-  incidents grâce à l'identité stable.
+- watch out of range: keep the screen open and allow "Retry";
+- expired token: automatically create a new token;
+- no Internet on the watch: keep the "Connection pending" state, then
+  create a new token when the watch regains a network path;
+- credentials already present: display "Watch connected" and offer an
+  explicit reconnection;
+- phone change: allow a new enrollment without duplicating incidents,
+  thanks to the stable identity.
 
-Ne pas afficher le jeton brut à l'utilisateur. Aucun QR code n'est nécessaire
-tant que téléphone et montre utilisent leur canal d'association natif.
+Do not display the raw token to the user. No QR code is necessary as
+long as the phone and watch use their native pairing channel.
 
-## 6. Découpage recommandé des prochaines PR
+## 6. Recommended breakdown of upcoming PRs
 
-### PR A — orchestration téléphone
+### PR A — phone orchestration
 
-- ✅ ajouter client API de création d'enrôlement dans l'app personne aidée ;
-- ✅ ajouter action et états « Connecter la montre » ;
-- ✅ transmettre le message versionné vers watchOS et Wear OS ;
-- ✅ ajouter tests Flutter et compiler les ponts natifs ;
-- ✅ ne pas inclure encore l'envoi direct des alertes.
+- ✅ add an enrollment-creation API client to the assisted person app;
+- ✅ add the "Connect the watch" action and states;
+- ✅ transmit the versioned message to watchOS and Wear OS;
+- ✅ add Flutter tests and build the native bridges;
+- ✅ do not yet include direct alert submission.
 
-### PR B — consommation watchOS
+### PR B — watchOS consumption
 
-- recevoir le message d'enrôlement ;
-- appeler `/claim` avec `URLSession` ;
-- stocker les identifiants dans Keychain ;
-- confirmer le succès à l'iPhone ;
-- couvrir succès, expiration, mauvais format, redémarrage et secret absent.
+- receive the enrollment message;
+- call `/claim` with `URLSession`;
+- store the credentials in Keychain;
+- confirm success to the iPhone;
+- cover success, expiration, malformed input, restart, and missing
+  secret.
 
-### PR C — consommation Wear OS
+### PR C — Wear OS consumption
 
-- recevoir le message via Data Layer ;
-- appeler `/claim` avec client HTTPS natif ;
-- stocker le secret via Android Keystore ;
-- confirmer le succès au téléphone ;
-- couvrir les mêmes cas que watchOS.
+- receive the message via the Data Layer;
+- call `/claim` with a native HTTPS client;
+- store the secret via Android Keystore;
+- confirm success to the phone;
+- cover the same cases as watchOS.
 
-### PR D — transport direct watchOS
+### PR D — direct watchOS transport
 
-- file persistante d'incidents et d'annulations ;
-- HTTPS authentifié avec identifiants montre ;
-- direct et relais lancés avec le même `clientAlertId` ;
-- reprise après perte réseau ou redémarrage.
+- persistent queue of incidents and cancellations;
+- authenticated HTTPS with watch credentials;
+- direct and relay launched with the same `clientAlertId`;
+- resumption after network loss or restart.
 
-### PR E — transport direct Wear OS et relais Android natif
+### PR E — direct Wear OS transport and native Android relay
 
-- file persistante côté montre ;
-- HTTPS direct ;
-- réception native Android indépendante de Flutter ;
-- reprise après processus tué ou redémarrage.
+- persistent queue on the watch side;
+- direct HTTPS;
+- native Android reception independent of Flutter;
+- resumption after a killed process or restart.
 
-## 7. Critères d'acceptation de l'enrôlement
+## 7. Enrollment acceptance criteria
 
-| Scénario | Résultat attendu |
+| Scenario | Expected result |
 | --- | --- |
-| Téléphone protégé + montre associée | Montre reçoit ses propres identifiants |
-| Aidant tente un enrôlement | Refus `422` |
-| Jeton utilisé deux fois | Première consommation réussie, seconde refusée |
-| Jeton expiré | Nouveau jeton créé sans intervention technique |
-| Plateforme incorrecte | Refus sans consommer le jeton |
-| Deux claims simultanés | Une seule montre créée |
-| Téléphone ou montre redémarre après succès | État connecté conservé |
-| Secret absent ou corrompu | Reconnexion proposée, aucun faux succès |
-| Journaux applicatifs inspectés | Aucun secret présent |
-| Montre réenrôlée | Nouvelle identité utilisable, incidents toujours dédupliqués par personne |
+| Protected phone + associated watch | Watch receives its own credentials |
+| Caregiver attempts an enrollment | `422` rejection |
+| Token used twice | First consumption succeeds, second rejected |
+| Expired token | New token created without technical intervention |
+| Incorrect platform | Rejection without consuming the token |
+| Two simultaneous claims | Only one watch created |
+| Phone or watch restarts after success | Connected state preserved |
+| Secret missing or corrupted | Reconnection offered, no false success |
+| Application logs inspected | No secret present |
+| Watch re-enrolled | New usable identity, incidents still deduplicated by person |
 
-## 8. Hors périmètre de l'enrôlement
+## 8. Out of scope for enrollment
 
-L'enrôlement ne garantit pas encore :
+Enrollment does not yet guarantee:
 
-- l'envoi direct d'une chute depuis la montre ;
-- le relais natif quand Flutter ne tourne pas ;
-- la reprise hors connexion ;
-- la révocation d'une montre perdue ;
-- l'affichage serveur de la liste des appareils compagnons ;
-- la rotation automatique du jeton durable.
+- direct submission of a fall from the watch;
+- native relay when Flutter is not running;
+- offline resumption;
+- revocation of a lost watch;
+- server-side display of the companion device list;
+- automatic rotation of the durable token.
 
-Ces points restent des incréments séparés. La révocation devra être traitée
-avant une diffusion commerciale.
+These items remain separate increments. Revocation will need to be
+addressed before a commercial release.
