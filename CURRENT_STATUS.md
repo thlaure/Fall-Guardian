@@ -171,13 +171,13 @@ versions, devices, network, and result for each case:
 - iOS app: `com.fallguardian.app`;
 - Watch app: `com.fallguardian.app.watchkitapp`;
 - Fall Detection capability request sent to Apple;
-- known state: approval pending;
-- consequence: physical validation of `CMFallDetectionManager` blocked or
-  incomplete until the capability is granted.
+- known state: approved (entitlement assigned to the account, 2026-07-25);
+- consequence: physical validation of `CMFallDetectionManager` is now
+  unblocked, pending capability configuration in the Xcode project and
+  refreshed provisioning profiles.
 
-After approval, regenerate or refresh the provisioning profiles before
-physical installation. Do not add certificates or profiles to the
-repository.
+Regenerate or refresh the provisioning profiles before physical
+installation. Do not add certificates or profiles to the repository.
 
 ### Access to hand over outside Git
 

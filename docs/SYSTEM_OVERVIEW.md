@@ -161,8 +161,9 @@ On `main`:
 - ✅ integration of the Watch target into the main iOS project;
 - ⚠️ a simple tap can cancel, which favors accidental cancellations;
 - ⚠️ no direct submission to the API;
-- ⚠️ physical installation blocked until Apple approves the Fall
-  Detection capability for the app identifier;
+- ⚠️ Apple approved the Fall Detection capability (2026-07-25); physical
+  installation still needs the capability configured in the Xcode project
+  and refreshed provisioning profiles;
 - ⚠️ exact behavior of Apple resolutions still to be validated on a real
   watch.
 
@@ -433,7 +434,8 @@ Local OpenAPI documentation is accessible at
 - ⚠️ `transferUserInfo` and locked-phone behavior require real devices;
 - ⚠️ Apple's system fall simulation runs into a Core Motion Simulator
   parsing error;
-- ⚠️ Apple Fall Detection approval is still pending.
+- ⚠️ Apple Fall Detection approval received (2026-07-25); physical
+  validation itself remains untested.
 
 ## 11. Recently merged changes
 
@@ -441,7 +443,7 @@ Local OpenAPI documentation is accessible at
 | --- | --- | --- |
 | [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Reloading caregiver history after an error | ✅ Merged into `main` |
 | [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Single delay for an active incident and iOS text fix | ✅ Merged into `main` |
-| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Background Apple detection | ✅ Merged into `main`, physical validation pending from Apple |
+| [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Background Apple detection | ✅ Merged into `main`, Apple approval received 2026-07-25, physical validation still pending |
 | [#76](https://github.com/thlaure/Fall-Guardian/pull/76) | Functional documentation and target architecture | ✅ Merged into `main` |
 | [#77](https://github.com/thlaure/Fall-Guardian/pull/77) | Versioned incident contract and server deadline | ✅ Merged into `main` |
 | [#78](https://github.com/thlaure/Fall-Guardian/pull/78) | Stable identity and multi-device deduplication | ✅ Merged into `main` |
