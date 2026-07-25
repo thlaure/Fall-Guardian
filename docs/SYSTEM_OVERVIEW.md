@@ -366,6 +366,8 @@ Principaux points d'entrée :
 
 ```text
 POST   /api/v1/devices/register
+POST   /api/v1/companion-enrollments
+POST   /api/v1/companion-enrollments/claim
 POST   /api/v1/fall-alerts
 GET    /api/v1/fall-alerts/{id}
 POST   /api/v1/fall-alerts/{clientAlertId}/cancel
@@ -549,7 +551,8 @@ Politique proposée :
 
 - ✅ ajouter l'identité stable de personne protégée et le support serveur de
   plusieurs appareils compagnons ;
-- créer l'enrôlement sécurisé d'une montre ;
+- ✅ créer l'enrôlement serveur sécurisé d'une montre : jeton haché, limité à
+  cinq minutes, lié à une plateforme et consommable une seule fois ;
 - dédupliquer par personne + incident ;
 - ✅ ajouter `revision`, `detectionSource` et `resolution` sans casser les anciens
   clients ; `locale` existait déjà ;

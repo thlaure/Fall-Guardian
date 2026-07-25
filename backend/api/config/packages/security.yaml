@@ -17,6 +17,7 @@ security:
         - { path: ^/health$, roles: PUBLIC_ACCESS }
         - { path: ^/api$, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1/devices/register$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/v1/companion-enrollments/claim$, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1, roles: ROLE_DEVICE }
 
 when@test:

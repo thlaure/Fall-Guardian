@@ -110,6 +110,14 @@ final class ApiContext implements Context
             ?? throw new RuntimeException('No caregiver registered yet.');
     }
 
+    /**
+     * @Given I am not authenticated
+     */
+    public function iAmNotAuthenticated(): void
+    {
+        $this->currentToken = '';
+    }
+
     // ─── When ──────────────────────────────────────────────────────────────────
 
     /**
@@ -126,7 +134,7 @@ final class ApiContext implements Context
     public function iSendAPostRequestToWith(string $path, PyStringNode $body): void
     {
         /** @var array<mixed> $data */
-        $data = json_decode($body->getRaw(), true, 512, JSON_THROW_ON_ERROR);
+        $data = json_decode($this->interpolate($body->getRaw()), true, 512, JSON_THROW_ON_ERROR);
         $this->sendRequest(Request::METHOD_POST, $this->interpolate($path), $data);
     }
 
@@ -136,7 +144,7 @@ final class ApiContext implements Context
     public function iSendAPutRequestToWith(string $path, PyStringNode $body): void
     {
         /** @var array<mixed> $data */
-        $data = json_decode($body->getRaw(), true, 512, JSON_THROW_ON_ERROR);
+        $data = json_decode($this->interpolate($body->getRaw()), true, 512, JSON_THROW_ON_ERROR);
         $this->sendRequest(Request::METHOD_PUT, $this->interpolate($path), $data);
     }
 

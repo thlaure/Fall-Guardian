@@ -28,7 +28,10 @@ final class DeviceTokenAuthenticator extends AbstractAuthenticator
             return false;
         }
 
-        return '/api/v1/devices/register' !== $request->getPathInfo();
+        return !in_array($request->getPathInfo(), [
+            '/api/v1/devices/register',
+            '/api/v1/companion-enrollments/claim',
+        ], true);
     }
 
     public function authenticate(Request $request): SelfValidatingPassport
