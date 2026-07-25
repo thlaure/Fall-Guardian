@@ -35,6 +35,7 @@ final class DeviceTokenAuthenticatorTest extends TestCase
     {
         self::assertTrue($this->authenticator->supports(Request::create('/api/v1/alerts')));
         self::assertFalse($this->authenticator->supports(Request::create('/api/v1/devices/register')));
+        self::assertFalse($this->authenticator->supports(Request::create('/api/v1/companion-enrollments/claim')));
         self::assertFalse($this->authenticator->supports(Request::create('/health')));
     }
 
