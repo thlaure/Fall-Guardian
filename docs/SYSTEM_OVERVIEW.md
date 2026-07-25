@@ -106,6 +106,8 @@ L'ouverture de l'application ne devra jamais être nécessaire.
 - ✅ historique local des détections et de leur résultat ;
 - ✅ conservation explicite d'une annulation non confirmée par le serveur ;
 - ✅ affichage d'un avertissement si les aidants peuvent déjà être prévenus ;
+- ✅ création d'un enrôlement compagnon et transmission versionnée vers la
+  montre associée depuis les paramètres ;
 - ⚠️ la position n'est pas exigée pour créer l'alerte : elle peut arriver après ;
 - ⚠️ un ancien texte Android parle encore d'un SMS, alors qu'aucun SMS n'est
   envoyé ;
@@ -447,7 +449,7 @@ base commune.
 - 🔴 les relais natifs téléphone dépendent encore de Flutter ;
 - 🔴 le cas Android avec processus tué n'est pas sûr ;
 - 🔴 la file hors connexion n'est pas unifiée et durable de bout en bout ;
-- 🔴 les apps n'utilisent pas encore le nouvel enrôlement compagnon ;
+- 🔴 les apps montres ne consomment pas encore le nouvel enrôlement compagnon ;
 - 🔴 la politique de nouvelle notification sans réponse aidant est incomplète ;
 - ⚠️ l'heure de départ du délai diffère entre certaines interfaces montre et le
   serveur ;
@@ -584,8 +586,8 @@ Politique proposée :
 
 ### Phase 2 — relais natif téléphone
 
-- intégrer la création d'enrôlement dans l'app personne aidée ;
-- transmettre le jeton éphémère à la montre associée ;
+- ✅ intégrer la création d'enrôlement dans l'app personne aidée ;
+- ✅ transmettre le jeton éphémère à la montre associée ;
 - implémenter file persistante et transport natif iOS ;
 - implémenter réception et transport natifs Android ;
 - transmettre sans ouvrir Flutter ;

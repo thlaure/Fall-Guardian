@@ -129,6 +129,30 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get settingsSaved => 'Paramètres enregistrés';
   @override
+  String get watchConnectionSection => 'Connexion de la montre';
+  @override
+  String get watchNotConnected => 'Montre non connectée';
+  @override
+  String get watchConnectionStarting => 'Connexion sécurisée en cours…';
+  @override
+  String get watchConnectionWaiting =>
+      'En attente de la fin de la configuration sur la montre';
+  @override
+  String get watchConnectionFailed =>
+      'Impossible d’envoyer la configuration. Vérifiez que la montre est proche.';
+  @override
+  String get watchConnectionExpired =>
+      'La configuration de la montre a expiré. Réessayez.';
+  @override
+  String get connectWatch => 'Connecter la montre';
+  @override
+  String get retryWatchConnection => 'Réessayer';
+  @override
+  String watchConnectionExpires(DateTime expiresAt) =>
+      'Configuration valable jusqu’à '
+      '${expiresAt.hour.toString().padLeft(2, '0')}:'
+      '${expiresAt.minute.toString().padLeft(2, '0')}';
+  @override
   String get thresholdsSection => 'Seuils de détection de chutes';
   @override
   String get thresholdsInfo =>

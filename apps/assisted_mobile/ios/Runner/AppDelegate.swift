@@ -194,8 +194,22 @@ import WatchConnectivity
             case "sendCancelAlert":
                 self?.watchSession?.sendCancelAlert()
 
+            case "sendCompanionEnrollment":
+                guard let args = call.arguments as? [String: Any],
+                      self?.watchSession?.sendCompanionEnrollment(args) == true else {
+                    result(
+                        FlutterError(
+                            code: "WATCH_UNAVAILABLE",
+                            message: "No paired Apple Watch can receive enrollment.",
+                            details: nil
+                        )
+                    )
+                    return
+                }
+
             default:
-                break
+                result(FlutterMethodNotImplemented)
+                return
             }
 
             // result(nil) tells Flutter the method call completed with no return value.

@@ -1,12 +1,21 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
+import '../services/companion_enrollment_service.dart';
 import '../services/watch_communication_service.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({
+    super.key,
+    required this.enrollmentCoordinator,
+    this.platformOverride,
+  });
+
+  final CompanionEnrollmentCoordinator enrollmentCoordinator;
+  final CompanionPlatform? platformOverride;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -18,11 +27,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _tiltThreshold = 45.0;
   int _freeFallMinMs = 80;
   bool _loading = true;
+  _EnrollmentState _enrollmentState = _EnrollmentState.idle;
+  DateTime? _enrollmentExpiresAt;
+  Timer? _enrollmentExpiryTimer;
 
   static const _kFreeFall = 'thresh_freefall';
   static const _kImpact = 'thresh_impact';
   static const _kTilt = 'thresh_tilt';
   static const _kFreeFallMs = 'thresh_freefall_ms';
+
+  CompanionPlatform get _companionPlatform =>
+      widget.platformOverride ??
+      (Platform.isIOS ? CompanionPlatform.watchOS : CompanionPlatform.wearOS);
 
   @override
   void initState() {
@@ -64,6 +80,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _connectWatch() async {
+    _enrollmentExpiryTimer?.cancel();
+    setState(() {
+      _enrollmentState = _EnrollmentState.sending;
+      _enrollmentExpiresAt = null;
+    });
+
+    try {
+      final enrollment = await widget.enrollmentCoordinator.start(
+        _companionPlatform,
+      );
+      if (!mounted) return;
+      setState(() {
+        _enrollmentState = _EnrollmentState.waitingForWatch;
+        _enrollmentExpiresAt = enrollment.expiresAt;
+      });
+      final remaining = enrollment.expiresAt.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
+        _markEnrollmentExpired();
+      } else {
+        _enrollmentExpiryTimer = Timer(remaining, _markEnrollmentExpired);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _enrollmentState = _EnrollmentState.failed);
+    }
+  }
+
+  void _markEnrollmentExpired() {
+    if (!mounted || _enrollmentState != _EnrollmentState.waitingForWatch) {
+      return;
+    }
+    setState(() {
+      _enrollmentState = _EnrollmentState.expired;
+      _enrollmentExpiresAt = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _enrollmentExpiryTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -79,6 +139,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
+                _sectionHeader(l10n.watchConnectionSection, cs),
+                const SizedBox(height: 8),
+                _watchConnectionCard(l10n, cs),
+                const SizedBox(height: 32),
                 _sectionHeader(l10n.thresholdsSection, cs),
                 const SizedBox(height: 8),
                 _infoCard(l10n.thresholdsInfo, cs),
@@ -167,6 +231,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
+  Widget _watchConnectionCard(AppLocalizations l10n, ColorScheme cs) {
+    final sending = _enrollmentState == _EnrollmentState.sending;
+    final waiting = _enrollmentState == _EnrollmentState.waitingForWatch;
+    final failed = _enrollmentState == _EnrollmentState.failed;
+    final retryable = failed || _enrollmentState == _EnrollmentState.expired;
+    final status = switch (_enrollmentState) {
+      _EnrollmentState.idle => l10n.watchNotConnected,
+      _EnrollmentState.sending => l10n.watchConnectionStarting,
+      _EnrollmentState.waitingForWatch => l10n.watchConnectionWaiting,
+      _EnrollmentState.failed => l10n.watchConnectionFailed,
+      _EnrollmentState.expired => l10n.watchConnectionExpired,
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  waiting ? Icons.watch_outlined : Icons.watch_off_outlined,
+                  color: failed ? cs.error : cs.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(status)),
+                if (sending)
+                  const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            if (_enrollmentExpiresAt != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                l10n.watchConnectionExpires(
+                  _enrollmentExpiresAt!.toLocal(),
+                ),
+                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: sending ? null : _connectWatch,
+              icon: const Icon(Icons.link),
+              label: Text(
+                retryable ? l10n.retryWatchConnection : l10n.connectWatch,
+                // Expired and delivery-failed states both restart safely with
+                // a new one-time token.
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _sliderTile({
     required String label,
     required double value,
@@ -222,4 +345,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
+}
+
+enum _EnrollmentState {
+  idle,
+  sending,
+  waitingForWatch,
+  failed,
+  expired,
 }

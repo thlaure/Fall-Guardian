@@ -4,6 +4,8 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/services.dart';
 
+import 'companion_enrollment_service.dart';
+
 // ─── Type aliases (typedefs) ──────────────────────────────────────────────────
 // These give meaningful names to plain function signatures so the rest of the
 // code reads like English ("a FallDetectedCallback is a function that takes an
@@ -151,6 +153,17 @@ class WatchCommunicationService {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Hands a short-lived, platform-bound enrollment token to native code.
+  ///
+  /// Unlike best-effort alert UI commands, enrollment errors are propagated so
+  /// the settings screen never claims that setup started when native delivery
+  /// could not be queued.
+  static Future<void> sendCompanionEnrollment(
+    CompanionEnrollmentMessage message,
+  ) {
+    return _channel.invokeMethod('sendCompanionEnrollment', message.toMap());
   }
 
   /// Pushes detection threshold values to the connected watch(es).
