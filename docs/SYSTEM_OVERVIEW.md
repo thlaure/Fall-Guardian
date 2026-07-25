@@ -370,7 +370,8 @@ jeton à usage unique pour une plateforme. La montre échange ce jeton dans les
 cinq minutes contre ses propres `deviceId` et `deviceToken`. Le serveur ne
 stocke que le hash HMAC du jeton d'enrôlement. Une plateforme incorrecte ne le
 consomme pas ; un jeton expiré ou déjà utilisé est refusé. L'intégration de ce
-parcours dans les applications téléphone et montre reste à implémenter.
+parcours est disponible côté téléphone ; sa consommation reste à implémenter
+dans les apps watchOS et Wear OS.
 
 Le contrat détaillé et l'ordre d'implémentation client sont décrits dans
 [`COMPANION_ENROLLMENT.md`](COMPANION_ENROLLMENT.md).
@@ -415,6 +416,7 @@ La documentation OpenAPI locale est accessible sur
 - ✅ reçus et acquittements idempotents ;
 - ✅ contrat d'incident versionné et déduplication multi-appareils ;
 - ✅ création et consommation d'un enrôlement compagnon sécurisé ;
+- ✅ création et transmission de l'enrôlement depuis l'app personne aidée ;
 - ✅ tests Flutter et analyse statique des applications mobiles ;
 - ✅ lint, tests et build Wear OS ;
 - ✅ analyse, build et tests watchOS ;
@@ -437,6 +439,8 @@ La documentation OpenAPI locale est accessible sur
 | [#77](https://github.com/thlaure/Fall-Guardian/pull/77) | Contrat d'incident versionné et échéance serveur | ✅ Fusionnée sur `main` |
 | [#78](https://github.com/thlaure/Fall-Guardian/pull/78) | Identité stable et déduplication multi-appareils | ✅ Fusionnée sur `main` |
 | [#79](https://github.com/thlaure/Fall-Guardian/pull/79) | Enrôlement sécurisé watchOS et Wear OS côté serveur | ✅ Fusionnée sur `main` |
+| [#80](https://github.com/thlaure/Fall-Guardian/pull/80) | Contrat client et plan d'intégration des montres | ✅ Fusionnée sur `main` |
+| [#81](https://github.com/thlaure/Fall-Guardian/pull/81) | Création et transmission de l'enrôlement depuis l'app aidée | ✅ Fusionnée sur `main` |
 
 Les changements d'architecture ci-dessous peuvent maintenant partir de cette
 base commune.
@@ -563,7 +567,7 @@ Politique proposée :
 
 ### Phase 0 — stabiliser l'existant
 
-- ✅ PR #73 à #79 fusionnées après CI ;
+- ✅ PR #73 à #81 fusionnées après CI ;
 - corriger le texte SMS Android restant ;
 - ✅ compte à rebours conservé lors des événements dupliqués ;
 - tester iPhone verrouillé + vraie Apple Watch ;

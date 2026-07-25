@@ -10,8 +10,9 @@ submitting alerts, managing emergency contacts, and syncing with the backend.
 - Start a clear, cancellable local fall-alert countdown.
 - Submit uncancelled fall alerts to the backend.
 - Record cancelled alerts through the backend so caregivers can see history.
+- Create short-lived watch enrollments and hand them to the paired watch.
 - Manage emergency contacts.
-- Send local notifications and SMS fallback where supported.
+- Send local notifications for active fall handling.
 - Keep backend, caregiver, Wear OS, and watchOS contracts aligned.
 
 ## User Flow
@@ -19,13 +20,14 @@ submitting alerts, managing emergency contacts, and syncing with the backend.
 ```text
 watch reports fall event
 -> assisted app opens alert countdown
+-> assisted app immediately registers the incident with the backend
 -> assisted user can cancel before escalation
--> if not cancelled, app sends alert to backend
--> backend notifies linked caregivers
+-> backend notifies linked caregivers after its grace period when not cancelled
 ```
 
-The assisted app is the coordinator. Watches detect; the phone decides whether
-the alert is cancelled or escalated.
+The backend owns the authoritative grace-period deadline after registration.
+The assisted app coordinates local presentation, cancellation, watch
+communication, and deferred location attachment.
 
 ## Code Layout
 
@@ -52,10 +54,10 @@ lib/
     ├── alert_runtime.dart
     ├── app_bootstrap_service.dart
     ├── backend_api_service.dart
+    ├── companion_enrollment_service.dart
     ├── location_service.dart
     ├── notification_service.dart
     ├── secure_store.dart
-    ├── sms_service.dart
     └── watch_communication_service.dart
 ```
 
@@ -64,9 +66,10 @@ Important services:
 - `AlertCoordinator`: orchestrates detection, countdown, cancellation, and
   escalation.
 - `BackendApiService`: talks to the Symfony backend.
+- `CompanionEnrollmentCoordinator`: creates a five-minute one-time enrollment
+  and immediately hands it to the native watch bridge.
 - `WatchCommunicationService`: receives watch-side fall events.
 - `NotificationService`: owns local mobile notifications.
-- `SmsService`: sends configured emergency SMS messages when available.
 - `SecureStore`: stores sensitive local values.
 
 ## Requirements
@@ -187,7 +190,8 @@ Prioritize tests around:
 - local storage migrations;
 - contact validation;
 - watch communication boundaries;
-- notification and SMS failure paths.
+- enrollment creation, expiry, platform binding, and native delivery failures;
+- notification failure paths.
 
 Keep coverage at or above 90% where practical, but do not add tests that only
 execute lines without proving behavior.
