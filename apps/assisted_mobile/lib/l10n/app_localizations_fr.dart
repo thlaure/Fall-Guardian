@@ -141,6 +141,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get watchConnectionFailed =>
       'Impossible d’envoyer la configuration. Vérifiez que la montre est proche.';
   @override
+  String get watchConnectionAppMissing =>
+      'Installez Fall Guardian sur votre montre, puis réessayez.';
+  @override
+  String get watchConnectionNotPaired =>
+      'Aucune montre n’est encore associée à ce téléphone.';
+  @override
+  String get watchConnectionNotReady =>
+      'La connexion à la montre démarre encore. Réessayez dans un instant.';
+  @override
   String get watchConnectionExpired =>
       'La configuration de la montre a expiré. Réessayez.';
   @override

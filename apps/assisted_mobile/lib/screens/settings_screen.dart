@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../services/companion_enrollment_service.dart';
@@ -30,6 +32,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   _EnrollmentState _enrollmentState = _EnrollmentState.idle;
   DateTime? _enrollmentExpiresAt;
   Timer? _enrollmentExpiryTimer;
+
+  /// Machine-readable cause reported by the native watch bridge, used to show
+  /// the wearer what to actually do about it. Never contains the token.
+  String? _enrollmentFailureReason;
 
   static const _kFreeFall = 'thresh_freefall';
   static const _kImpact = 'thresh_impact';
@@ -85,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _enrollmentState = _EnrollmentState.sending;
       _enrollmentExpiresAt = null;
+      _enrollmentFailureReason = null;
     });
 
     try {
@@ -102,11 +109,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         _enrollmentExpiryTimer = Timer(remaining, _markEnrollmentExpired);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      // Watch pairing is a safety-critical setup step. Swallowing the cause
+      // makes a failed pairing impossible to diagnose from a bug report, so
+      // log it; the native side reports which precondition failed (for
+      // example `watch_app_not_installed`) without exposing the token.
+      developer.log(
+        'companion enrollment failed',
+        name: 'SettingsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) return;
-      setState(() => _enrollmentState = _EnrollmentState.failed);
+      setState(() {
+        _enrollmentState = _EnrollmentState.failed;
+        _enrollmentFailureReason =
+            error is PlatformException && error.details is String
+                ? error.details as String
+                : null;
+      });
     }
   }
+
+  /// Maps the native bridge's failure cause to advice the wearer can act on.
+  /// An unrecognised or absent cause falls back to the generic message so a
+  /// new native reason can never leave the card blank.
+  String _enrollmentFailureMessage(AppLocalizations l10n) =>
+      switch (_enrollmentFailureReason) {
+        'watch_app_not_installed' => l10n.watchConnectionAppMissing,
+        'watch_not_paired' => l10n.watchConnectionNotPaired,
+        'session_not_activated' => l10n.watchConnectionNotReady,
+        _ => l10n.watchConnectionFailed,
+      };
 
   void _markEnrollmentExpired() {
     if (!mounted || _enrollmentState != _EnrollmentState.waitingForWatch) {
@@ -240,7 +274,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _EnrollmentState.idle => l10n.watchNotConnected,
       _EnrollmentState.sending => l10n.watchConnectionStarting,
       _EnrollmentState.waitingForWatch => l10n.watchConnectionWaiting,
-      _EnrollmentState.failed => l10n.watchConnectionFailed,
+      _EnrollmentState.failed => _enrollmentFailureMessage(l10n),
       _EnrollmentState.expired => l10n.watchConnectionExpired,
     };
 

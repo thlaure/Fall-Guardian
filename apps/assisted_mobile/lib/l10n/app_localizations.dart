@@ -85,6 +85,9 @@ abstract class AppLocalizations {
   String get watchConnectionStarting;
   String get watchConnectionWaiting;
   String get watchConnectionFailed;
+  String get watchConnectionAppMissing;
+  String get watchConnectionNotPaired;
+  String get watchConnectionNotReady;
   String get watchConnectionExpired;
   String get connectWatch;
   String get retryWatchConnection;
