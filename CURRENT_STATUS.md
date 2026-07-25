@@ -172,12 +172,15 @@ versions, devices, network, and result for each case:
 - Watch app: `com.fallguardian.app.watchkitapp`;
 - Fall Detection capability request sent to Apple;
 - known state: approved (entitlement assigned to the account, 2026-07-25);
-- consequence: physical validation of `CMFallDetectionManager` is now
-  unblocked, pending capability configuration in the Xcode project and
-  refreshed provisioning profiles.
+- verified 2026-07-25: `xcodebuild -allowProvisioningUpdates` produces a
+  signed watchOS build whose embedded entitlements confirm
+  `com.apple.developer.health.fall-detection = true` under team
+  `PTXCAH5P4R` — the capability is correctly configured and the
+  provisioning profile is current;
+- consequence: physical validation of `CMFallDetectionManager` on a real
+  Apple Watch is no longer blocked by capability or signing state.
 
-Regenerate or refresh the provisioning profiles before physical
-installation. Do not add certificates or profiles to the repository.
+Do not add certificates or profiles to the repository.
 
 ### Access to hand over outside Git
 

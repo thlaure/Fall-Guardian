@@ -161,9 +161,9 @@ On `main`:
 - ✅ integration of the Watch target into the main iOS project;
 - ⚠️ a simple tap can cancel, which favors accidental cancellations;
 - ⚠️ no direct submission to the API;
-- ⚠️ Apple approved the Fall Detection capability (2026-07-25); physical
-  installation still needs the capability configured in the Xcode project
-  and refreshed provisioning profiles;
+- ⚠️ Apple approved the Fall Detection capability (2026-07-25) and the
+  signed build has been verified to embed it correctly under team
+  `PTXCAH5P4R`; physical installation on a real Apple Watch is untested;
 - ⚠️ exact behavior of Apple resolutions still to be validated on a real
   watch.
 
