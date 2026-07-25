@@ -8,6 +8,8 @@ use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 use App\Shared\DateTime\ApiDateTimeFormatter;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
@@ -31,17 +33,21 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
     ) {
     }
 
-    public function createAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
+    public function createAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude, int $revision = 1, FallDetectionSource $detectionSource = FallDetectionSource::AssistedPhone, FallResolution $resolution = FallResolution::Unknown): FallAlert
     {
         $fallTimestamp = ApiDateTimeFormatter::normalizeToUtc($fallTimestamp);
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
 
         if ($existing instanceof FallAlert) {
+            if ($existing->applyNewerIncidentMetadata($revision, $detectionSource, $resolution)) {
+                $this->fallAlertRepository->save($existing);
+            }
+
             return $existing;
         }
 
         $now = $this->clock->now();
-        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now);
+        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now, $revision, $detectionSource, $resolution);
         $this->fallAlertRepository->save($alert);
 
         $this->messageBus->dispatch(
@@ -59,17 +65,25 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
         return max(0, (int) round($remainingSeconds * 1000));
     }
 
-    public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude): FallAlert
+    public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude, int $revision = 1, FallDetectionSource $detectionSource = FallDetectionSource::AssistedPhone, FallResolution $resolution = FallResolution::Unknown): FallAlert
     {
         $fallTimestamp = ApiDateTimeFormatter::normalizeToUtc($fallTimestamp);
         $existing = $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId);
         $now = $this->clock->now();
 
         if ($existing instanceof FallAlert) {
+            if ($revision < $existing->getRevision()) {
+                return $existing;
+            }
+
+            if ($existing->applyNewerIncidentMetadata($revision, $detectionSource, $resolution)) {
+                $this->fallAlertRepository->save($existing);
+            }
+
             return $this->fallAlertRepository->cancelPending($device, $clientAlertId, $now) ?? $existing;
         }
 
-        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now);
+        $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now, $revision, $detectionSource, $resolution);
         $alert->cancel($now);
         $this->fallAlertRepository->save($alert);
 

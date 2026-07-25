@@ -10,6 +10,8 @@ use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
@@ -43,6 +45,9 @@ final class FallAlertProviderTest extends TestCase
         $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(null);
+        $alert->method('getRevision')->willReturn(3);
+        $alert->method('getDetectionSource')->willReturn(FallDetectionSource::AppleWatch);
+        $alert->method('getResolution')->willReturn(FallResolution::Unresponsive);
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
         $this->alertIngestionService->method('getAlertForDevice')->willReturn($alert);
@@ -50,6 +55,9 @@ final class FallAlertProviderTest extends TestCase
         $result = $this->provider->provide($this->createMock(Operation::class), ['id' => 'some-uuid']);
 
         $this->assertSame('client-001', $result->clientAlertId);
+        $this->assertSame(3, $result->revision);
+        $this->assertSame('apple_watch', $result->detectionSource);
+        $this->assertSame('unresponsive', $result->resolution);
     }
 
     #[Test]

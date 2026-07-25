@@ -10,6 +10,8 @@ use App\Domain\Alert\Service\AlertIngestionServiceInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
@@ -90,6 +92,9 @@ final class CancelFallAlertProcessorTest extends TestCase
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(new DateTimeImmutable());
+        $alert->method('getRevision')->willReturn(1);
+        $alert->method('getDetectionSource')->willReturn(FallDetectionSource::AssistedPhone);
+        $alert->method('getResolution')->willReturn(FallResolution::Unknown);
 
         return $alert;
     }

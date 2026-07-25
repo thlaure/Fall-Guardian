@@ -7,6 +7,8 @@ namespace App\Tests\Unit\Entity;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 
 use const DATE_ATOM;
 
@@ -161,5 +163,27 @@ final class FallAlertTest extends TestCase
         $alert->markDeliveryReceived($first->modify('+5 seconds'));
 
         self::assertSame($first, $alert->getFirstDeliveryReceiptAt());
+    }
+
+    #[Test]
+    public function itStoresTheCrossTransportIncidentMetadata(): void
+    {
+        $device = new Device('device-1', 'hash', 'ios', '1.0.0');
+        $alert = new FallAlert(
+            $device,
+            'client-watch-001',
+            new DateTimeImmutable('2026-07-25T06:00:00+00:00'),
+            'fr',
+            null,
+            null,
+            new DateTimeImmutable('2026-07-25T06:00:01+00:00'),
+            4,
+            FallDetectionSource::AppleWatch,
+            FallResolution::Unresponsive,
+        );
+
+        self::assertSame(4, $alert->getRevision());
+        self::assertSame(FallDetectionSource::AppleWatch, $alert->getDetectionSource());
+        self::assertSame(FallResolution::Unresponsive, $alert->getResolution());
     }
 }

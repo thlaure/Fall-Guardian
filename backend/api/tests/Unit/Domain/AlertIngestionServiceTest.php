@@ -9,6 +9,8 @@ use App\Domain\Alert\Service\AlertIngestionService;
 use App\Entity\Device;
 use App\Entity\FallAlert;
 use App\Enum\FallAlertStatus;
+use App\Enum\FallDetectionSource;
+use App\Enum\FallResolution;
 
 use const DATE_ATOM;
 
@@ -137,6 +139,10 @@ final class AlertIngestionServiceTest extends TestCase
     {
         $device = $this->createMock(Device::class);
         $existing = $this->createMock(FallAlert::class);
+        $existing->expects($this->once())
+            ->method('applyNewerIncidentMetadata')
+            ->with(1, FallDetectionSource::AssistedPhone, FallResolution::Unknown)
+            ->willReturn(false);
 
         $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($existing);
         $this->repository->expects($this->never())->method('save');
@@ -145,6 +151,41 @@ final class AlertIngestionServiceTest extends TestCase
         $result = $this->service->createAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
 
         self::assertSame($existing, $result);
+    }
+
+    #[Test]
+    public function itAppliesOnlyNewerMetadataWithoutDispatchingAnotherMessage(): void
+    {
+        $device = new Device('device-1', 'hash', 'ios', '1.0.0');
+        $existing = new FallAlert(
+            $device,
+            'client-001',
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+        );
+
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($existing);
+        $this->repository->expects($this->once())->method('save')->with($existing);
+        $this->bus->expects($this->never())->method('dispatch');
+
+        $result = $this->service->createAlert(
+            $device,
+            'client-001',
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+            2,
+            FallDetectionSource::AppleWatch,
+            FallResolution::Confirmed,
+        );
+
+        self::assertSame($existing, $result);
+        self::assertSame(2, $result->getRevision());
+        self::assertSame(FallDetectionSource::AppleWatch, $result->getDetectionSource());
+        self::assertSame(FallResolution::Confirmed, $result->getResolution());
     }
 
     #[Test]
@@ -174,6 +215,11 @@ final class AlertIngestionServiceTest extends TestCase
     {
         $device = $this->createMock(Device::class);
         $existing = $this->createMock(FallAlert::class);
+        $existing->method('getRevision')->willReturn(1);
+        $existing->expects($this->once())
+            ->method('applyNewerIncidentMetadata')
+            ->with(1, FallDetectionSource::AssistedPhone, FallResolution::Unknown)
+            ->willReturn(false);
 
         $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($existing);
         $this->repository->expects($this->once())
@@ -186,6 +232,45 @@ final class AlertIngestionServiceTest extends TestCase
         $result = $this->service->createCancelledAlert($device, 'client-001', new DateTimeImmutable(), 'en', null, null);
 
         self::assertSame($existing, $result);
+    }
+
+    #[Test]
+    public function itIgnoresStaleCancellationEvents(): void
+    {
+        $device = new Device('device-1', 'hash', 'ios', '1.0.0');
+        $existing = new FallAlert(
+            $device,
+            'client-001',
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+            null,
+            3,
+            FallDetectionSource::AppleWatch,
+            FallResolution::Confirmed,
+        );
+
+        $this->repository->method('findOneByDeviceAndClientAlertId')->willReturn($existing);
+        $this->repository->expects($this->never())->method('cancelPending');
+        $this->repository->expects($this->never())->method('save');
+
+        $result = $this->service->createCancelledAlert(
+            $device,
+            'client-001',
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+            2,
+            FallDetectionSource::AssistedPhone,
+            FallResolution::Dismissed,
+        );
+
+        self::assertSame($existing, $result);
+        self::assertSame(FallAlertStatus::Received, $result->getStatus());
+        self::assertSame(3, $result->getRevision());
+        self::assertSame(FallResolution::Confirmed, $result->getResolution());
     }
 
     #[Test]

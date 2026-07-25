@@ -323,31 +323,40 @@ Les jetons d'authentification ne sont pas stockés en clair. Les secrets,
 certificats, profils de signature et fichiers Firebase privés ne doivent jamais
 être ajoutés au dépôt.
 
-### Contrat d'incident cible
+### Contrat d'incident
 
-Le contrat commun à la montre, au téléphone et au serveur devra contenir :
+Le contrat de création accepte maintenant :
 
 ```text
 clientAlertId
 fallTimestamp
-state: detected | cancelled
+cancelled: true | false
 revision
 detectionSource
 resolution
 locale
-location (optionnelle)
+latitude et longitude (optionnelles)
 ```
 
-Le serveur devra retourner au minimum :
+`revision`, `detectionSource` et `resolution` restent optionnels pour préserver
+la compatibilité avec les applications déjà installées. Leurs valeurs par
+défaut sont respectivement `1`, `assisted_phone` et `unknown`.
+
+Le serveur retourne notamment :
 
 ```text
-serverReceivedAt
+receivedAt
 cancelDeadlineAt
 ```
 
+Les doublons sont encore identifiés par appareil + `clientAlertId`. Une révision
+plus récente met à jour les métadonnées de l'incident sans recréer l'alerte ni
+redéclencher la notification. Une annulation portant une révision plus ancienne
+que celle déjà enregistrée est refusée. Le passage à une identité stable de
+personne protégée reste nécessaire pour dédupliquer les chemins montre direct et
+relais téléphone.
+
 Tous les écrans devront utiliser `cancelDeadlineAt` comme échéance autoritative.
-Une `revision` supérieure empêchera un ancien message `detected` de recréer une
-alerte déjà `cancelled`.
 
 ### API actuelle
 
@@ -539,10 +548,12 @@ Politique proposée :
 - ajouter identité de personne protégée et identités compagnon ;
 - créer l'enrôlement sécurisé d'une montre ;
 - dédupliquer par personne + incident ;
-- ajouter `revision`, `detectionSource`, `resolution` et `locale` ;
-- retourner l'échéance serveur autoritative ;
-- définir les règles d'événements tardifs et désordonnés ;
-- ajouter tests unitaires, intégration et contrats.
+- ✅ ajouter `revision`, `detectionSource` et `resolution` sans casser les anciens
+  clients ; `locale` existait déjà ;
+- ✅ retourner l'échéance serveur autoritative ;
+- 🟡 définir les règles d'événements tardifs et désordonnés : révisions plus
+  récentes et annulations anciennes couvertes, transitions complètes restantes ;
+- 🟡 ajouter tests unitaires, intégration et contrats au fil des incréments.
 
 ### Phase 2 — relais natif téléphone
 
