@@ -29,7 +29,7 @@ import 'alert_ports.dart';
 ///   1. Call [initialize] once at app startup (in `main()`).
 ///   2. Call [showFallDetectedNotification] when a fall is detected and the
 ///      app is in the background.
-///   3. Call [cancelAll] when the alert is resolved (cancelled or SMS sent)
+///   3. Call [cancelAll] when the alert is resolved (cancelled or sent)
 ///      to remove the notification from the notification shade.
 class NotificationService implements AlertNotificationGateway {
   // ── Singleton plugin instance ─────────────────────────────────────────────
@@ -153,7 +153,7 @@ class NotificationService implements AlertNotificationGateway {
 
   /// Removes all active Fall Guardian notifications from the notification shade.
   ///
-  /// Called after the alert is resolved (either cancelled or SMS sent) so the
+  /// Called after the alert is resolved (either cancelled or sent) so the
   /// user isn't left with a stale "Fall Detected" banner in their notification
   /// shade after the situation has already been handled.
   @override

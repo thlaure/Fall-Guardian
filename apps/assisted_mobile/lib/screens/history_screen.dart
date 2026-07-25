@@ -131,7 +131,7 @@ class _EventTile extends StatelessWidget {
           l10n.statusAlertSent,
         ),
       FallEventStatus.alertFailed => (
-          Icons.sms_failed,
+          Icons.error_outline,
           Colors.deepOrange,
           l10n.statusAlertFailed,
         ),

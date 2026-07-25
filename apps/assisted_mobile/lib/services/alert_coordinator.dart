@@ -47,7 +47,7 @@ class AlertUiState {
 class AlertCoordinator {
   /// The alert workflow is intentionally written in terms of ports instead of
   /// concrete repositories/plugins. That keeps this class focused on
-  /// "what should happen next?" rather than "how do we talk to storage/SMS?".
+  /// "what should happen next?" rather than "how do we talk to storage/push?".
   AlertCoordinator({
     required FallEventRecorder eventRecorder,
     required AlertLocationProvider locationProvider,
@@ -368,7 +368,7 @@ class AlertCoordinator {
       timestamp: timestamp,
       position: position,
       locale: _localeResolver.languageCode(),
-      alertFailedMessage: l10n.smsFailed,
+      alertFailedMessage: l10n.alertSubmissionFailed,
       alertSubmittedMessage: l10n.alertSubmitted,
     );
     if (outcome == null || !_isCurrentAlert(timestamp)) return;

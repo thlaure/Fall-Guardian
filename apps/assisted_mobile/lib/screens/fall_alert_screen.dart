@@ -61,7 +61,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
       _alertStateSub; // state updates from the coordinator
   StreamSubscription<void>?
       _dismissSub; // dismissal events from the coordinator
-  bool _sending = false; // true while the SMS-send flow is in progress
+  bool _sending = false; // true while the alert-send flow is in progress
   String _statusMessage = ''; // shown beneath the spinner while sending
   AlertPhase _phase = AlertPhase.countdown;
 
@@ -238,7 +238,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                 // ── Conditional body: spinner OR countdown + cancel button ─
                 // Once _sendAlert starts (_sending = true), replace the
                 // interactive countdown with a progress spinner and status text.
-                // The user can no longer cancel at this point — the SMS is already
+                // The user can no longer cancel at this point — the alert is already
                 // on its way.
                 _phase != AlertPhase.countdown
                     ? Column(
@@ -248,7 +248,7 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            _statusMessage, // "Getting location…" or "Sending SMS…"
+                            _statusMessage, // "Getting location…" or "Sending alert…"
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white70,

@@ -22,8 +22,8 @@ import java.nio.ByteBuffer
  * On /fall_event:
  *   • App in foreground  → invoke Flutter channel directly (FallAlertScreen appears immediately).
  *   • App in background  → show full-screen intent notification (wakes lock screen) AND start
- *                          the Flutter countdown immediately so the 30-second SMS timer runs
- *                          even if the user never taps the notification.
+ *                          the Flutter countdown immediately so the 30-second cancellation
+ *                          window runs even if the user never taps the notification.
  *   • App killed         → show full-screen intent notification; MainActivity reads the
  *                          fall_timestamp intent extra on launch and starts FallAlertScreen.
  *
@@ -123,8 +123,8 @@ class WearDataListenerService : WearableListenerService() {
         //   • On an unlocked screen → shows as a heads-up banner the user can tap.
         //
         // If the activity is alive but backgrounded we also call sendFallDetectedToFlutter
-        // immediately so the 30-second SMS countdown starts even if the user never taps
-        // the notification. A dedup guard in MainActivity prevents a double FallAlertScreen
+        // immediately so the 30-second cancellation countdown starts even if the user never
+        // taps the notification. A dedup guard in MainActivity prevents a double FallAlertScreen
         // if the user later taps the notification (which fires onNewIntent with the same
         // timestamp).
         showFallNotification(timestamp)
@@ -154,7 +154,7 @@ class WearDataListenerService : WearableListenerService() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ Fall Detected")
-            .setContentText("Open to cancel — emergency SMS sends in 30 seconds")
+            .setContentText("Open to cancel — caregivers are notified in 30 seconds")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setContentIntent(pendingIntent)  // tap anywhere on the banner opens the app
