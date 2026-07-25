@@ -140,6 +140,8 @@ When testing on a wired Android device, the mobile Makefiles can reverse
 Start with the system-level reference:
 
 - `docs/SYSTEM_OVERVIEW.md`
+- `docs/COMPANION_ENROLLMENT.md` for watch enrollment and next implementation
+  increments
 
 Read the project README closest to the code you are changing:
 
