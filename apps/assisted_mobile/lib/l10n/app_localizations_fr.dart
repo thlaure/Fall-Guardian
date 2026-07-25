@@ -79,7 +79,7 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get sendingAlert => "Envoi de l’alerte\u2026";
   @override
-  String get smsFailed =>
+  String get alertSubmissionFailed =>
       'Échec de l’envoi de l’alerte. Contactez vos aidants manuellement maintenant.';
   @override
   String get alertSubmitted =>
@@ -189,17 +189,4 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get notifBody =>
       'Ouvrez l\'app pour annuler ou envoyer une alerte dans 30 secondes';
-
-  // ── SMS ───────────────────────────────────────────────────────────────────
-  @override
-  String smsMessage(String locationLine) =>
-      '🚨 ALERTE CHUTE : Votre proche a peut-être fait une chute et a besoin d\'aide.\n'
-      '$locationLine\n'
-      'Appelez-le ou rendez-vous auprès de lui immédiatement.\n'
-      '– Application Fall Guardian';
-  @override
-  String get smsLocationUnavailable => 'Position : indisponible';
-  @override
-  String smsLocationLine(double lat, double lng) =>
-      'Position : https://maps.google.com/?q=$lat,$lng';
 }

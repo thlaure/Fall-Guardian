@@ -223,7 +223,7 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       }
       // After countdown completes _sendAlert fires; it will be in _sending=true
-      // state (showing spinner) before async location/SMS complete.
+      // state (showing spinner) before async location/alert-submission complete.
       await tester.pump();
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       coordinator.dispose();

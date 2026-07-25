@@ -8,7 +8,6 @@ import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.os.Build
-import android.telephony.SmsManager
 import android.util.Log
 import android.util.Base64
 import com.google.android.gms.wearable.Wearable
@@ -50,9 +49,9 @@ class MainActivity : FlutterActivity() {
     // Tracks the last timestamp forwarded to Flutter so we never push two
     // FallAlertScreens for the same fall event.  This can happen when the app
     // is backgrounded: WearDataListenerService calls sendFallDetectedToFlutter()
-    // immediately (to start the SMS countdown) and also shows a notification;
-    // when the user taps the notification onNewIntent fires with the same
-    // timestamp — the dedup check here silently drops the duplicate.
+    // immediately (to start the cancellation countdown) and also shows a
+    // notification; when the user taps the notification onNewIntent fires with
+    // the same timestamp — the dedup check here silently drops the duplicate.
     @Volatile private var lastForwardedTimestamp = Long.MIN_VALUE
 
     /** True when the activity is currently visible to the user. */
@@ -86,37 +85,6 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "Missing enrollment payload", null)
                     } else {
                         sendCompanionEnrollmentToWatch(args, result)
-                    }
-                }
-                // Direct SMS send via Android SmsManager — no compose UI shown.
-                // Flutter calls this on Android instead of flutter_sms (which
-                // always opens the SMS app in v3.0.1).
-                "sendSms" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val args = call.arguments as? Map<String, Any>
-                    val message = args?.get("message") as? String ?: ""
-                    @Suppress("UNCHECKED_CAST")
-                    val recipients = args?.get("recipients") as? List<String> ?: emptyList()
-                    try {
-                        // On Android 12+ (API 31) SmsManager.getDefault() is deprecated;
-                        // use the context-based variant instead.
-                        val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            getSystemService(SmsManager::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            SmsManager.getDefault()
-                        }
-                        recipients.forEach { phone ->
-                            // divideMessage splits long texts into 160-char chunks
-                            // automatically, then sends them as a multipart SMS.
-                            val parts = smsManager.divideMessage(message)
-                            smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
-                            Log.d("MainActivity", "sendSms: sent to $phone")
-                        }
-                        result.success(null)
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "sendSms failed", e)
-                        result.error("SMS_FAILED", e.message, null)
                     }
                 }
                 else -> result.notImplemented()
@@ -191,8 +159,8 @@ class MainActivity : FlutterActivity() {
      * when a fall event arrives from the watch.
      *
      * The dedup guard prevents a second FallAlertScreen when the app is backgrounded:
-     * WearDataListenerService calls this immediately (so the 30-second SMS timer starts)
-     * and also shows a notification. If the user taps the notification, onNewIntent
+     * WearDataListenerService calls this immediately (so the 30-second cancellation
+     * countdown starts) and also shows a notification. If the user taps the notification, onNewIntent
      * fires with the same timestamp — without dedup we would push FallAlertScreen twice.
      */
     fun sendFallDetectedToFlutter(timestamp: Long) {

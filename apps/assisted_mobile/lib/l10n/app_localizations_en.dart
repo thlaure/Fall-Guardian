@@ -78,7 +78,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sendingAlert => 'Sending alert…';
   @override
-  String get smsFailed =>
+  String get alertSubmissionFailed =>
       'Alert submission failed. Contact your caregivers manually now.';
   @override
   String get alertSubmitted =>
@@ -178,17 +178,4 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifTitle => '⚠️ Fall Detected';
   @override
   String get notifBody => 'Open app to cancel or send alert in 30 seconds';
-
-  // ── SMS ───────────────────────────────────────────────────────────────────
-  @override
-  String smsMessage(String locationLine) =>
-      '🚨 FALL ALERT: Your loved one may have fallen and needs help.\n'
-      '$locationLine\n'
-      'Please call or go check on them immediately.\n'
-      '– Fall Guardian App';
-  @override
-  String get smsLocationUnavailable => 'Location: unavailable';
-  @override
-  String smsLocationLine(double lat, double lng) =>
-      'Location: https://maps.google.com/?q=$lat,$lng';
 }

@@ -1,20 +1,20 @@
-# Fall Guardian — état courant et passation
+# Fall Guardian — current status and handoff
 
-> État fonctionnel au 25 juillet 2026.
+> Functional status as of July 25, 2026.
 >
-> Lire ce fichier en premier lors d'une reprise. La documentation d'architecture
-> détaillée reste dans `docs/SYSTEM_OVERVIEW.md` et le contrat des montres dans
+> Read this file first when resuming work. Detailed architecture documentation
+> stays in `docs/SYSTEM_OVERVIEW.md`, and the watch contract in
 > `docs/COMPANION_ENROLLMENT.md`.
 
-## 1. Point de départ
+## 1. Starting point
 
-- Branche de référence : `main`.
-- Dernière base fonctionnelle avant cette passation :
+- Reference branch: `main`.
+- Last functional baseline before this handoff:
   `9397d29 feat(assisted): start secure watch enrollment (#81)`.
-- PR #73 à #81 fusionnées après CI.
-- Arbre de travail attendu : propre et synchronisé avec `origin/main`.
+- PRs #73 to #81 merged after CI.
+- Expected working tree: clean and in sync with `origin/main`.
 
-Toujours confirmer avant de commencer :
+Always confirm before starting:
 
 ```sh
 git status --short --branch
@@ -22,178 +22,179 @@ git log -5 --oneline
 make status
 ```
 
-## 2. Ce qui fonctionne
+## 2. What works
 
 ### Backend
 
-- identité stable d'une personne protégée ;
-- plusieurs appareils rattachés à la même personne ;
-- déduplication par personne protégée + `clientAlertId` ;
-- contrat d'incident versionné avec `revision`, `detectionSource` et
-  `resolution` ;
-- échéance serveur `cancelDeadlineAt` ;
-- enrôlement `watchos` ou `wearos` valable cinq minutes, à usage unique,
-  plateforme imposée et jeton stocké uniquement sous forme de hash HMAC ;
-- notifications aidants, reçus, acquittements et historique.
+- stable identity for a protected person;
+- multiple devices linked to the same person;
+- deduplication by protected person + `clientAlertId`;
+- versioned incident contract with `revision`, `detectionSource`, and
+  `resolution`;
+- server-side `cancelDeadlineAt` deadline;
+- `watchos` or `wearos` enrollment valid for five minutes, single-use,
+  platform-enforced, with the token stored only as an HMAC hash;
+- caregiver notifications, receipts, acknowledgements, and history.
 
-### Application personne aidée
+### Assisted person application
 
-- enregistrement du téléphone et stockage sécurisé de ses identifiants ;
-- enregistrement immédiat d'un incident, sans attendre la fin du compte à
-  rebours ;
-- annulation, ajout différé de la position et historique local ;
-- réception des événements watchOS/Wear OS ;
-- action « Connecter la montre » dans les paramètres ;
-- création de l'enrôlement et transmission versionnée vers le pont natif ;
-- états attente, erreur, expiration et réessai ;
-- aucun jeton d'enrôlement persisté ou journalisé ;
-- Android exige exactement une montre connectée avant d'envoyer le secret.
+- phone registration and secure storage of its credentials;
+- immediate incident registration, without waiting for the countdown to
+  finish;
+- cancellation, deferred location addition, and local history;
+- receiving watchOS/Wear OS events;
+- "Connect the watch" action in settings;
+- enrollment creation and versioned transmission to the native bridge;
+- waiting, error, expiration, and retry states;
+- no enrollment token persisted or logged;
+- Android requires exactly one connected watch before sending the secret.
 
-### Montres
+### Watches
 
-- watchOS : détection système Apple, repli accéléromètre lorsque l'app est
-  ouverte, compte à rebours, annulation et relais WatchConnectivity ;
-- Wear OS : service de détection au premier plan, compte à rebours, annulation
-  et relais Data Layer vers Android ;
-- aucune montre ne consomme encore l'enrôlement ;
-- aucune montre n'envoie encore directement un incident à l'API.
+- watchOS: Apple system detection, accelerometer fallback when the app is
+  open, countdown, cancellation, and WatchConnectivity relay;
+- Wear OS: foreground detection service, countdown, cancellation, and Data
+  Layer relay to Android;
+- no watch consumes the enrollment yet;
+- no watch sends an incident directly to the API yet.
 
-### Application aidant
+### Caregiver application
 
-- association avec plusieurs personnes ;
-- réception push, écran d'alerte et historique ;
-- nouvelle tentative du chargement d'historique après erreur ;
-- reçus et acquittements.
+- linking with multiple people;
+- push reception, alert screen, and history;
+- retry of history loading after an error;
+- receipts and acknowledgements.
 
-## 3. Prochaine tâche exacte — PR B watchOS
+## 3. Next exact task — PR B watchOS
 
-Objectif : terminer l'enrôlement côté Apple Watch, sans ajouter encore l'envoi
-direct des chutes.
+Goal: finish enrollment on the Apple Watch side, without yet adding direct
+fall submission.
 
-### Comportement attendu
+### Expected behavior
 
-1. recevoir le message `companionEnrollment` envoyé par l'iPhone ;
-2. vérifier `schemaVersion`, `platform`, jeton et expiration ;
-3. appeler immédiatement
-   `POST /api/v1/companion-enrollments/claim` avec `URLSession` ;
-4. récupérer `deviceId` et `deviceToken` ;
-5. stocker `deviceToken` dans Keychain et les métadonnées non sensibles
-   séparément ;
-6. confirmer à l'iPhone uniquement le statut `enrolled`, jamais le secret ;
-7. conserver l'état après redémarrage ;
-8. proposer un nouvel enrôlement si le secret est absent, corrompu ou refusé.
+1. receive the `companionEnrollment` message sent by the iPhone;
+2. verify `schemaVersion`, `platform`, token, and expiration;
+3. immediately call
+   `POST /api/v1/companion-enrollments/claim` with `URLSession`;
+4. retrieve `deviceId` and `deviceToken`;
+5. store `deviceToken` in Keychain and the non-sensitive metadata
+   separately;
+6. confirm only the `enrolled` status to the iPhone, never the secret;
+7. keep the state after a restart;
+8. offer a new enrollment if the secret is missing, corrupted, or rejected.
 
-### Fichiers principaux
+### Main files
 
-- `apps/watchos/FallGuardian/FallGuardian Watch App/WatchSessionManager.swift` :
-  réception WatchConnectivity et confirmation ;
-- nouveau service watchOS dédié au client `/claim` ;
-- nouveau stockage Keychain dédié aux identifiants compagnon ;
-- `apps/watchos/FallGuardianTests/` : contrat, expiration, erreurs et
-  persistance ;
-- projet Xcode watchOS et projet iOS embarquant la montre si de nouveaux
-  fichiers Swift doivent être référencés explicitement ;
-- `docs/COMPANION_ENROLLMENT.md` et `docs/SYSTEM_OVERVIEW.md`.
+- `apps/watchos/FallGuardian/FallGuardian Watch App/WatchSessionManager.swift`:
+  WatchConnectivity reception and confirmation;
+- new watchOS service dedicated to the `/claim` client;
+- new Keychain storage dedicated to companion credentials;
+- `apps/watchos/FallGuardianTests/`: contract, expiration, errors, and
+  persistence;
+- watchOS Xcode project and iOS project embedding the watch, if new Swift
+  files must be referenced explicitly;
+- `docs/COMPANION_ENROLLMENT.md` and `docs/SYSTEM_OVERVIEW.md`.
 
-Le message entrant est déjà produit par le téléphone :
+The incoming message is already produced by the phone:
 
 ```json
 {
   "type": "companionEnrollment",
   "schemaVersion": 1,
   "platform": "watchos",
-  "enrollmentToken": "<64 caractères>",
-  "expiresAt": "<date ISO-8601>"
+  "enrollmentToken": "<64 characters>",
+  "expiresAt": "<ISO-8601 date>"
 }
 ```
 
-L'URL de l'API doit venir d'une configuration de build explicite. Ne jamais
-mettre une URL de production ou un secret en dur. Ne pas accepter une URL
-arbitraire depuis le message WatchConnectivity.
+The API URL must come from an explicit build configuration. Never hardcode
+a production URL or a secret. Do not accept an arbitrary URL from the
+WatchConnectivity message.
 
-### Critères de fin
+### Completion criteria
 
-- succès, expiration, réponse mal formée et refus serveur testés ;
-- double livraison du même message sans double identité ;
-- identifiants disponibles après redémarrage de l'extension ;
-- aucun token visible dans les logs ;
-- confirmation iPhone ne contient aucun token ;
-- `make -C apps/watchos check` vert ;
-- build de l'app iOS avec la montre embarquée vert ;
-- documentation mise à jour.
+- success, expiration, malformed response, and server rejection tested;
+- duplicate delivery of the same message without duplicate identity;
+- credentials available after the extension restarts;
+- no token visible in the logs;
+- iPhone confirmation contains no token;
+- `make -C apps/watchos check` green;
+- iOS app build with the embedded watch green;
+- documentation updated.
 
-## 4. Suite après PR B
+## 4. Next steps after PR B
 
-Ordre recommandé :
+Recommended order:
 
-1. PR C — consommation Wear OS + Android Keystore ;
-2. PR D — file persistante et HTTPS direct watchOS ;
-3. PR E — HTTPS direct Wear OS + relais Android natif indépendant de Flutter ;
-4. UX de sécurité : appui long « Je vais bien », états réseau et prise en
-   charge aidant ;
-5. escalade, supervision, confidentialité et préparation commerciale.
+1. PR C — Wear OS consumption + Android Keystore;
+2. PR D — persistent queue and direct watchOS HTTPS;
+3. PR E — direct Wear OS HTTPS + native Android relay independent of
+   Flutter;
+4. Safety UX: long-press "I'm OK", network states, and caregiver handling;
+5. escalation, monitoring, privacy, and commercial readiness.
 
-Ne pas fusionner PR B avec l'envoi direct des chutes. Garder chaque incrément
-testable et réversible.
+Do not merge PR B with direct fall submission. Keep each increment testable
+and reversible.
 
-## 5. Validations déjà réalisées
+## 5. Validations already performed
 
-- backend : tests unitaires, intégration, Behat, qualité et sécurité ;
-- app aidée : 151 tests, analyse statique et couverture supérieure ou égale à
-  90 % lors de la PR #81 ;
-- APK Android aidé compilé ;
-- app iOS simulateur compilée avec compagnon Watch embarqué ;
-- écran « Connexion de la montre » inspecté sur simulateur ;
-- builds et tests déterministes watchOS/Wear OS existants verts en CI.
+- backend: unit, integration, Behat, quality, and security tests;
+- assisted app: 151 tests, static analysis, and coverage at or above 90%
+  during PR #81;
+- assisted Android APK built;
+- iOS simulator app built with the embedded Watch companion;
+- "Watch connection" screen inspected on simulator;
+- existing deterministic watchOS/Wear OS builds and tests green in CI.
 
-Ces validations ne prouvent pas le fonctionnement physique complet.
+These validations do not prove full physical functioning.
 
-## 6. Tests physiques encore obligatoires
+## 6. Physical tests still required
 
-Aucun résultat physique complet n'est consigné à ce jour. Tester et enregistrer
-date, versions OS, appareils, réseau et résultat pour chaque cas :
+No complete physical result is recorded to date. Test and record date, OS
+versions, devices, network, and result for each case:
 
-- Apple Watch réelle + iPhone verrouillé dans une poche ;
-- montre sans Wi-Fi, iPhone à portée avec 4G/5G ;
-- Apple Watch cellulaire sans iPhone ;
-- Android verrouillé avec processus Flutter supprimé ;
-- perte et retour réseau pendant le délai ;
-- redémarrage téléphone et montre ;
-- chute puis annulation presque simultanée ;
-- direct montre et relais téléphone simultanés ;
-- plusieurs aidants et plusieurs appareils.
+- real Apple Watch + locked iPhone in a pocket;
+- watch without Wi-Fi, iPhone in range with 4G/5G;
+- cellular Apple Watch without an iPhone;
+- locked Android with the Flutter process killed;
+- network loss and recovery during the delay;
+- phone and watch restart;
+- fall followed by near-simultaneous cancellation;
+- simultaneous watch-direct and phone relay;
+- multiple caregivers and multiple devices.
 
-## 7. Blocages et dépendances externes
+## 7. Blockers and external dependencies
 
 ### Apple
 
-- équipe : Thomas Laure, Team ID `PTXCAH5P4R` ;
-- app iOS : `com.fallguardian.app` ;
-- app Watch : `com.fallguardian.app.watchkitapp` ;
-- demande de capacité Fall Detection envoyée à Apple ;
-- état connu : approbation en attente ;
-- conséquence : validation physique de `CMFallDetectionManager` bloquée ou
-  incomplète tant que la capacité n'est pas accordée.
+- team: Thomas Laure, Team ID `PTXCAH5P4R`;
+- iOS app: `com.fallguardian.app`;
+- Watch app: `com.fallguardian.app.watchkitapp`;
+- Fall Detection capability request sent to Apple;
+- known state: approval pending;
+- consequence: physical validation of `CMFallDetectionManager` blocked or
+  incomplete until the capability is granted.
 
-Après approbation, régénérer ou actualiser les profils de provisioning avant
-installation physique. Ne pas ajouter certificats ou profils au dépôt.
+After approval, regenerate or refresh the provisioning profiles before
+physical installation. Do not add certificates or profiles to the
+repository.
 
-### Accès à transmettre hors Git
+### Access to hand over outside Git
 
-Le repreneur aura besoin, selon son rôle :
+Depending on their role, the person taking over will need:
 
-- accès au compte Apple Developer et à Xcode signing ;
-- accès Firebase/FCM ;
-- secrets et variables de l'environnement backend ;
-- accès au dépôt GitHub et aux Actions ;
-- iPhone, Apple Watch, Android et montre Wear OS de test.
+- access to the Apple Developer account and Xcode signing;
+- Firebase/FCM access;
+- backend environment secrets and variables;
+- access to the GitHub repository and Actions;
+- test iPhone, Apple Watch, Android device, and Wear OS watch.
 
-Les secrets doivent être transmis par un gestionnaire de secrets, jamais dans
-ce fichier, une issue ou une PR.
+Secrets must be handed over through a secrets manager, never in this
+file, an issue, or a PR.
 
-## 8. Lancement local
+## 8. Running locally
 
-Depuis la racine :
+From the root:
 
 ```sh
 make help
@@ -201,7 +202,7 @@ make status
 make quality
 ```
 
-Backend :
+Backend:
 
 ```sh
 make -C backend/api up
@@ -210,7 +211,7 @@ make -C backend/api test
 make -C backend/api test-behat
 ```
 
-App personne aidée :
+Assisted person app:
 
 ```sh
 make -C apps/assisted_mobile quality
@@ -218,39 +219,45 @@ make -C apps/assisted_mobile build-android
 make -C apps/assisted_mobile build-ios
 ```
 
-Montres :
+Watches:
 
 ```sh
 make -C apps/watchos check
 make -C apps/wear_os check
 ```
 
-Pour appareils physiques et changement de réseau, suivre les README de chaque
-projet. `BACKEND_BASE_URL` doit être fourni au build ; ne pas supposer que
-`localhost` désigne le Mac depuis un appareil.
+For physical devices and network changes, follow each project's README.
+`BACKEND_BASE_URL` must be provided at build time; do not assume that
+`localhost` refers to the Mac when running from a device.
 
-## 9. Limites produit critiques
+## 9. Critical product limitations
 
-- Fall Guardian n'appelle pas automatiquement les services d'urgence ;
-- la fonction principale actuelle avertit les aidants liés via notification ;
-- ancien code et anciens libellés Android liés au SMS existent encore et
-  doivent être supprimés ou clarifiés avant commercialisation ;
-- aucun transport ne peut fonctionner sans chemin réseau sur montre ou
-  téléphone ;
-- le relais Android processus tué n'est pas encore garanti ;
-- révocation d'une montre perdue et rotation des jetons non implémentées ;
-- escalade sans prise en charge aidant incomplète ;
-- conservation, suppression et politique de faux positifs à définir ;
-- validation médicale, urgence, confidentialité et promesse commerciale à
-  réaliser avant diffusion.
+- Fall Guardian does not automatically call emergency services;
+- the current core function alerts linked caregivers via notification;
+- old code and old Android labels related to SMS still exist and must be
+  removed or clarified before commercialization;
+- no transport can work without a network path on the watch or phone;
+- the Android relay with a killed process is not yet guaranteed;
+- revocation of a lost watch and token rotation are not implemented;
+- escalation without caregiver handling is incomplete;
+- retention, deletion, and false-positive policy to be defined;
+- medical, emergency, privacy validation, and commercial promise still to
+  be carried out before release.
 
-## 10. Carte documentaire
+## 10. Documentation map
 
-- `CURRENT_STATUS.md` : état opérationnel et prochaine tâche ;
-- `docs/SYSTEM_OVERVIEW.md` : fonctionnalités, architecture, limites et roadmap ;
-- `docs/COMPANION_ENROLLMENT.md` : contrat et découpage PR A à E ;
-- `README.md` : structure du monorepo et commandes communes ;
-- README de chaque projet : installation, build et tests spécifiques ;
-- `CLAUDE.md` racine et locaux : règles de contribution.
+- `CURRENT_STATUS.md`: operational status and next task;
+- `docs/SYSTEM_OVERVIEW.md`: features, architecture, limitations, and
+  roadmap;
+- `docs/COMPANION_ENROLLMENT.md`: contract and PR A-to-E breakdown;
+- `README.md`: monorepo structure and common commands;
+- each project's README: project-specific install, build, and tests;
+- root and local `CLAUDE.md` files: contribution rules.
 
-Mettre à jour ce fichier après chaque incrément majeur ou changement de blocage.
+Each topic has exactly one owning file: the merged-PR changelog and phased
+roadmap live in `docs/SYSTEM_OVERVIEW.md` (§11, §14); the watch-enrollment
+PR breakdown lives in `docs/COMPANION_ENROLLMENT.md` (§6). This file only
+tracks the single next actionable task and current handoff state — update
+the owning file first and link to it here rather than re-describing it.
+
+Update this file after each major increment or change in blockers.

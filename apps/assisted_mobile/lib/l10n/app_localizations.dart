@@ -56,7 +56,7 @@ abstract class AppLocalizations {
   String get fallAlertBody;
   String get gettingLocation;
   String get sendingAlert;
-  String get smsFailed;
+  String get alertSubmissionFailed;
   String get alertSubmitted;
   String get confirmingCancellation;
   String get cancellationUnconfirmed;
@@ -104,11 +104,6 @@ abstract class AppLocalizations {
   // ── Notifications ─────────────────────────────────────────────────────────
   String get notifTitle;
   String get notifBody;
-
-  // ── SMS ───────────────────────────────────────────────────────────────────
-  String smsMessage(String locationLine);
-  String get smsLocationUnavailable;
-  String smsLocationLine(double lat, double lng);
 }
 
 class _AppLocalizationsDelegate
