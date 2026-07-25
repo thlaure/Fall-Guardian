@@ -22,6 +22,9 @@ Apple Watch sensors emit motion data
 ```
 
 The watch app does not call the backend and does not notify caregivers directly.
+The next increment is to consume the one-time enrollment sent by the iPhone,
+claim watch-specific credentials, and store them in Keychain. See
+`../../docs/COMPANION_ENROLLMENT.md`.
 
 ## Project Layout
 
@@ -48,6 +51,8 @@ Core source files include:
 - Xcode.
 - watchOS simulator or compatible Apple Watch.
 - iPhone companion/runtime context when validating phone communication.
+- Apple approval for the Fall Detection capability on
+  `com.fallguardian.app.watchkitapp` before physical system-fall validation.
 
 ## Setup
 
@@ -108,6 +113,8 @@ Prioritize tests around:
 - Avoid battery-heavy sampling unless required for reliable detection.
 - The assisted iPhone owns countdown, cancellation, backend submission, and
   caregiver notification.
+- The Fall Detection capability request is pending. Simulator algorithm tests
+  do not replace locked-iPhone and physical-watch validation.
 
 ## Related Projects
 

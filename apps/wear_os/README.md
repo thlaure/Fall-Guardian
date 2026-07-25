@@ -24,6 +24,10 @@ Wear OS sensors emit motion data
 The watch does not notify caregivers directly. It only reports possible falls to
 the assisted phone.
 
+The next Wear OS increment is to consume the one-time enrollment from the
+phone, claim watch-specific credentials, and store them with Android Keystore.
+See `../../docs/COMPANION_ENROLLMENT.md`.
+
 ## Project Layout
 
 ```text

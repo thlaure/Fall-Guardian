@@ -139,6 +139,7 @@ When testing on a wired Android device, the mobile Makefiles can reverse
 
 Start with the system-level reference:
 
+- `CURRENT_STATUS.md` for the current handoff state and the next concrete task
 - `docs/SYSTEM_OVERVIEW.md`
 - `docs/COMPANION_ENROLLMENT.md` for watch enrollment and next implementation
   increments

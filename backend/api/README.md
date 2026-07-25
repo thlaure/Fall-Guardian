@@ -6,6 +6,8 @@ persistence, alert history, push notification delivery, and acknowledgement.
 ## Responsibilities
 
 - Register assisted-person and caregiver devices.
+- Maintain one stable protected-person identity across companion devices.
+- Enroll watchOS and Wear OS companions with short-lived one-time tokens.
 - Authenticate device API calls with bearer device tokens.
 - Hash device tokens with an HMAC-based secret.
 - Create short-lived caregiver invite codes.
@@ -21,9 +23,9 @@ persistence, alert history, push notification delivery, and acknowledgement.
 
 ```text
 watch detects fall
--> assisted phone owns countdown through AlertCoordinator
--> timeout submits POST /api/v1/fall-alerts
+-> assisted phone immediately submits POST /api/v1/fall-alerts
 -> backend persists FallAlert
+-> backend owns the cancellable 30-second grace period
 -> backend dispatches SendFallAlertPushMessage
 -> messenger handler sends push to linked caregiver devices
 -> caregiver app fetches alert detail/history
@@ -85,13 +87,21 @@ API Platform Provider
 ## Public API
 
 - `POST /api/v1/devices/register`: register an assisted or caregiver device.
-- `POST /api/v1/fall-alerts`: create an escalated fall alert.
+- `POST /api/v1/companion-enrollments`: create a platform-bound one-time watch
+  enrollment from an authenticated protected-person device.
+- `POST /api/v1/companion-enrollments/claim`: exchange an enrollment token for
+  watch-specific device credentials.
+- `POST /api/v1/fall-alerts`: register a fall incident before the backend grace
+  period expires.
 - `GET /api/v1/fall-alerts/{id}`: retrieve one fall alert.
 - `POST /api/v1/fall-alerts/{clientAlertId}/cancel`: persist a cancelled fall.
+- `POST /api/v1/fall-alerts/{clientAlertId}/location`: attach delayed location.
 - `POST /api/v1/invites`: create a caregiver invite code.
 - `POST /api/v1/invites/{code}/accept`: link a caregiver using an invite.
 - `POST /api/v1/caregiver/push-token`: store a caregiver push token.
 - `GET /api/v1/caregiver/alerts`: list caregiver-visible alerts.
+- `GET /api/v1/caregiver/protected-persons`: list linked protected people.
+- `GET /api/v1/protected/linked-caregivers`: list linked caregivers.
 - `POST /api/v1/fall-alerts/{id}/acknowledge`: acknowledge an alert.
 - `GET /health`: health check endpoint.
 
