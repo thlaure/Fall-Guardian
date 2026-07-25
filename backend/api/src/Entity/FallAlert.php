@@ -17,6 +17,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Entity(repositoryClass: DoctrineFallAlertRepository::class)]
 #[ORM\Table(name: 'fall_alerts')]
 #[ORM\UniqueConstraint(name: 'uniq_alerts_device_client', columns: ['device_id', 'client_alert_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_alerts_person_client', columns: ['protected_person_id', 'client_alert_id'])]
 #[ORM\Index(name: 'idx_fall_alerts_dispatch_due', columns: ['status', 'cancel_deadline_at', 'dispatch_claimed_at'])]
 class FallAlert
 {
@@ -29,6 +30,10 @@ class FallAlert
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     private Uuid $id;
+
+    #[ORM\ManyToOne(targetEntity: ProtectedPerson::class)]
+    #[ORM\JoinColumn(name: 'protected_person_id', nullable: true, onDelete: 'CASCADE')]
+    private ?ProtectedPerson $protectedPerson;
 
     #[ORM\Column(name: 'received_at')]
     private DateTimeImmutable $receivedAt;
@@ -71,6 +76,7 @@ class FallAlert
         private FallResolution $resolution = FallResolution::Unknown)
     {
         $this->id = Uuid::v7();
+        $this->protectedPerson = $device->getProtectedPerson();
         $this->receivedAt = $receivedAt ?? new DateTimeImmutable();
         $this->cancelDeadlineAt = $this->receivedAt->modify(sprintf('+%d seconds', self::GRACE_PERIOD_SECONDS));
         $this->pushAttempts = new ArrayCollection();
@@ -84,6 +90,11 @@ class FallAlert
     public function getDevice(): Device
     {
         return $this->device;
+    }
+
+    public function getProtectedPerson(): ?ProtectedPerson
+    {
+        return $this->protectedPerson;
     }
 
     public function getClientAlertId(): string

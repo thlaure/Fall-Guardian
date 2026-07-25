@@ -117,6 +117,46 @@ final class DoctrineRepositoryTest extends KernelTestCase
         self::assertNotNull($attempt->getId());
     }
 
+    public function testCompanionDevicesShareIncidentAndCaregiverScope(): void
+    {
+        self::bootKernel();
+
+        $deviceRepository = self::getContainer()->get(DoctrineDeviceRepository::class);
+        $alertRepository = self::getContainer()->get(DoctrineFallAlertRepository::class);
+        $linkRepository = self::getContainer()->get(DoctrineCaregiverLinkRepository::class);
+
+        $phone = $this->device('protected-phone');
+        $watch = $this->device('protected-watch');
+        $protectedPerson = $phone->getProtectedPerson();
+        self::assertNotNull($protectedPerson);
+        $watch->attachToProtectedPerson($protectedPerson);
+
+        $caregiver = $this->device('caregiver-companion');
+        $caregiver->setDeviceType(DeviceType::Caregiver);
+
+        $deviceRepository->save($phone);
+        $deviceRepository->save($watch);
+        $deviceRepository->save($caregiver);
+
+        $link = new CaregiverLink($phone, $caregiver);
+        $linkRepository->save($link);
+
+        $alert = new FallAlert(
+            $watch,
+            'shared-'.$this->suffix(),
+            new DateTimeImmutable(),
+            'en',
+            null,
+            null,
+        );
+        $alertRepository->save($alert);
+
+        self::assertSame($alert, $alertRepository->findOneByDeviceAndClientAlertId($phone, $alert->getClientAlertId()));
+        self::assertSame([$alert], $alertRepository->findByDevice($phone));
+        self::assertSame([$link], $linkRepository->findActiveByProtectedDevice($watch));
+        self::assertSame($link, $linkRepository->findExistingPair($watch, $caregiver));
+    }
+
     public function testFallAlertRepositoryAtomicallyClaimsDueAlertsAndRejectsLateCancellation(): void
     {
         self::bootKernel();
