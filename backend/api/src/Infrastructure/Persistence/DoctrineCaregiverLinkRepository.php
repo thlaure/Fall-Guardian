@@ -28,10 +28,11 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
     {
         /** @var list<CaregiverLink> $result */
         $result = $this->createQueryBuilder('link')
+            ->join('link.protectedDevice', 'protectedDevice')
             ->addSelect('CASE WHEN link.caregiverName IS NULL THEN 1 ELSE 0 END AS HIDDEN missingName')
-            ->andWhere('link.protectedDevice = :device')
+            ->andWhere('protectedDevice.protectedPerson = :protectedPerson')
             ->andWhere('link.status = :status')
-            ->setParameter('device', $protectedDevice)
+            ->setParameter('protectedPerson', $protectedDevice->getProtectedPerson())
             ->setParameter('status', CaregiverLinkStatus::Active)
             ->addOrderBy('missingName', 'ASC')
             ->addOrderBy('link.updatedAt', 'DESC')
@@ -52,11 +53,12 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
 
         /** @var CaregiverLink|null $result */
         $result = $this->createQueryBuilder('link')
+            ->join('link.protectedDevice', 'protectedDevice')
             ->andWhere('link.id = :id')
-            ->andWhere('link.protectedDevice = :device')
+            ->andWhere('protectedDevice.protectedPerson = :protectedPerson')
             ->andWhere('link.status = :status')
             ->setParameter('id', $uuid, 'uuid')
-            ->setParameter('device', $protectedDevice)
+            ->setParameter('protectedPerson', $protectedDevice->getProtectedPerson())
             ->setParameter('status', CaregiverLinkStatus::Active)
             ->getQuery()
             ->getOneOrNullResult();
@@ -68,9 +70,10 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
     {
         /** @var CaregiverLink|null $link */
         $link = $this->createQueryBuilder('link')
-            ->andWhere('link.protectedDevice = :protected')
+            ->join('link.protectedDevice', 'protectedDevice')
+            ->andWhere('protectedDevice.protectedPerson = :protectedPerson')
             ->andWhere('link.caregiverDevice = :caregiver')
-            ->setParameter('protected', $protectedDevice)
+            ->setParameter('protectedPerson', $protectedDevice->getProtectedPerson())
             ->setParameter('caregiver', $caregiverDevice)
             ->getQuery()
             ->getOneOrNullResult();

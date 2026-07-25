@@ -314,7 +314,8 @@ sécurité native indépendante de Fall Guardian.
 
 Le serveur reconnaît actuellement :
 
-- les appareils `protected_person` ;
+- une identité stable par personne protégée ;
+- les appareils `protected_person` rattachés à cette identité ;
 - les appareils `caregiver` ;
 - les liens actifs entre eux ;
 - les jetons push des aidants.
@@ -349,12 +350,13 @@ receivedAt
 cancelDeadlineAt
 ```
 
-Les doublons sont encore identifiés par appareil + `clientAlertId`. Une révision
+Les doublons sont identifiés par personne protégée + `clientAlertId`. Une révision
 plus récente met à jour les métadonnées de l'incident sans recréer l'alerte ni
 redéclencher la notification. Une annulation portant une révision plus ancienne
-que celle déjà enregistrée est refusée. Le passage à une identité stable de
-personne protégée reste nécessaire pour dédupliquer les chemins montre direct et
-relais téléphone.
+que celle déjà enregistrée est refusée. Les aidants et l'historique sont
+retrouvés au niveau de la personne, même lorsque l'incident provient d'un autre
+appareil compagnon. L'enrôlement sécurisé permettant à une montre réelle de
+rejoindre cette identité reste à implémenter.
 
 Tous les écrans devront utiliser `cancelDeadlineAt` comme échéance autoritative.
 
@@ -545,7 +547,8 @@ Politique proposée :
 
 ### Phase 1 — contrat et modèle serveur
 
-- ajouter identité de personne protégée et identités compagnon ;
+- ✅ ajouter l'identité stable de personne protégée et le support serveur de
+  plusieurs appareils compagnons ;
 - créer l'enrôlement sécurisé d'une montre ;
 - dédupliquer par personne + incident ;
 - ✅ ajouter `revision`, `detectionSource` et `resolution` sans casser les anciens

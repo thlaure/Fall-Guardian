@@ -320,6 +320,21 @@ final class AlertIngestionServiceTest extends TestCase
     }
 
     #[Test]
+    public function itReturnsAlertForCompanionDeviceOfSameProtectedPerson(): void
+    {
+        $phone = new Device('phone', 'phone-hash', 'ios', '1.0.0');
+        $watch = new Device('watch', 'watch-hash', 'watchos', '1.0.0');
+        $protectedPerson = $phone->getProtectedPerson();
+        self::assertNotNull($protectedPerson);
+        $watch->attachToProtectedPerson($protectedPerson);
+
+        $alert = new FallAlert($watch, 'shared-alert', new DateTimeImmutable(), 'en', null, null);
+        $this->repository->method('findById')->willReturn($alert);
+
+        self::assertSame($alert, $this->service->getAlertForDevice($phone, $alert->getId()->toRfc4122()));
+    }
+
+    #[Test]
     public function itReturnsNullWhenAlertBelongsToDifferentDevice(): void
     {
         $device = $this->createMock(Device::class);

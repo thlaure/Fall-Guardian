@@ -7,6 +7,7 @@ namespace App\Infrastructure\Persistence;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Entity\ProtectedPerson;
 use App\Enum\FallAlertStatus;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -27,8 +28,10 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
 
     public function findOneByDeviceAndClientAlertId(Device $device, string $clientAlertId): ?FallAlert
     {
+        $protectedPerson = $device->getProtectedPerson();
+
         return $this->findOneBy([
-            'device' => $device,
+            $protectedPerson instanceof ProtectedPerson ? 'protectedPerson' : 'device' => $protectedPerson ?? $device,
             'clientAlertId' => $clientAlertId,
         ]);
     }
@@ -62,14 +65,26 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
     {
         return $this->getEntityManager()->wrapInTransaction(
             static function (EntityManagerInterface $entityManager) use ($device, $clientAlertId, $now): ?FallAlert {
-                $alert = $entityManager->createQueryBuilder()
+                $queryBuilder = $entityManager->createQueryBuilder()
                     ->select('alert')
                     ->from(FallAlert::class, 'alert')
-                    ->andWhere('alert.device = :device')
                     ->andWhere('alert.clientAlertId = :clientAlertId')
-                    ->setParameter('device', $device)
                     ->setParameter('clientAlertId', $clientAlertId)
-                    ->getQuery()
+                ;
+
+                $protectedPerson = $device->getProtectedPerson();
+
+                if ($protectedPerson instanceof ProtectedPerson) {
+                    $queryBuilder
+                        ->andWhere('alert.protectedPerson = :protectedPerson')
+                        ->setParameter('protectedPerson', $protectedPerson);
+                } else {
+                    $queryBuilder
+                        ->andWhere('alert.device = :device')
+                        ->setParameter('device', $device);
+                }
+
+                $alert = $queryBuilder->getQuery()
                     ->setLockMode(LockMode::PESSIMISTIC_WRITE)
                     ->getOneOrNullResult();
 
@@ -110,9 +125,11 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
     /** @return list<FallAlert> */
     public function findByDevice(Device $device, int $limit = 50): array
     {
+        $protectedPerson = $device->getProtectedPerson();
+
         /** @var list<FallAlert> $result */
         $result = $this->findBy(
-            ['device' => $device],
+            [$protectedPerson instanceof ProtectedPerson ? 'protectedPerson' : 'device' => $protectedPerson ?? $device],
             ['receivedAt' => 'DESC'],
             $limit,
         );

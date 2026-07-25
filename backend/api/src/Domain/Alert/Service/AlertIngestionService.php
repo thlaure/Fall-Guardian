@@ -8,6 +8,7 @@ use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Entity\ProtectedPerson;
 use App\Enum\FallDetectionSource;
 use App\Enum\FallResolution;
 use App\Shared\DateTime\ApiDateTimeFormatter;
@@ -99,7 +100,7 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
     {
         $alert = $this->fallAlertRepository->findById($alertId);
 
-        if (!$alert instanceof FallAlert || !$alert->getDevice()->getId()->equals($device->getId())) {
+        if (!$alert instanceof FallAlert || !$this->belongsToSameProtectedPerson($alert, $device)) {
             return null;
         }
 
@@ -118,5 +119,17 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
         $this->fallAlertRepository->save($alert);
 
         return $alert;
+    }
+
+    private function belongsToSameProtectedPerson(FallAlert $alert, Device $device): bool
+    {
+        $alertPerson = $alert->getProtectedPerson();
+        $devicePerson = $device->getProtectedPerson();
+
+        if ($alertPerson instanceof ProtectedPerson && $devicePerson instanceof ProtectedPerson) {
+            return $alertPerson->getId()->equals($devicePerson->getId());
+        }
+
+        return $alert->getDevice()->getId()->equals($device->getId());
     }
 }

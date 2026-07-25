@@ -37,6 +37,10 @@ class Device
     #[ORM\Column(name: 'device_type', length: 32, enumType: DeviceType::class)]
     private DeviceType $deviceType = DeviceType::ProtectedPerson;
 
+    #[ORM\ManyToOne(targetEntity: ProtectedPerson::class, cascade: ['persist'])]
+    #[ORM\JoinColumn(name: 'protected_person_id', nullable: true, onDelete: 'CASCADE')]
+    private ?ProtectedPerson $protectedPerson = null;
+
     /** @var Collection<int, FallAlert> */
     #[ORM\OneToMany(targetEntity: FallAlert::class, mappedBy: 'device', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $alerts;
@@ -49,6 +53,7 @@ class Device
     {
         $now = new DateTimeImmutable();
         $this->id = Uuid::v7();
+        $this->protectedPerson = new ProtectedPerson();
         $this->createdAt = $now;
         $this->updatedAt = $now;
         $this->alerts = new ArrayCollection();
@@ -125,6 +130,24 @@ class Device
     public function setDeviceType(DeviceType $deviceType): void
     {
         $this->deviceType = $deviceType;
+
+        if (DeviceType::Caregiver === $deviceType) {
+            $this->protectedPerson = null;
+        } elseif (!$this->protectedPerson instanceof ProtectedPerson) {
+            $this->protectedPerson = new ProtectedPerson();
+        }
+        $this->touch();
+    }
+
+    public function getProtectedPerson(): ?ProtectedPerson
+    {
+        return $this->protectedPerson;
+    }
+
+    public function attachToProtectedPerson(ProtectedPerson $protectedPerson): void
+    {
+        $this->protectedPerson = $protectedPerson;
+        $this->deviceType = DeviceType::ProtectedPerson;
         $this->touch();
     }
 
