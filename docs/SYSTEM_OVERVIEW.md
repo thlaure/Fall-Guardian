@@ -1,6 +1,6 @@
 # Fall Guardian — documentation fonctionnelle et technique
 
-> État de référence au 24 juillet 2026.
+> État de référence au 25 juillet 2026.
 >
 > Ce document décrit séparément ce qui existe sur `main`, les limites connues et
 > ce qui reste à construire. Il constitue la source de vérité produit et
@@ -180,9 +180,15 @@ Ces fonctions ont rejoint `main` avec la
 ### 5.5 API et serveur
 
 - ✅ identité distincte pour téléphone de personne aidée et téléphone aidant ;
+- ✅ identité stable de personne protégée partagée par ses appareils ;
+- ✅ rattachement de plusieurs téléphones ou montres à la même personne ;
 - ✅ authentification par jeton d'appareil, stocké sous forme de hash HMAC ;
+- ✅ enrôlement sécurisé d'une montre avec jeton limité à cinq minutes,
+  lié à `watchos` ou `wearos` et consommable une seule fois ;
+- ✅ identifiants propres à chaque montre, sans copier le jeton du téléphone ;
 - ✅ invitations et liens entre personnes aidées et aidants ;
-- ✅ création idempotente d'une alerte pour un appareil et un `clientAlertId` ;
+- ✅ création idempotente d'une alerte pour une personne et un `clientAlertId` ;
+- ✅ déduplication d'un incident reçu depuis plusieurs appareils ;
 - ✅ fenêtre d'annulation serveur de 30 secondes ;
 - ✅ planification différée de l'envoi avec Symfony Messenger ;
 - ✅ annulation avant l'échéance ;
@@ -194,8 +200,7 @@ Ces fonctions ont rejoint `main` avec la
 - ✅ acquittement aidant idempotent ;
 - ✅ délai prévu de 15 secondes pour la réception push ;
 - ✅ délai prévu de 60 secondes pour l'acquittement ;
-- ⚠️ l'escalade automatique après ces délais reste incomplète ;
-- ⚠️ la déduplication est actuellement liée à l'appareil, pas à la personne.
+- ⚠️ l'escalade automatique après ces délais reste incomplète.
 
 ## 6. Cycle de vie actuel d'une alerte
 
@@ -316,6 +321,7 @@ Le serveur reconnaît actuellement :
 
 - une identité stable par personne protégée ;
 - les appareils `protected_person` rattachés à cette identité ;
+- les montres `watchos` et `wearos` rattachées à cette même identité ;
 - les appareils `caregiver` ;
 - les liens actifs entre eux ;
 - les jetons push des aidants.
@@ -355,8 +361,17 @@ plus récente met à jour les métadonnées de l'incident sans recréer l'alerte
 redéclencher la notification. Une annulation portant une révision plus ancienne
 que celle déjà enregistrée est refusée. Les aidants et l'historique sont
 retrouvés au niveau de la personne, même lorsque l'incident provient d'un autre
-appareil compagnon. L'enrôlement sécurisé permettant à une montre réelle de
-rejoindre cette identité reste à implémenter.
+appareil compagnon.
+
+L'API d'enrôlement permet maintenant à un téléphone authentifié de créer un
+jeton à usage unique pour une plateforme. La montre échange ce jeton dans les
+cinq minutes contre ses propres `deviceId` et `deviceToken`. Le serveur ne
+stocke que le hash HMAC du jeton d'enrôlement. Une plateforme incorrecte ne le
+consomme pas ; un jeton expiré ou déjà utilisé est refusé. L'intégration de ce
+parcours dans les applications téléphone et montre reste à implémenter.
+
+Le contrat détaillé et l'ordre d'implémentation client sont décrits dans
+[`COMPANION_ENROLLMENT.md`](COMPANION_ENROLLMENT.md).
 
 Tous les écrans devront utiliser `cancelDeadlineAt` comme échéance autoritative.
 
@@ -396,6 +411,8 @@ La documentation OpenAPI locale est accessible sur
 - ✅ annulation et validation des coordonnées ;
 - ✅ distribution push et historique ;
 - ✅ reçus et acquittements idempotents ;
+- ✅ contrat d'incident versionné et déduplication multi-appareils ;
+- ✅ création et consommation d'un enrôlement compagnon sécurisé ;
 - ✅ tests Flutter et analyse statique des applications mobiles ;
 - ✅ lint, tests et build Wear OS ;
 - ✅ analyse, build et tests watchOS ;
@@ -414,6 +431,10 @@ La documentation OpenAPI locale est accessible sur
 | [#73](https://github.com/thlaure/Fall-Guardian/pull/73) | Rechargement de l'historique aidant après erreur | ✅ Fusionnée sur `main` |
 | [#74](https://github.com/thlaure/Fall-Guardian/pull/74) | Un seul délai pour un incident actif et correction du texte iOS | ✅ Fusionnée sur `main` |
 | [#75](https://github.com/thlaure/Fall-Guardian/pull/75) | Détection Apple en arrière-plan | ✅ Fusionnée sur `main`, validation physique en attente d'Apple |
+| [#76](https://github.com/thlaure/Fall-Guardian/pull/76) | Documentation fonctionnelle et architecture cible | ✅ Fusionnée sur `main` |
+| [#77](https://github.com/thlaure/Fall-Guardian/pull/77) | Contrat d'incident versionné et échéance serveur | ✅ Fusionnée sur `main` |
+| [#78](https://github.com/thlaure/Fall-Guardian/pull/78) | Identité stable et déduplication multi-appareils | ✅ Fusionnée sur `main` |
+| [#79](https://github.com/thlaure/Fall-Guardian/pull/79) | Enrôlement sécurisé watchOS et Wear OS côté serveur | ✅ Fusionnée sur `main` |
 
 Les changements d'architecture ci-dessous peuvent maintenant partir de cette
 base commune.
@@ -426,8 +447,7 @@ base commune.
 - 🔴 les relais natifs téléphone dépendent encore de Flutter ;
 - 🔴 le cas Android avec processus tué n'est pas sûr ;
 - 🔴 la file hors connexion n'est pas unifiée et durable de bout en bout ;
-- 🔴 le serveur déduplique par appareil, insuffisant si montre et téléphone
-  utilisent des identités différentes ;
+- 🔴 les apps n'utilisent pas encore le nouvel enrôlement compagnon ;
 - 🔴 la politique de nouvelle notification sans réponse aidant est incomplète ;
 - ⚠️ l'heure de départ du délai diffère entre certaines interfaces montre et le
   serveur ;
@@ -472,11 +492,12 @@ base commune.
 
 ### 13.1 Identité compagnon
 
-Créer une identité de personne protégée stable et des identités compagnon à
-portée limitée pour les montres. Ne jamais copier le jeton complet du téléphone
-sur la montre.
+Le serveur possède maintenant une identité de personne protégée stable et des
+identités distinctes pour ses appareils compagnons. Chaque montre doit obtenir
+ses propres identifiants via l'enrôlement à usage unique. Le jeton complet du
+téléphone ne doit jamais être copié sur la montre.
 
-Le serveur dédupliquera sur :
+Le serveur déduplique sur :
 
 ```text
 protectedPersonId + clientAlertId
@@ -540,7 +561,7 @@ Politique proposée :
 
 ### Phase 0 — stabiliser l'existant
 
-- ✅ PR #73, #74 et #75 fusionnées après CI ;
+- ✅ PR #73 à #79 fusionnées après CI ;
 - corriger le texte SMS Android restant ;
 - ✅ compte à rebours conservé lors des événements dupliqués ;
 - tester iPhone verrouillé + vraie Apple Watch ;
@@ -553,16 +574,18 @@ Politique proposée :
   plusieurs appareils compagnons ;
 - ✅ créer l'enrôlement serveur sécurisé d'une montre : jeton haché, limité à
   cinq minutes, lié à une plateforme et consommable une seule fois ;
-- dédupliquer par personne + incident ;
+- ✅ dédupliquer par personne + incident ;
 - ✅ ajouter `revision`, `detectionSource` et `resolution` sans casser les anciens
   clients ; `locale` existait déjà ;
 - ✅ retourner l'échéance serveur autoritative ;
-- 🟡 définir les règles d'événements tardifs et désordonnés : révisions plus
+- ⚠️ définir les règles d'événements tardifs et désordonnés : révisions plus
   récentes et annulations anciennes couvertes, transitions complètes restantes ;
-- 🟡 ajouter tests unitaires, intégration et contrats au fil des incréments.
+- ajouter tests unitaires, intégration et contrats au fil des incréments.
 
 ### Phase 2 — relais natif téléphone
 
+- intégrer la création d'enrôlement dans l'app personne aidée ;
+- transmettre le jeton éphémère à la montre associée ;
 - implémenter file persistante et transport natif iOS ;
 - implémenter réception et transport natifs Android ;
 - transmettre sans ouvrir Flutter ;
@@ -571,7 +594,7 @@ Politique proposée :
 
 ### Phase 3 — envoi direct montre
 
-- provisionner une identité compagnon sur chaque montre ;
+- consommer l'enrôlement et stocker les identifiants propres à chaque montre ;
 - ajouter envoi HTTPS et file persistante watchOS ;
 - ajouter envoi HTTPS et file persistante Wear OS ;
 - lancer direct et relais en parallèle ;
