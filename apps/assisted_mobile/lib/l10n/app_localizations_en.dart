@@ -137,6 +137,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get watchConnectionFailed =>
       'Could not send setup to the watch. Check that it is nearby.';
   @override
+  String get watchConnectionAppMissing =>
+      'Install Fall Guardian on your watch, then try again.';
+  @override
+  String get watchConnectionNotPaired =>
+      'No watch is paired with this phone yet.';
+  @override
+  String get watchConnectionNotReady =>
+      'The watch connection is still starting. Try again in a moment.';
+  @override
   String get watchConnectionExpired => 'Watch setup expired. Try again.';
   @override
   String get connectWatch => 'Connect watch';

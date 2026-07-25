@@ -2,6 +2,7 @@ import 'package:fall_guardian/l10n/app_localizations.dart';
 import 'package:fall_guardian/screens/settings_screen.dart';
 import 'package:fall_guardian/services/companion_enrollment_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -74,6 +75,73 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Try again'), findsOneWidget);
+    expect(
+      find.text(
+        'Could not send setup to the watch. Check that it is nearby.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'missing watch app reports the actionable cause, not the generic '
+      'nearby hint', (tester) async {
+    final coordinator = CompanionEnrollmentCoordinator(
+      backend: _FakeBackend(),
+      sendToWatch: (_) => throw PlatformException(
+        code: 'WATCH_UNAVAILABLE',
+        message: 'No paired Apple Watch can receive enrollment.',
+        details: 'watch_app_not_installed',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SettingsScreen(
+          enrollmentCoordinator: coordinator,
+          platformOverride: CompanionPlatform.watchOS,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connect watch'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Install Fall Guardian on your watch, then try again.'),
+      findsOneWidget,
+    );
+    expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('an unrecognised native cause still shows a message',
+      (tester) async {
+    final coordinator = CompanionEnrollmentCoordinator(
+      backend: _FakeBackend(),
+      sendToWatch: (_) => throw PlatformException(
+        code: 'WATCH_UNAVAILABLE',
+        details: 'some_future_reason',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SettingsScreen(
+          enrollmentCoordinator: coordinator,
+          platformOverride: CompanionPlatform.watchOS,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Connect watch'));
+    await tester.pumpAndSettle();
+
     expect(
       find.text(
         'Could not send setup to the watch. Check that it is nearby.',
