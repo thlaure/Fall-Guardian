@@ -174,7 +174,8 @@ On `main`:
   requires Apple's separate Critical Alerts entitlement;
 - ⚠️ Apple approved the Fall Detection capability (2026-07-25) and the
   signed build has been verified to embed it correctly under team
-  `PTXCAH5P4R`; physical installation on a real Apple Watch is untested;
+  `PTXCAH5P4R`; physical installation and launch on an Apple Watch Series 10
+  were verified through Xcode on 2026-07-26;
 - ⚠️ exact behavior of Apple resolutions still to be validated on a real
   watch.
 
