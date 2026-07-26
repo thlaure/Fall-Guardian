@@ -16,13 +16,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -185,10 +183,10 @@ private fun AlertScreen(context: Context) {
             Text(
                 text = "$remaining",
                 color = Color.White,
-                fontSize = 64.sp,
+                fontSize = 56.sp,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Tap anywhere to cancel",
                 color = Color.White.copy(alpha = 0.6f),
@@ -216,7 +214,7 @@ private fun IdleScreen(context: Context) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF001A18)), // Dark teal — calm, non-alarming idle state.
+            .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -233,8 +231,8 @@ private fun IdleScreen(context: Context) {
                 Icon(
                     imageVector = Icons.Default.Shield,
                     contentDescription = null, // Decorative — screen reader can skip it.
-                    tint = Color(0xFFE5694A),  // Orange accent colour.
-                    modifier = Modifier.size(30.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
                 )
             }
             Text(
@@ -253,22 +251,21 @@ private fun IdleScreen(context: Context) {
             // Debug-only fall simulation button — stripped from release builds at compile time.
             if (BuildConfig.DEBUG) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Chip(
-                    onClick = { simulateFall(context) },
-                    label = {
-                        Text(
-                            text = "Simulate Fall (debug)",
-                            fontSize = 11.sp,
-                            color = Color(0xFFE5694A)
-                        )
-                    },
-                    colors = ChipDefaults.chipColors(backgroundColor = Color(0xFF001A18)),
-                    modifier = Modifier.border(
-                        width = 1.dp,
+                Box(
+                    modifier = Modifier
+                        .height(34.dp)
+                        .width(152.dp)
+                        .background(Color(0xFF242424), CircleShape)
+                        .clickable { simulateFall(context) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Simulate Fall (debug)",
+                        fontSize = 11.sp,
                         color = Color(0xFFE5694A),
-                        shape = RoundedCornerShape(50)
+                        textAlign = TextAlign.Center
                     )
-                )
+                }
             }
         }
     }

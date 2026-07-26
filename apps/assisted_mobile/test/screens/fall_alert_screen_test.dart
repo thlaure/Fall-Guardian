@@ -186,6 +186,10 @@ void main() {
       await tester.pump();
       expect(find.byIcon(Icons.warning_rounded), findsOneWidget);
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      final label = tester.widget<Text>(
+        find.text("I'm OK\nCancel Alert"),
+      );
+      expect(label.textAlign, TextAlign.center);
       coordinator.dispose();
     });
 

@@ -305,12 +305,17 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                               onPressed: _sending ? null : _cancel,
                               icon: const Icon(Icons.check_circle, size: 28),
                               label: Text(
-                                l10n.cancelAlert, // "I'm OK – Cancel"
-                                style: const TextStyle(fontSize: 18),
+                                l10n.cancelAlert,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  height: 1.15,
+                                ),
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,
                                 foregroundColor: Colors.white,
+                                alignment: Alignment.center,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),

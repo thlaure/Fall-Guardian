@@ -407,7 +407,6 @@ POST   /api/v1/caregiver/push-token
 GET    /api/v1/caregiver/alerts
 GET    /api/v1/caregiver/protected-persons
 GET    /api/v1/protected/linked-caregivers
-DELETE /api/v1/protected/linked-caregivers/{id}
 GET    /health
 ```
 

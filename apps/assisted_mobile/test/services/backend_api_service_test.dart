@@ -1205,43 +1205,6 @@ void main() {
     );
   });
 
-  test('deleteLinkedCaregiver sends DELETE and succeeds on 204', () async {
-    store.data['backend_device_id'] = 'device-1';
-    store.data['backend_device_token'] = 'token-1';
-    const linkId = 'some-link-uuid';
-
-    final service = BackendApiService(
-      store: store,
-      client: MockClient((request) async {
-        expect(request.method, 'DELETE');
-        expect(request.url.path, '/api/v1/protected/linked-caregivers/$linkId');
-        expect(request.headers['authorization'], 'Bearer token-1');
-        return http.Response('', 204);
-      }),
-    );
-
-    await expectLater(service.deleteLinkedCaregiver(linkId), completes);
-  });
-
-  test('deleteLinkedCaregiver throws typed exception on API failure', () async {
-    store.data['backend_device_id'] = 'device-1';
-    store.data['backend_device_token'] = 'token-1';
-
-    final service = BackendApiService(
-      store: store,
-      client: MockClient((request) async => http.Response('not found', 404)),
-    );
-
-    await expectLater(
-      service.deleteLinkedCaregiver('missing-id'),
-      throwsA(
-        isA<BackendApiException>()
-            .having((error) => error.statusCode, 'statusCode', 404)
-            .having((error) => error.body, 'body', 'not found'),
-      ),
-    );
-  });
-
   test('BackendApiException.toString includes message, status, and body', () {
     final error = BackendApiException(
       'Failed to fetch',

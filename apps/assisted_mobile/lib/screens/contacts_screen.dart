@@ -53,24 +53,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
     }
   }
 
-  Future<void> _revokeCaregiver(String linkId) async {
-    try {
-      await _api.deleteLinkedCaregiver(linkId);
-      await _load();
-    } catch (error, stackTrace) {
-      developer.log(
-        'Failed to create caregiver invite',
-        name: 'ContactsScreen',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to remove caregiver.')),
-      );
-    }
-  }
-
   Future<void> _createInvite() async {
     setState(() => _creatingInvite = true);
     try {
@@ -134,7 +116,6 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   else
                     _LinkedCaregiversSection(
                       caregivers: _linkedCaregivers,
-                      onRevoke: _revokeCaregiver,
                     ),
                 ],
               ),
@@ -247,11 +228,9 @@ class _InviteCaregiverSection extends StatelessWidget {
 class _LinkedCaregiversSection extends StatelessWidget {
   const _LinkedCaregiversSection({
     required this.caregivers,
-    required this.onRevoke,
   });
 
   final List<Map<String, dynamic>> caregivers;
-  final void Function(String linkId) onRevoke;
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +248,6 @@ class _LinkedCaregiversSection extends StatelessWidget {
         const SizedBox(height: 10),
         ...caregivers.indexed.map((entry) {
           final caregiver = entry.$2;
-          final linkId = caregiver['id'] as String? ?? '';
           final caregiverName = '${caregiver['caregiverName'] ?? ''}'.trim();
           final platform = '${caregiver['platform'] ?? ''}'.trim();
           final deviceId = '${caregiver['caregiverDeviceId'] ?? ''}'.trim();
@@ -293,11 +271,6 @@ class _LinkedCaregiversSection extends StatelessWidget {
                     : shortDeviceId.isEmpty
                         ? platform.toUpperCase()
                         : '${platform.toUpperCase()} device $shortDeviceId',
-              ),
-              trailing: IconButton(
-                tooltip: 'Remove caregiver',
-                icon: const Icon(Icons.link_off),
-                onPressed: linkId.isEmpty ? null : () => onRevoke(linkId),
               ),
             ),
           );
