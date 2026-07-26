@@ -128,6 +128,9 @@ jobs:
   docker-lint:
     name: Docker Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/api
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -138,3 +141,12 @@ jobs:
           dockerfile: backend/api/.docker/api/Dockerfile
           failure-threshold: error
 
+      - name: Validate production Compose
+        env:
+          SERVER_NAME: https://fall.example.test
+          PUSH_PROVIDER: fake
+        run: |
+          export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          export APP_SECRET="$(openssl rand -hex 32)"
+          export DEVICE_TOKEN_HASH_SECRET="$(openssl rand -hex 32)"
+          docker compose -f compose.prod.yaml --profile tools config --quiet

@@ -1,6 +1,9 @@
 # Fall Guardian — current status and handoff
 
-> Functional status as of July 25, 2026.
+> Functional status as of July 26, 2026.
+>
+> The fixes described below are currently on
+> `agent/family-beta-readiness`, not yet on `main`.
 >
 > Read this file first when resuming work. Detailed architecture documentation
 > stays in `docs/SYSTEM_OVERVIEW.md`, and the watch contract in
@@ -12,7 +15,7 @@
 - Last functional baseline before this handoff:
   `9397d29 feat(assisted): start secure watch enrollment (#81)`.
 - PRs #73 to #81 merged after CI.
-- Expected working tree: clean and in sync with `origin/main`.
+- Active implementation branch: `agent/family-beta-readiness`.
 
 Always confirm before starting:
 
@@ -48,6 +51,10 @@ make status
 - waiting, error, expiration, and retry states;
 - no enrollment token persisted or logged;
 - Android requires exactly one connected watch before sending the secret.
+- on `agent/family-beta-readiness`, Wear OS incidents and cancellations are
+  persisted before Flutter and sent by a native `JobService` using the
+  phone's Keystore-backed credential;
+- duplicate native/Flutter submissions share one `clientAlertId`.
 
 ### Watches
 
@@ -57,6 +64,13 @@ make status
   Layer relay to Android;
 - no watch consumes the enrollment yet;
 - no watch sends an incident directly to the API yet.
+- on `agent/family-beta-readiness`, both raw algorithms reject impact-only
+  table knocks and require a fall phase plus two seconds of stillness;
+- defaults are `0.7 g`, `2.5 g`, `50°`, and `60 ms`, with migration from
+  untouched legacy defaults;
+- foreground cancellation requires a deliberate 1.5-second hold;
+- watchOS Debug keeps raw monitoring available while the app is visible;
+  Release background detection remains Apple's `CMFallDetectionManager`.
 
 ### Caregiver application
 
@@ -65,86 +79,49 @@ make status
 - retry of history loading after an error;
 - receipts and acknowledgements.
 
-## 3. Next exact task — PR B watchOS
+## 3. Next exact task — physical family-beta validation
 
-Goal: finish enrollment on the Apple Watch side, without yet adding direct
-fall submission.
-
-### Expected behavior
-
-1. receive the `companionEnrollment` message sent by the iPhone;
-2. verify `schemaVersion`, `platform`, token, and expiration;
-3. immediately call
-   `POST /api/v1/companion-enrollments/claim` with `URLSession`;
-4. retrieve `deviceId` and `deviceToken`;
-5. store `deviceToken` in Keychain and the non-sensitive metadata
-   separately;
-6. confirm only the `enrolled` status to the iPhone, never the secret;
-7. keep the state after a restart;
-8. offer a new enrollment if the secret is missing, corrupted, or rejected.
-
-### Main files
-
-- `apps/watchos/FallGuardian/FallGuardian Watch App/WatchSessionManager.swift`:
-  WatchConnectivity reception and confirmation;
-- new watchOS service dedicated to the `/claim` client;
-- new Keychain storage dedicated to companion credentials;
-- `apps/watchos/FallGuardianTests/`: contract, expiration, errors, and
-  persistence;
-- watchOS Xcode project and iOS project embedding the watch, if new Swift
-  files must be referenced explicitly;
-- `docs/COMPANION_ENROLLMENT.md` and `docs/SYSTEM_OVERVIEW.md`.
-
-The incoming message is already produced by the phone:
-
-```json
-{
-  "type": "companionEnrollment",
-  "schemaVersion": 1,
-  "platform": "watchos",
-  "enrollmentToken": "<64 characters>",
-  "expiresAt": "<ISO-8601 date>"
-}
-```
-
-The API URL must come from an explicit build configuration. Never hardcode
-a production URL or a secret. Do not accept an arbitrary URL from the
-WatchConnectivity message.
+Goal: validate reliability and false-positive protections on the father's
+real phone/watch pair before family deployment.
 
 ### Completion criteria
 
-- success, expiration, malformed response, and server rejection tested;
-- duplicate delivery of the same message without duplicate identity;
-- credentials available after the extension restarts;
-- no token visible in the logs;
-- iPhone confirmation contains no token;
-- `make -C apps/watchos check` green;
-- iOS app build with the embedded watch green;
-- documentation updated.
+- build with an explicit HTTPS `BACKEND_BASE_URL`;
+- configure one shared Android Release signing key for assisted phone and
+  Wear OS;
+- kill the Android Flutter process, trigger from Wear OS, and confirm the API
+  receives exactly one alert;
+- cancel from the watch during network loss, reconnect, and confirm the server
+  records cancellation;
+- lock the iPhone and validate a real Apple system fall event;
+- validate watch sound with notification permission and silent/Focus disabled;
+- record devices, OS versions, network, timestamp, and result.
 
-## 4. Next steps after PR B
+## 4. Next implementation steps after physical validation
 
 Recommended order:
 
-1. PR C — Wear OS consumption + Android Keystore;
-2. PR D — persistent queue and direct watchOS HTTPS;
-3. PR E — direct Wear OS HTTPS + native Android relay independent of
-   Flutter;
-4. Safety UX: long-press "I'm OK", network states, and caregiver handling;
-5. escalation, monitoring, privacy, and commercial readiness.
-
-Do not merge PR B with direct fall submission. Keep each increment testable
-and reversible.
+1. watchOS companion enrollment consumption + Keychain;
+2. Wear OS companion enrollment consumption + Android Keystore;
+3. persistent direct watchOS HTTPS;
+4. persistent direct Wear OS HTTPS (phone-side native relay is now done);
+5. assisted-phone long-press, network states, and caregiver handling;
+6. escalation, monitoring, privacy, and commercial readiness.
 
 ## 5. Validations already performed
 
 - backend: unit, integration, Behat, quality, and security tests;
-- assisted app: 151 tests, static analysis, and coverage at or above 90%
-  during PR #81;
+- assisted app: 154 Flutter tests, static analysis, and 96.13% covered
+  scoped lines on 2026-07-26;
+- assisted Android app-native unit tests and lint green;
 - assisted Android APK built;
 - iOS simulator app built with the embedded Watch companion;
 - "Watch connection" screen inspected on simulator;
-- existing deterministic watchOS/Wear OS builds and tests green in CI.
+- watchOS algorithm/deadline tests, analysis, and simulator build green;
+- Wear OS algorithm tests, lint, and build green.
+- assisted and caregiver iOS Release device builds compile without signing;
+- production Compose renders successfully with required secret placeholders
+  and no published PostgreSQL port.
 
 These validations do not prove full physical functioning.
 
@@ -237,10 +214,9 @@ For physical devices and network changes, follow each project's README.
 
 - Fall Guardian does not automatically call emergency services;
 - the current core function alerts linked caregivers via notification;
-- old code and old Android labels related to SMS still exist and must be
-  removed or clarified before commercialization;
 - no transport can work without a network path on the watch or phone;
-- the Android relay with a killed process is not yet guaranteed;
+- Android killed-process relay is implemented and tested in isolation but
+  still needs physical end-to-end validation;
 - revocation of a lost watch and token rotation are not implemented;
 - escalation without caregiver handling is incomplete;
 - retention, deletion, and false-positive policy to be defined;

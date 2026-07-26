@@ -13,7 +13,12 @@ import 'companion_enrollment_service.dart';
 
 /// A function that is called when the watch reports a fall.
 /// [timestamp] is the Unix epoch in milliseconds at the moment of detection.
-typedef FallDetectedCallback = void Function(int timestamp);
+/// [clientAlertId] is supplied by Android's durable native relay so Dart and
+/// Kotlin submit and cancel the same idempotent backend incident.
+typedef FallDetectedCallback = void Function(
+  int timestamp,
+  String? clientAlertId,
+);
 
 /// A function that is called when the watch (or any other device) cancels
 /// the current alert.
@@ -99,9 +104,10 @@ class WatchCommunicationService {
         // it (shouldn't happen, but defensive coding), fall back to now.
         final ts =
             args?['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
+        final clientAlertId = args?['clientAlertId'] as String?;
         // The `?.call(ts)` syntax means: invoke the function only if the
         // callback has been registered; otherwise do nothing silently.
-        _onFallDetected?.call(ts);
+        _onFallDetected?.call(ts, clientAlertId);
         return null;
 
       // Native code calls 'onAlertCancelled' with no payload when the user
@@ -152,6 +158,19 @@ class WatchCommunicationService {
         error: error,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  /// Gives Android's process-independent JobService the same backend URL used
+  /// by Dart. Device credentials already live in the shared Keystore-backed
+  /// store, so no token crosses this channel.
+  static Future<void> configureNativeAlertRelay(String baseUrl) async {
+    try {
+      await _channel.invokeMethod('configureNativeAlertRelay', {
+        'baseUrl': baseUrl,
+      });
+    } on MissingPluginException {
+      // iOS has no Android native relay and intentionally ignores this call.
     }
   }
 

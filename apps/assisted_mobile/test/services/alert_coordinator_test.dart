@@ -246,6 +246,21 @@ void main() {
     coordinator.dispose();
   });
 
+  test('startAlert reuses the native relay idempotency key', () async {
+    final backend = _FakeBackendGateway();
+    final coordinator = _coordinator(backendGateway: backend);
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    await coordinator.startAlert(
+      timestamp,
+      clientAlertId: 'wear-os-$timestamp',
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(backend.lastClientAlertId, 'wear-os-$timestamp');
+    coordinator.dispose();
+  });
+
   test(
       'startAlert keeps the original deadline when another detection arrives '
       'before the incident resolves', () async {

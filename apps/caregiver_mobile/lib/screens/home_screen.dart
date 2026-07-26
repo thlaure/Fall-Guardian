@@ -134,8 +134,6 @@ class _CaregiverHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -179,7 +177,9 @@ class _CaregiverHero extends StatelessWidget {
                 Text(
                   linked ? l10n.statusLinkedBody : l10n.howItWorksBody,
                   style: TextStyle(
-                    color: cs.onPrimary.withValues(alpha: 0.82),
+                    // The gradient is intentionally dark in both themes, so its
+                    // foreground must not follow the dynamic onPrimary color.
+                    color: Colors.white.withValues(alpha: 0.82),
                     fontSize: 14,
                     height: 1.35,
                   ),

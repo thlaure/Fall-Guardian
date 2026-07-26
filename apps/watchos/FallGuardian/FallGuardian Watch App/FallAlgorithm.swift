@@ -1,259 +1,207 @@
-// FallAlgorithm.swift
-// Fall Guardian — watchOS
-//
-// This file contains the pure math that decides whether a fall has occurred.
-// It has NO knowledge of sensors, network, or UI — it only receives numbers
-// and returns true/false.  That separation makes it easy to unit-test and to
-// share the same logic between platforms (the Kotlin Wear OS version uses
-// identical thresholds and state machine).
-//
-// How it fits in the system:
-//   CMMotionManager (hardware accelerometer)
-//       ↓  raw x/y/z values 50 times per second
-//   FallDetectionManager.process(data:)
-//       ↓  calls processSample() on every tick
-//   FallAlgorithm.processSample()   ← YOU ARE HERE
-//       ↓  returns true when fall is confirmed
-//   FallDetectionManager  fires onFallDetected callback
-//       ↓
-//   ContentViewModel.alertDidFire()  →  UI + WatchSessionManager
+import Foundation
 
-import Foundation  // Basic Swift utilities (Date, etc.) — no UI dependencies here.
-import CoreMotion  // Apple's motion framework; CMAccelerometerData lives here.
-                   // We import it for documentation purposes even though this
-                   // class only receives plain Doubles, not CMAccelerometerData directly.
-
-/// Pure fall-detection algorithm — a Swift port of the Kotlin Wear OS version.
+/// Multi-phase wrist fall detector tuned for loss-of-balance scenarios.
 ///
-/// ## What is the PSP algorithm?
-/// PSP stands for the three phases it checks in sequence:
-///   - **P**hase 1 — Free-fall  : the watch becomes nearly weightless
-///   - **P**hase 2 — Impact     : a sudden hard jolt follows the free-fall
-///   - **P**hase 3 — (P)osture/Tilt : body orientation change after landing
-///
-/// Trigger: (Free-fall latch AND Impact) OR (Impact AND Tilt).
-///
-/// A real human fall typically produces this exact signature:
-///   1. The person's arm swings freely → accelerometer magnitude drops near 0 g.
-///   2. The body hits the ground        → magnitude spikes well above 1 g.
-/// Requiring free-fall + impact together eliminates most false positives
-/// (sitting down, arm gestures, phone vibrations, etc.). Some real falls never
-/// produce a clean free-fall phase (e.g. sliding out of a chair); for those,
-/// impact + a steep post-fall tilt angle triggers the alert instead.
-///
-/// ## Units: g-forces vs m/s²
-/// Apple's CMMotionManager reports acceleration in **g** (1 g ≈ 9.81 m/s²).
-/// When the watch is lying still on a table the magnitude is exactly 1 g
-/// (gravity alone).  During free-fall it approaches 0 g.  During a hard impact
-/// it can reach 3–6 g.  All thresholds in this class use g as the unit.
-class FallAlgorithm {
-
-    // MARK: - Configurable thresholds
-    //
-    // These four values are the knobs that control sensitivity.  They are NOT
-    // hard-coded — FallDetectionManager reads them from UserDefaults (the watch's
-    // local key-value store) so the phone app can push updates via WatchSessionManager.
-    // The keys that must match across all platforms are documented in CLAUDE.md.
-
-    /// Acceleration magnitude (in g) below which the watch is considered to be in
-    /// free-fall.  Earth's gravity alone gives 1 g; during a true free-fall the
-    /// accelerometer approaches 0 g.  0.5 g is a conservative threshold that
-    /// avoids triggering on slow arm movements while still catching real falls.
-    var freeFallThresholdG: Double = 0.5
-
-    /// Acceleration magnitude (in g) that must be exceeded for an impact to be
-    /// registered.  Normal walking peaks around 1.5–2 g; a body hitting the floor
-    /// typically produces 3–6 g.  2.5 g sits between those ranges.
+/// A wrist impact alone is intentionally insufficient because knocking a table
+/// can exceed the impact threshold. A fall candidate must contain an impact,
+/// two seconds of post-impact stillness, and either a qualified low-acceleration
+/// phase or a meaningful orientation change relative to the pre-impact wrist
+/// orientation.
+final class FallAlgorithm {
+    var freeFallThresholdG: Double = 0.7
     var impactThresholdG: Double = 2.5
+    var tiltThresholdDeg: Double = 50
+    var freeFallMinMs: Double = 60
 
-    /// Tilt angle (degrees from vertical) checked after an impact spike. Combined
-    /// with an active impact, a tilt past this threshold triggers a fall even
-    /// without a qualifying free-fall phase (see `processSample`).
-    var tiltThresholdDeg: Double = 45.0
-
-    /// Minimum number of milliseconds the acceleration must stay below
-    /// `freeFallThresholdG` to be counted as genuine free-fall.  Short spikes
-    /// (e.g. a sudden wrist flick) last only 10–30 ms; real falls typically last
-    /// 80–200 ms.  This filter prevents wrist movements from triggering the alarm.
-    var freeFallMinMs: Double = 80.0
-
-    // MARK: - Internal state
-    //
-    // These variables track what phase the algorithm is currently in.
-    // They are all reset between falls so each detection starts fresh.
-
-    /// The millisecond timestamp at which the current free-fall window started.
-    /// Used to measure how long the watch has been in free-fall.
     private var freeFallStartMs: Double = 0
-
-    /// True while the magnitude is currently below `freeFallThresholdG`.
-    /// Becomes false the moment the magnitude climbs back above the threshold.
     private var freeFallActive = false
-
-    /// A "latch" flag that stays true once a qualifying free-fall has been seen.
-    /// This is important because free-fall ends before impact — the watch is no
-    /// longer in free-fall when it hits the ground.  Without a latch we would
-    /// never see both phases simultaneously.  Only `reset()` clears this.
     private var freeFallQualifiedLatch = false
+    private var freeFallQualifiedAtMs: Double = 0
 
-    /// True once a magnitude spike above `impactThresholdG` has been seen.
     private var impactDetected = false
-
-    /// Millisecond timestamp of the most recent impact spike.
-    /// Used together with `impactDetected` to enforce a 2-second impact window
-    /// (impacts older than 2 s are ignored to avoid late false triggers).
     private var impactTimeMs: Double = 0
+    private var preImpactGravity = Vector3.zero
+    private var orientationChangedLatch = false
 
-    // MARK: - Low-pass filter state
-    //
-    // A raw accelerometer signal contains both gravity (a constant downward pull)
-    // and the device's own acceleration (wrist movements, impacts).  Separating
-    // them lets us compute tilt even while the user is moving.
-    //
-    // A low-pass filter keeps the slow-changing gravity component by blending the
-    // current raw value with the previous filtered value:
-    //   gravity_new = alpha * gravity_old + (1 - alpha) * raw
-    // A high alpha (0.8) means "trust the old value a lot" → the filtered signal
-    // changes slowly → it tracks gravity but ignores fast movements.
+    private var stillnessStartMs: Double = 0
+    private var stillnessActive = false
 
-    private var gravityX: Double = 0  // Filtered gravity component along X axis (g)
-    private var gravityY: Double = 0  // Filtered gravity component along Y axis (g)
-    private var gravityZ: Double = 0  // Filtered gravity component along Z axis (g)
+    private var gravity = Vector3.zero
+    private var gravityInitialized = false
 
-    /// Blending coefficient for the gravity low-pass filter.
-    /// 0.8 = 80% old estimate + 20% new measurement.
-    private let alpha: Double = 0.8
+    private let alpha = 0.8
+    private let candidateWindowMs = 5_000.0
+    private let lowAccelerationToImpactMaxMs = 1_500.0
+    private let settleDelayMs = 300.0
+    private let stillnessMinMs = 2_000.0
+    private let stillnessThresholdG = 0.25
+    private let nearGravityToleranceG = 0.25
 
-    // MARK: - Public API
-
-    /// Resets all internal state so the next `processSample` call starts a brand-new
-    /// detection cycle.  Called by FallDetectionManager after a fall is confirmed
-    /// and after `stop()` to avoid carrying stale state into the next session.
     func reset() {
-        freeFallActive = false
         freeFallStartMs = 0
+        freeFallActive = false
         freeFallQualifiedLatch = false
+        freeFallQualifiedAtMs = 0
         impactDetected = false
         impactTimeMs = 0
-        gravityX = 0; gravityY = 0; gravityZ = 0
+        preImpactGravity = .zero
+        orientationChangedLatch = false
+        stillnessStartMs = 0
+        stillnessActive = false
+        gravity = .zero
+        gravityInitialized = false
     }
 
-    /// Analyzes one accelerometer sample and returns whether a fall was just detected.
-    ///
-    /// This method is called 50 times per second by `FallDetectionManager`.
-    /// Each call runs through the three PSP phases in order and returns `true`
-    /// only when both phase-1 latch and active phase-2 are simultaneously satisfied.
-    ///
-    /// - Parameters:
-    ///   - ax: Raw X-axis acceleration from the accelerometer, in g-units.
-    ///         Positive X points roughly toward the top of the watch face.
-    ///   - ay: Raw Y-axis acceleration, in g-units.
-    ///   - az: Raw Z-axis acceleration, in g-units.
-    ///         Positive Z points away from the wearer's wrist.
-    ///   - nowMs: Current wall-clock time in milliseconds since Unix epoch (1 Jan 1970).
-    ///            Passed in rather than read internally so tests can feed fake timestamps.
-    /// - Returns: `true` the first time both free-fall and impact conditions are met.
-    ///            `false` on every other call.
-    func processSample(ax: Double, ay: Double, az: Double, nowMs: Double) -> Bool {
+    /// Processes an accelerometer sample expressed in g-units.
+    func processSample(
+        ax: Double,
+        ay: Double,
+        az: Double,
+        nowMs: Double
+    ) -> Bool {
+        let sample = Vector3(x: ax, y: ay, z: az)
+        let normG = sample.magnitude
 
-        // --- Step 0: Update the gravity low-pass filter ---
-        // Each component is blended independently.  After a few seconds of still
-        // wear the gravity vector converges and tracks the orientation of the watch.
-        gravityX = alpha * gravityX + (1 - alpha) * ax
-        gravityY = alpha * gravityY + (1 - alpha) * ay
-        gravityZ = alpha * gravityZ + (1 - alpha) * az
+        if !gravityInitialized && normG > 0.8 && normG < 1.2 {
+            gravity = sample
+            gravityInitialized = true
+        }
 
-        // --- Compute the scalar magnitude of the raw acceleration vector ---
-        // norm(x,y,z) = √(x²+y²+z²)
-        // This collapses the three-axis measurement into a single "how much force?"
-        // number in g.  When the watch is still: ~1 g.  Free-fall: ~0 g.  Impact: 3–6 g.
-        // Using magnitude (instead of any single axis) makes the algorithm
-        // orientation-independent — it works regardless of how the user wears the watch.
-        //
-        // CMMotionManager already delivers values in g, so no conversion is needed.
-        let normG = norm(ax, ay, az)
+        // Low acceleration is a pre-impact fall phase. Accepting it after a
+        // table knock would join unrelated later wrist movement to that impact.
+        if !impactDetected {
+            updateFreeFall(normG: normG, nowMs: nowMs)
+        }
 
-        // --- Phase 1: Free-fall detection ---
-        // We need to see the magnitude stay below the threshold for at least
-        // `freeFallMinMs` milliseconds continuously.  A single low sample could
-        // be noise; a sustained dip is real free-fall.
+        if !impactDetected && normG > impactThresholdG {
+            freeFallQualifiedLatch =
+                freeFallQualifiedLatch &&
+                (0...lowAccelerationToImpactMaxMs).contains(
+                    nowMs - freeFallQualifiedAtMs
+                )
+            impactDetected = true
+            impactTimeMs = nowMs
+            preImpactGravity = gravity
+        }
+
+        // Impact spikes are transient linear acceleration, not posture. Do not
+        // blend them into the low-pass gravity estimate.
+        if normG <= impactThresholdG {
+            updateGravity(with: sample)
+        }
+
+        guard impactDetected else { return false }
+        guard nowMs - impactTimeMs <= candidateWindowMs else {
+            clearCandidate()
+            return false
+        }
+
+        if orientationChangeDeg() >= tiltThresholdDeg {
+            orientationChangedLatch = true
+        }
+
+        let dynamicG = (sample - gravity).magnitude
+        let afterSettleDelay = nowMs - impactTimeMs >= settleDelayMs
+        let stillNow =
+            afterSettleDelay &&
+            dynamicG <= stillnessThresholdG &&
+            abs(normG - 1) <= nearGravityToleranceG
+
+        if stillNow {
+            if !stillnessActive {
+                stillnessActive = true
+                stillnessStartMs = nowMs
+            }
+        } else {
+            stillnessActive = false
+            stillnessStartMs = 0
+        }
+
+        let stillnessQualified =
+            stillnessActive && nowMs - stillnessStartMs >= stillnessMinMs
+        return stillnessQualified &&
+            (freeFallQualifiedLatch || orientationChangedLatch)
+    }
+
+    private func updateFreeFall(normG: Double, nowMs: Double) {
         if normG < freeFallThresholdG {
-            // Magnitude is in the free-fall zone.
             if !freeFallActive {
-                // First sample in this free-fall window — record the start time.
                 freeFallActive = true
                 freeFallStartMs = nowMs
             }
-            // If freeFallActive was already true, we just keep accumulating time.
+            if nowMs - freeFallStartMs >= freeFallMinMs {
+                freeFallQualifiedLatch = true
+                freeFallQualifiedAtMs = nowMs
+            }
         } else {
-            // Magnitude climbed back above threshold — free-fall ended.
             freeFallActive = false
-            // Note: we do NOT reset freeFallStartMs here because the latch below
-            // has already recorded a qualified event if one occurred.
         }
-
-        // `freeFallQualified` is true only while in the free-fall zone AND the
-        // duration has exceeded the minimum millisecond requirement.
-        let freeFallQualified = freeFallActive && (nowMs - freeFallStartMs >= freeFallMinMs)
-
-        // The latch turns on as soon as free-fall qualifies and stays on until
-        // reset() is called.  This lets us match a free-fall that ended 500 ms
-        // ago with an impact happening right now — a realistic fall timeline.
-        if freeFallQualified { freeFallQualifiedLatch = true }
-
-        // --- Phase 2: Impact detection ---
-        // Record the timestamp whenever a spike above the threshold occurs.
-        if normG > impactThresholdG {
-            impactDetected = true
-            impactTimeMs = nowMs  // Refresh the window start on every spike sample.
-        }
-
-        // The impact is considered "active" only within 2 seconds of the spike.
-        // After 2 s we stop waiting — if a free-fall latch exists but no recent
-        // impact followed it was probably a slow controlled descent, not a fall.
-        let impactActive = impactDetected && (nowMs - impactTimeMs < 2000)
-
-        // --- Phase 3: Tilt detection ---
-        // Tilt angle is computed from the filtered gravity vector. Some real falls
-        // (e.g. a slow slide out of a chair) never produce a qualifying free-fall
-        // phase but still end in a hard impact followed by lying at a steep angle.
-        // Tracking this as an alternate path — impact + tilt, no free-fall required —
-        // catches that case instead of only logging the angle for later use.
-        let tiltActive = tiltAngleDeg() > tiltThresholdDeg
-
-        // --- Final trigger ---
-        // A fall is confirmed when either:
-        //   • The free-fall latch fired earlier AND an impact spike is still active, or
-        //   • An impact spike is active AND the watch is currently tilted past
-        //     threshold (covers falls without a free-fall phase).
-        // Returning true here causes FallDetectionManager to fire the alarm.
-        return (freeFallQualifiedLatch && impactActive) || (impactActive && tiltActive)
     }
 
-    // MARK: - Private helpers
-
-    /// Computes the tilt angle (in degrees) between the filtered gravity vector
-    /// and the vertical axis (Z axis, perpendicular to the wrist).
-    ///
-    /// A tilt of 0° means the watch face is horizontal (wearer lying flat on back).
-    /// A tilt of 90° means the watch face is vertical (normal wearing position).
-    /// Values near 90° after a fall suggest the person is lying on their side.
-    ///
-    /// The formula is the arc-cosine of the Z component divided by the total
-    /// magnitude, then converted from radians to degrees.
-    /// `max(-1, min(1, ...))` clamps the input to the valid arc-cosine domain
-    /// [-1, 1] to prevent a NaN result from floating-point rounding errors.
-    private func tiltAngleDeg() -> Double {
-        let gNorm = norm(gravityX, gravityY, gravityZ)
-        guard gNorm > 0.01 else { return 0 }  // Avoid dividing by near-zero during initialisation.
-        let cosAngle = max(-1, min(1, gravityZ / gNorm))
-        return (acos(cosAngle) * 180) / .pi
+    private func updateGravity(with sample: Vector3) {
+        guard gravityInitialized else { return }
+        gravity = gravity * alpha + sample * (1 - alpha)
     }
 
-    /// Returns the Euclidean magnitude (length) of a 3D vector.
-    /// Example: norm(0, 0, 1) = 1.0  (watch lying flat, gravity pointing straight down)
-    ///          norm(0, 0, 0) = 0.0  (theoretical pure free-fall)
-    private func norm(_ x: Double, _ y: Double, _ z: Double) -> Double {
+    private func orientationChangeDeg() -> Double {
+        let beforeNorm = preImpactGravity.magnitude
+        let afterNorm = gravity.magnitude
+        guard beforeNorm > 0.01, afterNorm > 0.01 else { return 0 }
+        let cosine = min(
+            1,
+            max(-1, preImpactGravity.dot(gravity) / (beforeNorm * afterNorm))
+        )
+        return acos(cosine) * 180 / .pi
+    }
+
+    private func clearCandidate() {
+        impactDetected = false
+        impactTimeMs = 0
+        preImpactGravity = .zero
+        orientationChangedLatch = false
+        stillnessActive = false
+        stillnessStartMs = 0
+        freeFallQualifiedLatch = false
+        freeFallQualifiedAtMs = 0
+    }
+}
+
+private struct Vector3 {
+    let x: Double
+    let y: Double
+    let z: Double
+
+    static let zero = Vector3(x: 0, y: 0, z: 0)
+
+    var magnitude: Double {
         (x * x + y * y + z * z).squareRoot()
+    }
+
+    func dot(_ other: Vector3) -> Double {
+        x * other.x + y * other.y + z * other.z
+    }
+
+    static func +(left: Vector3, right: Vector3) -> Vector3 {
+        Vector3(
+            x: left.x + right.x,
+            y: left.y + right.y,
+            z: left.z + right.z
+        )
+    }
+
+    static func -(left: Vector3, right: Vector3) -> Vector3 {
+        Vector3(
+            x: left.x - right.x,
+            y: left.y - right.y,
+            z: left.z - right.z
+        )
+    }
+
+    static func *(vector: Vector3, scalar: Double) -> Vector3 {
+        Vector3(
+            x: vector.x * scalar,
+            y: vector.y * scalar,
+            z: vector.z * scalar
+        )
     }
 }

@@ -22,7 +22,7 @@
 //   6. WatchSessionManager.sendFallEvent() notifies the iPhone
 //
 // How data flows when the alert is cancelled:
-//   Watch side:   tap → ContentView.onTapGesture → viewModel.cancelAlert()
+//   Watch side:   deliberate 1.5 s hold → viewModel.cancelAlert()
 //   Phone side:   WatchSessionManager.onAlertCancelled → viewModel.cancelAlert(notifyPhone: false)
 
 import SwiftUI      // Apple's declarative UI framework for all Apple platforms.
@@ -56,13 +56,6 @@ struct ContentView: View {
                 alertView   // Big red countdown — fall is in progress.
             } else {
                 idleView    // Shield icon — monitoring quietly.
-            }
-        }
-        // A single tap anywhere on the watch screen cancels the alert.
-        // `onTapGesture` is added to the Group so it covers both sub-views.
-        .onTapGesture {
-            if viewModel.isAlertActive {
-                viewModel.cancelAlert()  // User acknowledged — stop the countdown.
             }
         }
         // Called once when the view first appears on screen.
@@ -115,11 +108,22 @@ struct ContentView: View {
                     .font(.system(size: 56, weight: .bold))
                     .foregroundColor(.white)
 
-                // Helper text.  Small because screen real estate is precious on a watch.
-                Text("Tap anywhere to cancel")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.6))
+                Text("Hold 1.5 s")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: 130, minHeight: 38)
+                    .background(Color.green.opacity(0.85))
+                    .clipShape(Capsule())
                     .multilineTextAlignment(.center)
+                    .contentShape(Capsule())
+                    .onLongPressGesture(
+                        minimumDuration: 1.5,
+                        maximumDistance: 30
+                    ) {
+                        viewModel.cancelAlert()
+                    }
+                    .accessibilityLabel("I'm OK. Cancel alert")
+                    .accessibilityHint("Touch and hold for one and a half seconds")
             }
         }
         // `containerBackground` sets the ambient color used by watchOS for the
@@ -349,6 +353,7 @@ class ContentViewModel {
         WatchAlertNotificationService.shared.clearAlert()
         startForegroundFallbackIfNeeded()
         if notifyPhone {
+            WKInterfaceDevice.current().play(.success)
             // Tell the phone to dismiss its FallAlertScreen.
             WatchSessionManager.shared.sendCancelAlert()
         }
@@ -436,8 +441,18 @@ class ContentViewModel {
 
         switch status {
         case .authorized:
+            #if DEBUG
+            // Device Debug builds deliberately keep the raw accelerometer
+            // detector active alongside Apple's background detector. This
+            // allows developers to exercise and tune FallAlgorithm using real
+            // watch motion. Release builds use only Apple's system detector
+            // when authorized, avoiding duplicate alerts and battery drain.
+            monitoringStatusText = "Background + raw debug monitoring"
+            FallDetectionManager.shared.start()
+            #else
             monitoringStatusText = "Background monitoring active"
             FallDetectionManager.shared.stop()
+            #endif
         case .notDetermined:
             monitoringStatusText = "Permission required"
             startForegroundFallbackIfNeeded()
@@ -451,10 +466,16 @@ class ContentViewModel {
     }
 
     private func startForegroundFallbackIfNeeded() {
+        #if DEBUG
+        // Raw detection is part of the physical-device test surface in Debug,
+        // even when the system Fall Detection permission is authorized.
+        FallDetectionManager.shared.start()
+        #else
         guard !SystemFallDetectionService.shared.usesSystemDetection else {
             FallDetectionManager.shared.stop()
             return
         }
         FallDetectionManager.shared.start()
+        #endif
     }
 }

@@ -1,6 +1,6 @@
 # Fall Guardian — functional and technical documentation
 
-> Reference status as of July 25, 2026.
+> Reference status as of July 26, 2026.
 >
 > This document separately describes what exists on `main`, known
 > limitations, and what remains to be built. It is the product and
@@ -9,6 +9,9 @@
 > single next actionable task live in `CURRENT_STATUS.md` instead — update
 > there, not here. The watch-enrollment contract and its PR breakdown live
 > in `docs/COMPANION_ENROLLMENT.md`.
+>
+> Items marked 🟡 are implemented on `agent/family-beta-readiness` and
+> remain pending review/merge.
 
 ## 1. Product goal
 
@@ -58,9 +61,10 @@ assisted person's application immediately registers the alert on the
 server. The server keeps a 30-second cancellation window. When it
 expires, it notifies the caregivers linked to the person.
 
-This path works well when the phone's Flutter code can start and reach
-the server. It does not yet offer all the guarantees required when the
-application is stopped, after a restart, or when the watch is alone.
+On Android, a persistent native `JobService` now registers Wear OS
+incidents even when Flutter is stopped and retries after network loss or
+process death. The iOS relay still depends on the application path, and
+neither watch submits directly when it is alone.
 
 ### Target architecture
 
@@ -115,7 +119,9 @@ will be deduplicated. Opening the application must never be necessary.
 - ⚠️ location is not required to create the alert: it can arrive later;
 - ✅ user-facing watch text describes backend escalation and caregiver
   notification; it no longer promises an SMS;
-- ⚠️ the network relay to the API still depends on Flutter.
+- 🟡 Android persists Wear OS incidents and cancellations before touching
+  Flutter, then relays them with the same `clientAlertId`;
+- ⚠️ the iOS relay to the API still depends on the application path.
 
 Since the merge of
 [#74](https://github.com/thlaure/Fall-Guardian/pull/74), a second event
@@ -153,8 +159,8 @@ On `main`:
 - ✅ activation at watchOS extension startup;
 - ✅ possible reception of a fall in the background;
 - ✅ persistence and retry of an event that was not transmitted;
-- ✅ custom detection with the accelerometer as a fallback when the app
-  is open;
+- 🟡 custom raw detection in Debug while the app is open, for physical
+  tuning; Release uses Apple's system detector when authorized;
 - ✅ real-time transmission to the iPhone with WatchConnectivity;
 - ✅ deferred transfer if the real-time message does not go through;
 - ✅ countdown and cancellation on the watch;
@@ -166,7 +172,7 @@ On `main`:
   30-second deadline;
 - ✅ retransmission of the cancellation to the iPhone;
 - ✅ integration of the Watch target into the main iOS project;
-- ⚠️ a simple tap can cancel, which favors accidental cancellations;
+- 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
 - ⚠️ no direct submission to the API;
 - ⚠️ watchOS does not permit forced foreground launch; the system
   notification is the supported urgent surface;
@@ -185,7 +191,10 @@ These features joined `main` with
 ### 5.4 Wear OS watch
 
 - ✅ foreground service to continuously monitor the accelerometer;
-- ✅ detection based on free fall, impact, and tilt change;
+- 🟡 detection requires impact, either qualified low acceleration or a
+  pre/post-impact orientation change, then two seconds of stillness;
+- 🟡 plain table impacts and continued post-impact motion are rejected by
+  deterministic tests;
 - ✅ service restart after the watch boots;
 - ✅ countdown and local cancellation;
 - ✅ looping alarm sound for the active 30-second countdown;
@@ -197,12 +206,15 @@ These features joined `main` with
   is disabled;
 - ✅ immediate message to the Android phone;
 - ✅ urgent data persisted in the Data Layer as a fallback;
+- 🟡 the paired Android phone persists the incident and schedules a native
+  authenticated relay before starting any Flutter UI;
+- 🟡 cancellation uses the same durable native path;
+- 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
 - ⚠️ no direct submission to the API;
 - ⚠️ Android 14+ or Google Play policy can withhold full-screen-intent access;
   the actionable notification remains the fallback;
-- ⚠️ if the phone app's process is killed, Android may show a
-  notification, but server registration still waits for the Flutter
-  activity to start.
+- ⚠️ killed-process relay is covered by native unit/lint tests but still
+  requires physical phone/watch/network-loss validation.
 
 The locked-watch path was validated on a physical Galaxy Watch on 2026-07-26:
 the display woke, the countdown and alarm started, the event reached the paired
@@ -241,9 +253,11 @@ phone, and cancellation stopped the urgent presentation.
 
 1. The watch detects a possible fall.
 2. It creates or transmits a fall timestamp.
-3. The phone creates a `clientAlertId`.
+3. The phone creates a `clientAlertId`; Android reuses a deterministic ID
+   persisted by its native Wear relay.
 4. The phone immediately sends the alert to the API, without waiting for
-   the countdown to finish.
+   the countdown to finish. Android can do this from a persistent native
+   job without a Flutter activity.
 5. The server records:
    - the reception time;
    - the cancellation deadline, 30 seconds later;
@@ -319,7 +333,7 @@ or
 | Watch without Wi-Fi, phone in range with mobile network | Watch → phone relay possible |
 | Locked iPhone, iOS app in background | Native wake-up observed on simulator; physical test required |
 | Android phone app visible or process alive | Relay possible |
-| Android process killed | Local notification possible, server creation not guaranteed |
+| Android process killed | Native persisted relay schedules server creation; physical validation pending |
 | Watch alone with Wi-Fi/cellular | No direct submission today |
 | No network on watch and phone | Transmission impossible; local event only |
 | iPhone restarted before first unlock | WatchConnectivity may be delayed |
@@ -452,7 +466,8 @@ Local OpenAPI documentation is accessible at
 - ✅ enrollment creation and transmission from the assisted person app;
 - ✅ Flutter tests and static analysis of the mobile applications;
 - ✅ Wear OS lint, tests, and build;
-- ✅ watchOS analysis, build, and tests;
+- ✅ watchOS analysis, build, deadline tests, and raw-algorithm tests;
+- 🟡 Android assisted-app native relay unit tests and lint;
 - ✅ simulated Watch → iPhone → Flutter chain;
 - ✅ iPhone app launch/wake-up in the background observed on simulator;
 - ⚠️ `transferUserInfo` and locked-phone behavior require real devices;
@@ -482,8 +497,9 @@ The architecture changes below can now build on this common base.
 ### Reliability
 
 - 🔴 the watch does not contact the server directly;
-- 🔴 native phone relays still depend on Flutter;
-- 🔴 the Android killed-process case is not reliable;
+- 🔴 the iOS phone relay still depends on the application path;
+- ⚠️ the Android killed-process path is implemented but not yet physically
+  validated end to end;
 - 🔴 the offline queue is not unified and durable end to end;
 - 🔴 the watch apps do not yet consume the new companion enrollment;
 - 🔴 the renotification policy when there is no caregiver response is
@@ -495,9 +511,9 @@ The architecture changes below can now build on this common base.
 
 ### Assisted person experience
 
-- 🔴 replace the remaining Android text that mentions an SMS;
 - 🔴 replace the single-tap cancellation with a large "I'm OK" button
-  with an approximately 1.5-second long press and haptic feedback;
+  with an approximately 1.5-second long press and haptic feedback on the
+  assisted phone; watch foreground screens now use a 1.5-second hold;
 - 🔴 display useful states:
   "transmitting", "alert registered", "caregivers notified",
   "offline";

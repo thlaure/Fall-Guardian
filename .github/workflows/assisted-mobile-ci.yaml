@@ -62,11 +62,23 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+          cache-dependency-path: apps/assisted_mobile/android/**/*.gradle*
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Run deterministic quality checks
         run: make quality
+
+      - name: Run assisted Android native tests and lint
+        working-directory: apps/assisted_mobile/android
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug
 
       - name: Build Android APK
         run: make build-android

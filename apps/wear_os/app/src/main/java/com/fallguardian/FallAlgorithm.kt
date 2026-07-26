@@ -1,106 +1,196 @@
 package com.fallguardian
 
+import kotlin.math.acos
 import kotlin.math.sqrt
 
 /**
- * PSP-optimized fall detection algorithm.
+ * Multi-phase wrist fall detector tuned for loss-of-balance scenarios.
  *
- * Three phases:
- *   Phase 1 (Free-fall): ||accel|| < freeFallThresholdG for >= freeFallMinMs
- *   Phase 2 (Impact):    ||accel|| > impactThresholdG
- *   Phase 3 (Tilt):      angle from upright > tiltThresholdDeg (via gravity vector)
+ * A wrist impact is not enough: knocking a table can easily exceed 2.5 g.
+ * Detection therefore waits for a stable post-impact posture and requires:
  *
- * Trigger: (Phase1 qualified [latched] AND Phase2 active) OR (Phase2 active AND Phase3 active)
- * Free-fall + impact catches the typical fall signature; impact + tilt catches
- * falls that never produce a clean free-fall phase (e.g. sliding out of a chair).
+ *   (qualified low-acceleration phase OR meaningful orientation change)
+ *       AND impact
+ *       AND two seconds of post-impact stillness.
  *
- * No immobility requirement — fires immediately after the last qualifying phase.
+ * Orientation is measured relative to the wrist orientation immediately
+ * before impact, not relative to an arbitrary device axis. This removes the
+ * old false-positive path where a normally worn watch was already beyond the
+ * absolute 45° "tilt" threshold before anything happened.
  */
 class FallAlgorithm(
-    var freeFallThresholdG: Float = 0.5f,
+    var freeFallThresholdG: Float = 0.7f,
     var impactThresholdG: Float = 2.5f,
-    var tiltThresholdDeg: Float = 45f,
-    var freeFallMinMs: Long = 80L
+    var tiltThresholdDeg: Float = 50f,
+    var freeFallMinMs: Long = 60L
 ) {
-    // State
     private var freeFallStartMs: Long = 0L
     private var freeFallActive = false
-    // Latches true once free-fall qualifies; cleared only by reset().
-    // This preserves the qualification across the impact sample that clears freeFallActive.
     private var freeFallQualifiedLatch = false
+    private var freeFallQualifiedAtMs: Long = 0L
+
     private var impactDetected = false
     private var impactTimeMs: Long = 0L
+    private val preImpactGravity = FloatArray(3)
+    private var orientationChangedLatch = false
 
-    // Gravity low-pass filter (for tilt calculation)
-    private val gravity = FloatArray(3) { 0f }
-    private val alpha = 0.8f // low-pass filter coefficient
+    private var stillnessStartMs: Long = 0L
+    private var stillnessActive = false
 
-    /** Reset all state (call after a fall fires or on service restart). */
+    private val gravity = FloatArray(3)
+    private var gravityInitialized = false
+
+    private val alpha = 0.8f
+    private val candidateWindowMs = 5_000L
+    private val lowAccelerationToImpactMaxMs = 1_500L
+    private val settleDelayMs = 300L
+    private val stillnessMinMs = 2_000L
+    private val stillnessThresholdG = 0.25f
+    private val nearGravityToleranceG = 0.25f
+
     fun reset() {
-        freeFallActive = false
         freeFallStartMs = 0L
+        freeFallActive = false
         freeFallQualifiedLatch = false
+        freeFallQualifiedAtMs = 0L
         impactDetected = false
         impactTimeMs = 0L
+        preImpactGravity.fill(0f)
+        orientationChangedLatch = false
+        stillnessStartMs = 0L
+        stillnessActive = false
         gravity.fill(0f)
+        gravityInitialized = false
     }
 
     /**
-     * Process one sensor sample.
-     * @param ax/ay/az  raw accelerometer values in m/s² (device frame)
-     * @param nowMs     current time in milliseconds
-     * @return          true if a fall was just detected
+     * @param ax/ay/az raw accelerometer values in m/s².
+     * @param nowMs monotonic elapsed time in milliseconds.
      */
     fun processSample(ax: Float, ay: Float, az: Float, nowMs: Long): Boolean {
-        // Gravity isolation via low-pass filter
-        gravity[0] = alpha * gravity[0] + (1 - alpha) * ax
-        gravity[1] = alpha * gravity[1] + (1 - alpha) * ay
-        gravity[2] = alpha * gravity[2] + (1 - alpha) * az
+        val normG = norm(ax, ay, az) / EARTH_GRAVITY
 
-        val normG = norm(ax, ay, az) / 9.81f // convert to g-units
+        if (!gravityInitialized && normG > 0.8f && normG < 1.2f) {
+            gravity[0] = ax
+            gravity[1] = ay
+            gravity[2] = az
+            gravityInitialized = true
+        }
 
-        // --- Phase 1: Free-fall detection ---
+        // Low acceleration is a pre-impact fall phase. Accepting it after a
+        // table knock would turn unrelated later wrist movement into a fall.
+        if (!impactDetected) {
+            updateFreeFall(normG, nowMs)
+        }
+
+        if (!impactDetected && normG > impactThresholdG) {
+            freeFallQualifiedLatch =
+                freeFallQualifiedLatch &&
+                    nowMs - freeFallQualifiedAtMs in
+                    0..lowAccelerationToImpactMaxMs
+            impactDetected = true
+            impactTimeMs = nowMs
+            preImpactGravity[0] = gravity[0]
+            preImpactGravity[1] = gravity[1]
+            preImpactGravity[2] = gravity[2]
+        }
+
+        // Do not blend impact spikes into the gravity estimate. They are
+        // transient linear acceleration, not a posture change.
+        if (normG <= impactThresholdG) {
+            updateGravity(ax, ay, az)
+        }
+
+        if (!impactDetected) return false
+        if (nowMs - impactTimeMs > candidateWindowMs) {
+            clearCandidate()
+            return false
+        }
+
+        if (orientationChangeDeg() >= tiltThresholdDeg) {
+            orientationChangedLatch = true
+        }
+
+        val dynamicG = norm(
+            ax - gravity[0],
+            ay - gravity[1],
+            az - gravity[2]
+        ) / EARTH_GRAVITY
+        val afterSettleDelay = nowMs - impactTimeMs >= settleDelayMs
+        val stillNow =
+            afterSettleDelay &&
+                dynamicG <= stillnessThresholdG &&
+                kotlin.math.abs(normG - 1f) <= nearGravityToleranceG
+
+        if (stillNow) {
+            if (!stillnessActive) {
+                stillnessActive = true
+                stillnessStartMs = nowMs
+            }
+        } else {
+            stillnessActive = false
+            stillnessStartMs = 0L
+        }
+
+        val stillnessQualified =
+            stillnessActive && nowMs - stillnessStartMs >= stillnessMinMs
+        return stillnessQualified &&
+            (freeFallQualifiedLatch || orientationChangedLatch)
+    }
+
+    private fun updateFreeFall(normG: Float, nowMs: Long) {
         if (normG < freeFallThresholdG) {
             if (!freeFallActive) {
                 freeFallActive = true
                 freeFallStartMs = nowMs
             }
+            if (nowMs - freeFallStartMs >= freeFallMinMs) {
+                freeFallQualifiedLatch = true
+                freeFallQualifiedAtMs = nowMs
+            }
         } else {
             freeFallActive = false
         }
-        val freeFallQualified = freeFallActive && (nowMs - freeFallStartMs >= freeFallMinMs)
-        if (freeFallQualified) freeFallQualifiedLatch = true
-
-        // --- Phase 2: Impact detection ---
-        if (normG > impactThresholdG) {
-            impactDetected = true
-            impactTimeMs = nowMs
-        }
-        // Impact window: keep it alive for 2 seconds after detection
-        val impactActive = impactDetected && (nowMs - impactTimeMs < 2000L)
-
-        // --- Phase 3: Tilt detection ---
-        val tiltActive = tiltAngleDeg() > tiltThresholdDeg
-
-        // --- Trigger rule ---
-        // Either the free-fall latch fired and impact is still active, or impact
-        // is active together with a steep tilt (covers falls with no clean
-        // free-fall phase, e.g. sliding out of a chair).
-        val fallDetected = (freeFallQualifiedLatch && impactActive) || (impactActive && tiltActive)
-
-        return fallDetected
     }
 
-    /** Angle in degrees between gravity vector and vertical (upright = 0°). */
-    private fun tiltAngleDeg(): Float {
-        val gNorm = norm(gravity[0], gravity[1], gravity[2])
-        if (gNorm < 0.01f) return 0f
-        // Dot product with world-up vector (0, 0, 1) normalised
-        val cosAngle = gravity[2] / gNorm
-        val clampedCos = cosAngle.coerceIn(-1f, 1f)
-        return Math.toDegrees(Math.acos(clampedCos.toDouble())).toFloat()
+    private fun updateGravity(ax: Float, ay: Float, az: Float) {
+        if (!gravityInitialized) return
+        gravity[0] = alpha * gravity[0] + (1 - alpha) * ax
+        gravity[1] = alpha * gravity[1] + (1 - alpha) * ay
+        gravity[2] = alpha * gravity[2] + (1 - alpha) * az
     }
 
-    private fun norm(x: Float, y: Float, z: Float) =
+    private fun orientationChangeDeg(): Float {
+        val beforeNorm = norm(
+            preImpactGravity[0],
+            preImpactGravity[1],
+            preImpactGravity[2]
+        )
+        val afterNorm = norm(gravity[0], gravity[1], gravity[2])
+        if (beforeNorm < 0.01f || afterNorm < 0.01f) return 0f
+        val dot =
+            preImpactGravity[0] * gravity[0] +
+                preImpactGravity[1] * gravity[1] +
+                preImpactGravity[2] * gravity[2]
+        val cosine = (dot / (beforeNorm * afterNorm)).coerceIn(-1f, 1f)
+        return Math.toDegrees(acos(cosine.toDouble())).toFloat()
+    }
+
+    private fun clearCandidate() {
+        impactDetected = false
+        impactTimeMs = 0L
+        preImpactGravity.fill(0f)
+        orientationChangedLatch = false
+        stillnessActive = false
+        stillnessStartMs = 0L
+        freeFallQualifiedLatch = false
+        freeFallQualifiedAtMs = 0L
+    }
+
+    private fun norm(x: Float, y: Float, z: Float): Float =
         sqrt((x * x + y * y + z * z).toDouble()).toFloat()
+
+    private companion object {
+        const val EARTH_GRAVITY = 9.81f
+    }
 }

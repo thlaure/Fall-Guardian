@@ -114,7 +114,10 @@ class AlertCoordinator {
   Stream<void> get dismissStream => _dismissController.stream;
   AlertUiState? get currentState => _currentState;
 
-  Future<bool> startAlert(int timestamp) async {
+  Future<bool> startAlert(
+    int timestamp, {
+    String? clientAlertId,
+  }) async {
     // One unresolved incident owns one fixed grace-window deadline. Sensor
     // re-triggers and duplicate watch transports must not replace it, restart
     // its timer, or create another backend alert.
@@ -123,7 +126,10 @@ class AlertCoordinator {
     _cancelTimers();
     _activeTimestamp = timestamp;
     _countdownStartedAt = _clock.elapsed();
-    _activeClientAlertId = _idGenerator.newId();
+    _activeClientAlertId = switch (clientAlertId?.trim()) {
+      final value? when value.isNotEmpty => value,
+      _ => _idGenerator.newId(),
+    };
     _registeredWithBackend = false;
     _lastKnownPosition = null;
     _transition(timestamp, AlertPhase.countdown);

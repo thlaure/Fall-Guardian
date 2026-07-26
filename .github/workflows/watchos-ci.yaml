@@ -60,6 +60,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Test
+        run: make test
+
       - name: Analyze
         run: make analyze
 

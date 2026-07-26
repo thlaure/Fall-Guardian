@@ -24,10 +24,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  double _freeFallThreshold = 0.5;
+  double _freeFallThreshold = 0.7;
   double _impactThreshold = 2.5;
-  double _tiltThreshold = 45.0;
-  int _freeFallMinMs = 80;
+  double _tiltThreshold = 50.0;
+  int _freeFallMinMs = 60;
   bool _loading = true;
   _EnrollmentState _enrollmentState = _EnrollmentState.idle;
   DateTime? _enrollmentExpiresAt;
@@ -41,6 +41,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const _kImpact = 'thresh_impact';
   static const _kTilt = 'thresh_tilt';
   static const _kFreeFallMs = 'thresh_freefall_ms';
+  static const _kAlgorithmVersion = 'fall_algorithm_version';
+  static const _algorithmVersion = 2;
 
   CompanionPlatform get _companionPlatform =>
       widget.platformOverride ??
@@ -54,11 +56,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
+    if ((prefs.getInt(_kAlgorithmVersion) ?? 1) < _algorithmVersion) {
+      // Rebase only untouched legacy defaults. User-tuned values remain intact.
+      if (prefs.getDouble(_kFreeFall) == 0.5) {
+        await prefs.setDouble(_kFreeFall, 0.7);
+      }
+      if (prefs.getDouble(_kTilt) == 45.0) {
+        await prefs.setDouble(_kTilt, 50.0);
+      }
+      if (prefs.getInt(_kFreeFallMs) == 80) {
+        await prefs.setInt(_kFreeFallMs, 60);
+      }
+      await prefs.setInt(_kAlgorithmVersion, _algorithmVersion);
+    }
     setState(() {
-      _freeFallThreshold = prefs.getDouble(_kFreeFall) ?? 0.5;
+      _freeFallThreshold = prefs.getDouble(_kFreeFall) ?? 0.7;
       _impactThreshold = prefs.getDouble(_kImpact) ?? 2.5;
-      _tiltThreshold = prefs.getDouble(_kTilt) ?? 45.0;
-      _freeFallMinMs = prefs.getInt(_kFreeFallMs) ?? 80;
+      _tiltThreshold = prefs.getDouble(_kTilt) ?? 50.0;
+      _freeFallMinMs = prefs.getInt(_kFreeFallMs) ?? 60;
       _loading = false;
     });
   }
@@ -229,10 +244,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 OutlinedButton.icon(
                   onPressed: () async {
                     setState(() {
-                      _freeFallThreshold = 0.5;
+                      _freeFallThreshold = 0.7;
                       _impactThreshold = 2.5;
-                      _tiltThreshold = 45.0;
-                      _freeFallMinMs = 80;
+                      _tiltThreshold = 50.0;
+                      _freeFallMinMs = 60;
                     });
                     await _save();
                   },

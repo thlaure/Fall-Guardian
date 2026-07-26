@@ -15,18 +15,26 @@ the assisted Android phone.
 
 ```text
 Wear OS sensors emit motion data
--> native detector evaluates fall threshold
+-> native detector evaluates impact + loss-of-balance + stillness phases
 -> watch app marks a possible fall
 -> watch wakes an urgent countdown surface and starts alarm sound
 -> watch sends event to assisted Android phone
 -> assisted app owns countdown and escalation
 ```
 
-The watch does not notify caregivers directly. It only reports possible falls to
-the assisted phone. During the 30-second cancellation window, the watch plays a
+The watch does not notify caregivers directly. It reports possible falls to
+the assisted phone. The phone persists the incident before opening Flutter and
+uses a native `JobService` to register or cancel it after process death or
+temporary network loss. During the 30-second cancellation window, the watch plays a
 looping alarm and posts a full-screen-intent notification. If Android does not
 grant full-screen access, the same notification remains as a persistent
-heads-up alert with an **I'm OK — Cancel** action.
+heads-up alert with an **I'm OK — Cancel** action. Foreground cancellation
+requires a deliberate 1.5-second hold.
+
+Algorithm defaults are `0.7 g` low acceleration, `2.5 g` impact, `50°`
+orientation change, and `60 ms` minimum low-acceleration duration. An impact
+alone is rejected; the detector also requires orientation change or qualified
+low acceleration, followed by about two seconds of stillness.
 
 Android 13 and newer require notification permission. Android 14 and newer can
 also require the user to allow full-screen alerts in special app access. Sound
@@ -101,6 +109,11 @@ List devices:
 ```sh
 adb devices -l
 ```
+
+Release builds for phone and watch must use the same signing key because the
+Wear Data Layer verifies package identity. Configure `keystore.properties` or
+the four `ANDROID_KEYSTORE_*` environment variables before
+`./gradlew assembleRelease`; the build fails explicitly when they are absent.
 
 ## Quality Checks
 

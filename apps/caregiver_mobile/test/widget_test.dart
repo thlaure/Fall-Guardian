@@ -50,6 +50,29 @@ void main() {
     expect(find.text('View protected persons'), findsOneWidget);
   });
 
+  testWidgets('keeps hero instructions readable in dark mode', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF2D6A4F),
+            brightness: Brightness.dark,
+          ),
+        ),
+        home: const CaregiverHomeScreen(isLinked: false),
+      ),
+    );
+    await tester.pump();
+
+    final instructions = tester.widget<Text>(
+      find.textContaining('Ask each protected person'),
+    );
+    expect(instructions.style?.color, Colors.white.withValues(alpha: 0.82));
+  });
+
   testWidgets('protected persons screen lists people with add FAB', (
     tester,
   ) async {

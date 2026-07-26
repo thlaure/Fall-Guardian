@@ -71,6 +71,9 @@ android {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
         }
+        getByName("profile") {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
             manifestPlaceholders["usesCleartextTraffic"] = "false"
             if (releaseSigningConfigured) {

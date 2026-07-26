@@ -127,6 +127,9 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     );
     try {
       await bootstrapService.bootstrap();
+      await WatchCommunicationService.configureNativeAlertRelay(
+        _backendApi.debugBaseUrl,
+      );
     } catch (_) {
       // Best effort only: the app must still function locally if the backend is
       // unavailable, and alert submission will surface the failure later.
@@ -144,12 +147,18 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   // Called by WatchCommunicationService when the watch detects a fall.
   // [timestamp] is the Unix epoch in milliseconds of the moment the fall
   // was detected — it is the shared "origin" that keeps both countdowns in sync.
-  Future<void> _onFallDetected(int timestamp) async {
+  Future<void> _onFallDetected(
+    int timestamp, [
+    String? clientAlertId,
+  ]) async {
     // Retrieve the current localization bundle so we can build translated
     // notification strings. We use the navigator's context rather than the
     // widget's own context because this method can be called at any time,
     // including after the widget has been rebuilt.
-    final started = await _alertCoordinator.startAlert(timestamp);
+    final started = await _alertCoordinator.startAlert(
+      timestamp,
+      clientAlertId: clientAlertId,
+    );
     if (!started) return;
 
     // Android background alerts are owned by WearDataListenerService's native

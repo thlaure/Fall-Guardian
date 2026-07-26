@@ -4,6 +4,28 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
+def releaseSigningProperties = new Properties()
+def releaseSigningFile = rootProject.file("keystore.properties")
+if (releaseSigningFile.exists()) {
+    releaseSigningFile.withInputStream { releaseSigningProperties.load(it) }
+}
+
+def signingValue = { String propertyKey, String envKey ->
+    def propertyValue = releaseSigningProperties.getProperty(propertyKey)
+    propertyValue?.trim() ? propertyValue : System.getenv(envKey)
+}
+
+def releaseStoreFile = signingValue("storeFile", "ANDROID_KEYSTORE_PATH")
+def releaseStorePassword = signingValue("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+def releaseKeyAlias = signingValue("keyAlias", "ANDROID_KEY_ALIAS")
+def releaseKeyPassword = signingValue("keyPassword", "ANDROID_KEY_PASSWORD")
+def releaseSigningConfigured = [
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+].every { it != null && !it.trim().isEmpty() }
+
 android {
     namespace 'com.fallguardian'
     compileSdk 34
@@ -16,6 +38,17 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             manifestPlaceholders = [debugAutomationEnabled: "true"]
@@ -24,6 +57,9 @@ android {
             manifestPlaceholders = [debugAutomationEnabled: "false"]
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -41,6 +77,21 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+}
+
+def explicitReleaseArtifactRequested = gradle.startParameter.taskNames.any {
+    def task = it.toLowerCase()
+    task.endsWith("assemblerelease") ||
+        task.endsWith("bundlerelease") ||
+        task.endsWith("installrelease")
+}
+if (explicitReleaseArtifactRequested && !releaseSigningConfigured) {
+    throw new GradleException(
+        "Release signing is not configured. Set keystore.properties or " +
+            "ANDROID_KEYSTORE_PATH / ANDROID_KEYSTORE_PASSWORD / " +
+            "ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD. Phone and Wear OS " +
+            "must use the same signing key."
+    )
 }
 
 dependencies {

@@ -66,8 +66,8 @@ class FallDetectionService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
 
     // The fall-detection algorithm (see FallAlgorithm.kt). Receives raw X/Y/Z
-    // accelerometer values on every tick and returns true when it identifies
-    // either (freefall → impact) or (impact + steep tilt).
+    // accelerometer values on every tick. It requires an impact, a qualified
+    // low-acceleration phase or orientation change, then two seconds still.
     private lateinit var algorithm: FallAlgorithm
 
     // A WakeLock prevents the watch CPU from entering deep sleep while the
@@ -172,17 +172,39 @@ class FallDetectionService : Service(), SensorEventListener {
      * settings (via prefChangeListener).
      *
      * Default values represent a balanced sensitivity for most users:
-     *   - 0.5 g freefall threshold  (brief weightlessness during a fall)
+     *   - 0.7 g freefall threshold  (loss-of-balance low acceleration)
      *   - 2.5 g impact threshold    (sudden deceleration when hitting the ground)
-     *   - 45° tilt threshold        (post-impact body orientation)
-     *   - 80 ms freefall window     (minimum duration of weightlessness)
+     *   - 50° orientation change     (relative to the pre-impact wrist posture)
+     *   - 60 ms freefall window      (minimum duration of low acceleration)
      */
-    private fun loadAlgorithmFromPrefs() = FallAlgorithm(
-        freeFallThresholdG = prefs.getFloat("thresh_freefall", 0.5f).coerceIn(0.1f, 1.0f),
-        impactThresholdG = prefs.getFloat("thresh_impact", 2.5f).coerceIn(1.5f, 5.0f),
-        tiltThresholdDeg = prefs.getFloat("thresh_tilt", 45f).coerceIn(20f, 90f),
-        freeFallMinMs = prefs.getInt("thresh_freefall_ms", 80).coerceIn(40, 200).toLong()
-    )
+    private fun loadAlgorithmFromPrefs(): FallAlgorithm {
+        if (prefs.getInt("fall_algorithm_version", 1) < 2) {
+            prefs.edit().apply {
+                if (prefs.contains("thresh_freefall") &&
+                    prefs.getFloat("thresh_freefall", 0.5f) == 0.5f
+                ) {
+                    putFloat("thresh_freefall", 0.7f)
+                }
+                if (prefs.contains("thresh_tilt") &&
+                    prefs.getFloat("thresh_tilt", 45f) == 45f
+                ) {
+                    putFloat("thresh_tilt", 50f)
+                }
+                if (prefs.contains("thresh_freefall_ms") &&
+                    prefs.getInt("thresh_freefall_ms", 80) == 80
+                ) {
+                    putInt("thresh_freefall_ms", 60)
+                }
+                putInt("fall_algorithm_version", 2)
+            }.apply()
+        }
+        return FallAlgorithm(
+            freeFallThresholdG = prefs.getFloat("thresh_freefall", 0.7f).coerceIn(0.1f, 1.0f),
+            impactThresholdG = prefs.getFloat("thresh_impact", 2.5f).coerceIn(1.5f, 5.0f),
+            tiltThresholdDeg = prefs.getFloat("thresh_tilt", 50f).coerceIn(20f, 90f),
+            freeFallMinMs = prefs.getInt("thresh_freefall_ms", 60).coerceIn(40, 200).toLong()
+        )
+    }
 
     /**
      * Subscribes to the accelerometer at SENSOR_DELAY_GAME rate (~50 Hz / one
@@ -223,12 +245,9 @@ class FallDetectionService : Service(), SensorEventListener {
         val ay = event.values[1]
         val az = event.values[2]
 
-        // Feed this sample into the PSP fall-detection state machine.
-        // processSample() returns true once either qualifying pattern completes:
-        // freefall phase (< thresh_freefall g for >= thresh_freefall_ms ms) followed
-        // by an impact phase (> thresh_impact g), OR an impact phase together with
-        // a tilt phase (body angle > thresh_tilt degrees) — for falls with no
-        // clean free-fall phase.
+        // Feed this sample into the multi-phase state machine. A candidate needs
+        // impact plus either qualified low acceleration or an orientation change
+        // relative to pre-impact posture, followed by two seconds of stillness.
         val detected = algorithm.processSample(ax, ay, az, nowElapsed)
 
         // Only act on a positive detection if enough time has passed since the
