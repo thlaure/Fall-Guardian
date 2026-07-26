@@ -27,7 +27,8 @@ watchOS does not allow a third-party app to force itself into the foreground.
 The supported background surface is therefore a time-sensitive local
 notification that wakes the display, plays the default notification sound, and
 offers **I'm OK — Cancel Alert**. Tapping the notification launches the app and
-restores the original synchronized countdown.
+restores the original synchronized countdown. The action is ignored once the
+30-second cancellation deadline has expired.
 
 The standard sound respects the person's notification and Focus settings.
 Bypassing silent mode or Focus would require Apple's separately approved

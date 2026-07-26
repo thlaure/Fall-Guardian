@@ -31,7 +31,8 @@ heads-up alert with an **I'm OK — Cancel** action.
 Android 13 and newer require notification permission. Android 14 and newer can
 also require the user to allow full-screen alerts in special app access. Sound
 and the notification stop for watch cancellation, phone cancellation, or
-countdown expiry.
+countdown expiry. The idle screen exposes the missing access and opens the
+relevant system setting when tapped.
 
 The next Wear OS increment is to consume the one-time enrollment from the
 phone, claim watch-specific credentials, and store them with Android Keystore.

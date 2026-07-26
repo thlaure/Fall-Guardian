@@ -113,7 +113,8 @@ will be deduplicated. Opening the application must never be necessary.
 - ✅ creation of a companion enrollment and versioned transmission to the
   associated watch from settings;
 - ⚠️ location is not required to create the alert: it can arrive later;
-- ⚠️ old Android text still mentions an SMS, even though no SMS is sent;
+- ✅ user-facing watch text describes backend escalation and caregiver
+  notification; it no longer promises an SMS;
 - ⚠️ the network relay to the API still depends on Flutter.
 
 Since the merge of
@@ -161,6 +162,8 @@ On `main`:
   action when the interface is closed;
 - ✅ restoration of the synchronized countdown after the notification opens
   the app;
+- ✅ rejection of notification cancellation actions received after the
+  30-second deadline;
 - ✅ retransmission of the cancellation to the iPhone;
 - ✅ integration of the Watch target into the main iOS project;
 - ⚠️ a simple tap can cancel, which favors accidental cancellations;
@@ -189,6 +192,8 @@ These features joined `main` with
   full-screen-intent access;
 - ✅ persistent heads-up notification with a direct cancellation action when
   full-screen access is unavailable;
+- ✅ visible settings shortcut when notifications or full-screen alert access
+  is disabled;
 - ✅ immediate message to the Android phone;
 - ✅ urgent data persisted in the Data Layer as a fallback;
 - ⚠️ no direct submission to the API;
@@ -197,6 +202,10 @@ These features joined `main` with
 - ⚠️ if the phone app's process is killed, Android may show a
   notification, but server registration still waits for the Flutter
   activity to start.
+
+The locked-watch path was validated on a physical Galaxy Watch on 2026-07-26:
+the display woke, the countdown and alarm started, the event reached the paired
+phone, and cancellation stopped the urgent presentation.
 
 ### 5.5 API and server
 

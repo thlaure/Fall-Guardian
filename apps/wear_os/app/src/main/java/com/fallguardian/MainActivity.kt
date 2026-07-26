@@ -1,11 +1,14 @@
 package com.fallguardian
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
@@ -111,6 +114,21 @@ class MainActivity : ComponentActivity() {
 
         // setContent replaces the Activity's view with a Compose UI tree.
         setContent { WearApp() }
+        refreshAlertPresentationAccess()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshAlertPresentationAccess()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 100) refreshAlertPresentationAccess()
     }
 
     // onDestroy() is called when the Activity is permanently going away.
@@ -119,6 +137,25 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         Wearable.getMessageClient(this).removeListener(cancelAlertListener)
         super.onDestroy()
+    }
+
+    private fun refreshAlertPresentationAccess() {
+        val manager = getSystemService(NotificationManager::class.java)
+        val notificationsGranted =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        val fullScreenGranted =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                manager.canUseFullScreenIntent()
+
+        WearDataSender.updateAlertPresentationIssue(
+            alertPresentationIssue(
+                Build.VERSION.SDK_INT,
+                notificationsGranted,
+                fullScreenGranted
+            )
+        )
     }
 }
 
@@ -233,6 +270,7 @@ private fun AlertScreen(context: Context) {
  */
 @Composable
 private fun IdleScreen(context: Context) {
+    val presentationIssue = WearDataSender.alertPresentationIssue
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -265,10 +303,27 @@ private fun IdleScreen(context: Context) {
                 textAlign = TextAlign.Center
             )
             Text(
-                text = "Monitoring active",
-                color = Color(0xFFD1E0D7), // Muted green-white — calm confirmation.
+                text = when (presentationIssue) {
+                    AlertPresentationIssue.NOTIFICATIONS_DISABLED ->
+                        "Notifications off\nTap to enable"
+                    AlertPresentationIssue.FULL_SCREEN_DISABLED ->
+                        "Heads-up alerts only\nTap to review"
+                    null -> "Monitoring active"
+                },
+                color = if (presentationIssue == null) {
+                    Color(0xFFD1E0D7)
+                } else {
+                    Color(0xFFFFB74D)
+                },
                 fontSize = 11.sp,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                modifier = if (presentationIssue == null) {
+                    Modifier
+                } else {
+                    Modifier.clickable {
+                        openAlertPresentationSettings(context, presentationIssue)
+                    }
+                }
             )
             // Debug-only fall simulation button — stripped from release builds at compile time.
             if (BuildConfig.DEBUG) {
@@ -301,4 +356,31 @@ private fun IdleScreen(context: Context) {
  */
 private fun simulateFall(context: Context) {
     WearDataSender.sendFallEvent(context, System.currentTimeMillis())
+}
+
+private fun openAlertPresentationSettings(
+    context: Context,
+    issue: AlertPresentationIssue
+) {
+    val intent = when (issue) {
+        AlertPresentationIssue.NOTIFICATIONS_DISABLED ->
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+        AlertPresentationIssue.FULL_SCREEN_DISABLED ->
+            Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+    }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    try {
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    }
 }

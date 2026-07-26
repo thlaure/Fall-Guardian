@@ -39,6 +39,7 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
     private let categoryIdentifier = "FALL_GUARDIAN_FALL_ALERT"
     private let cancelActionIdentifier = "FALL_GUARDIAN_CANCEL_ALERT"
     private let activeFallTimestampKey = "active_watch_fall_timestamp"
+    private var expiryWorkItem: DispatchWorkItem?
 
     var onCancelRequested: (() -> Void)?
 
@@ -80,7 +81,14 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
     }
 
     func presentFallAlert(timestamp: Int64) {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        guard WatchAlertDeadline.isActive(timestamp: timestamp, now: now) else {
+            clearAlert()
+            return
+        }
+
         UserDefaults.standard.set(Double(timestamp), forKey: activeFallTimestampKey)
+        scheduleExpiry(timestamp: timestamp, now: now)
 
         let content = UNMutableNotificationContent()
         content.title = "Fall detected"
@@ -103,21 +111,23 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
 
     /// Lets ContentView restore the same incident when the wearer taps the
     /// notification and watchOS launches the app after background detection.
-    func activeFallTimestamp() -> Int64? {
+    func activeFallTimestamp(
+        now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) -> Int64? {
         let timestamp = Int64(
             UserDefaults.standard.double(forKey: activeFallTimestampKey)
         )
-        guard timestamp > 0 else { return nil }
-
-        let elapsedMs = Int64(Date().timeIntervalSince1970 * 1000) - timestamp
-        guard elapsedMs < 30_000 else {
+        guard WatchAlertDeadline.isActive(timestamp: timestamp, now: now) else {
             clearAlert()
             return nil
         }
+        scheduleExpiry(timestamp: timestamp, now: now)
         return timestamp
     }
 
     func clearAlert() {
+        expiryWorkItem?.cancel()
+        expiryWorkItem = nil
         UserDefaults.standard.removeObject(forKey: activeFallTimestampKey)
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(
@@ -143,6 +153,11 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         if response.actionIdentifier == cancelActionIdentifier {
+            guard activeFallTimestamp() != nil else {
+                clearAlert()
+                completionHandler()
+                return
+            }
             clearAlert()
             WatchSessionManager.shared.sendCancelAlert()
             DispatchQueue.main.async { [weak self] in
@@ -150,6 +165,27 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
             }
         }
         completionHandler()
+    }
+
+    private func scheduleExpiry(timestamp: Int64, now: Int64) {
+        expiryWorkItem?.cancel()
+        let remainingMs = WatchAlertDeadline.remainingMilliseconds(
+            timestamp: timestamp,
+            now: now
+        )
+        guard remainingMs > 0 else {
+            clearAlert()
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.clearAlert()
+        }
+        expiryWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + .milliseconds(Int(remainingMs)),
+            execute: workItem
+        )
     }
 }
 
