@@ -15,7 +15,7 @@ assisted iPhone.
 
 ```text
 Apple Watch sensors emit motion data
--> native detector evaluates fall threshold
+-> native detector evaluates impact + loss-of-balance + stillness phases
 -> watch app marks a possible fall
 -> watchOS presents a time-sensitive notification with sound and cancel action
 -> watch sends event to assisted iPhone
@@ -33,6 +33,17 @@ restores the original synchronized countdown. The action is ignored once the
 The standard sound respects the person's notification and Focus settings.
 Bypassing silent mode or Focus would require Apple's separately approved
 Critical Alerts entitlement.
+
+Raw algorithm defaults are `0.7 g` low acceleration, `2.5 g` impact,
+`50°` orientation change, and `60 ms` minimum low-acceleration duration.
+An impact alone never triggers: the detector also requires orientation change
+or qualified low acceleration, followed by about two seconds of stillness.
+
+Foreground cancellation requires a deliberate 1.5-second hold. In Debug,
+the raw detector stays active while the app is visible even when Apple's
+system detector is authorized. Raw accelerometer streaming stops when watchOS
+suspends the app; Release background behavior comes from
+`CMFallDetectionManager`, not the raw algorithm.
 
 The next increment is to consume the one-time enrollment sent by the iPhone,
 claim watch-specific credentials, and store them in Keychain. See
@@ -56,7 +67,8 @@ Core source files include:
 - `FallAlgorithm.swift`: fall detection rule.
 - `FallDetectionManager.swift`: sensor lifecycle and detection coordination.
 - `WatchSessionManager.swift`: communication with the iPhone.
-- `FallGuardianTests/FallAlgorithmTests.swift`: algorithm tests.
+- `FallGuardianTests/FallAlgorithmExecutableTests.swift`: deterministic
+  algorithm tests run by `make test`.
 
 ## Requirements
 
@@ -102,12 +114,6 @@ make build
 make test
 ```
 
-Direct Xcode test command:
-
-```sh
-xcodebuild -project FallGuardian/FallGuardian.xcodeproj -scheme "FallGuardian Watch App" -destination 'platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)' test
-```
-
 ## Testing Guidance
 
 Prioritize tests around:
@@ -127,8 +133,9 @@ Prioritize tests around:
 - Avoid battery-heavy sampling unless required for reliable detection.
 - The assisted iPhone owns countdown, cancellation, backend submission, and
   caregiver notification.
-- The Fall Detection capability request is pending. Simulator algorithm tests
-  do not replace locked-iPhone and physical-watch validation.
+- Apple approved the Fall Detection capability and signed builds embed the
+  entitlement. Simulator algorithm tests still do not replace locked-iPhone
+  and physical-watch validation.
 
 ## Related Projects
 

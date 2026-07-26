@@ -25,20 +25,26 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.*
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Entry point of the Wear OS application.
@@ -178,7 +184,7 @@ fun WearApp() {
  *
  * Displays the 30-second countdown in large text, haptic-vibrates the watch
  * every second (more intensely under 10 s), and flashes red as time runs out.
- * Tapping anywhere on the screen cancels the alert on both watch and phone.
+ * Cancellation requires a deliberate 1.5-second hold on the green control.
  *
  * --- Why vibrate here instead of in FallDetectionService? ---
  * Haptic feedback is a UI concern — it signals urgency to the user. Keeping it
@@ -230,8 +236,7 @@ private fun AlertScreen(context: Context) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF1A0000))               // Deep red base background.
-            .background(Color.Red.copy(alpha = flashAlpha)) // Pulsing red flash overlay on top.
-            .clickable { WearDataSender.sendCancelAlert(context) }, // Tap anywhere = cancel.
+            .background(Color.Red.copy(alpha = flashAlpha)), // Pulsing red flash overlay on top.
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -246,12 +251,36 @@ private fun AlertScreen(context: Context) {
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Tap anywhere to cancel",
-                color = Color.White.copy(alpha = 0.6f),
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center
-            )
+            Box(
+                modifier = Modifier
+                    .width(132.dp)
+                    .height(42.dp)
+                    .background(Color(0xFF2E7D32), RoundedCornerShape(21.dp))
+                    .pointerInput(context) {
+                        detectTapGestures(
+                            onPress = {
+                                val pressScope = this
+                                coroutineScope {
+                                    val holdJob = launch {
+                                        delay(1_500)
+                                        WearDataSender.sendCancelAlert(context)
+                                    }
+                                    pressScope.tryAwaitRelease()
+                                    holdJob.cancel()
+                                }
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Hold 1.5 s\nI'm OK",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

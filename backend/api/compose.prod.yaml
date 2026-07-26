@@ -5,7 +5,7 @@
 # dev PHP configuration. The prod stack must run application code baked into the image.
 services:
     app:
-        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        image: ${API_IMAGE:-fall-guardian-api:prod}
         build:
             context: .
             dockerfile: .docker/api/Dockerfile
@@ -14,10 +14,10 @@ services:
                 REGISTRY: ${REGISTRY:-}
         restart: unless-stopped
         environment:
-            SERVER_NAME: http://localhost, http://app
+            SERVER_NAME: ${SERVER_NAME:?SERVER_NAME must be set to the public HTTPS domain}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
-            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
             MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
             REDIS_URL: redis://redis:6379
@@ -29,8 +29,14 @@ services:
             - app_network
         ports:
             - target: 80
-              published: ${HTTP_PORT:-8002}
+              published: ${HTTP_PORT:-80}
               protocol: tcp
+            - target: 443
+              published: ${HTTPS_PORT:-443}
+              protocol: tcp
+            - target: 443
+              published: ${HTTPS_PORT:-443}
+              protocol: udp
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:80/health"]
             interval: 10s
@@ -47,7 +53,7 @@ services:
             - caddy_config:/config
 
     messenger:
-        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        image: ${API_IMAGE:-fall-guardian-api:prod}
         build:
             context: .
             dockerfile: .docker/api/Dockerfile
@@ -59,7 +65,7 @@ services:
             APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
-            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
             MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
             REDIS_URL: redis://redis:6379
@@ -76,7 +82,7 @@ services:
             - app_network
 
     alert_reconciler:
-        image: ${IMAGE_PREFIX:-}fall-guardian-api:prod
+        image: ${API_IMAGE:-fall-guardian-api:prod}
         build:
             context: .
             dockerfile: .docker/api/Dockerfile
@@ -88,7 +94,7 @@ services:
             APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
-            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:-fall_guardian}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
             MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
             REDIS_URL: redis://redis:6379
@@ -104,11 +110,40 @@ services:
         networks:
             - app_network
 
+    migrate:
+        image: ${API_IMAGE:-fall-guardian-api:prod}
+        build:
+            context: .
+            dockerfile: .docker/api/Dockerfile
+            target: frankenphp_prod
+            args:
+                REGISTRY: ${REGISTRY:-}
+        profiles:
+            - tools
+        restart: "no"
+        environment:
+            APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
+            DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
+            DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
+            MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
+            MESSENGER_FAILED_TRANSPORT_DSN: redis://redis:6379/failed_messages
+            REDIS_URL: redis://redis:6379
+            PUSH_PROVIDER: ${PUSH_PROVIDER:?PUSH_PROVIDER must be set explicitly (e.g. fcm)}
+            FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+            FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+        depends_on:
+            postgres:
+                condition: service_healthy
+        command: php bin/console doctrine:migrations:migrate --no-interaction
+        networks:
+            - app_network
+
     postgres:
         image: postgres:${POSTGRES_VERSION:-16}-alpine
+        restart: unless-stopped
         environment:
             POSTGRES_DB: ${POSTGRES_DB:-fall_guardian}
-            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fall_guardian}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
             POSTGRES_USER: ${POSTGRES_USER:-fall_guardian}
         healthcheck:
             test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-fall_guardian}", "-U", "${POSTGRES_USER:-fall_guardian}"]
@@ -117,15 +152,12 @@ services:
             start_period: 60s
         volumes:
             - database_data:/var/lib/postgresql/data:rw
-        ports:
-            - target: 5432
-              published: ${POSTGRES_PORT:-5434}
-              protocol: tcp
         networks:
             - app_network
 
     redis:
         image: redis:7-alpine
+        restart: unless-stopped
         healthcheck:
             test: ["CMD", "redis-cli", "ping"]
             timeout: 5s

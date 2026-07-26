@@ -157,9 +157,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get thresholdsSection => 'Fall Detection Thresholds';
   @override
   String get thresholdsInfo =>
-      'These thresholds control sensitivity. Lower free-fall and higher impact '
-      'thresholds reduce false positives. Some falls lack a free-fall '
-      'phase — impact + tilt alone will trigger an alert.';
+      'A fall requires an impact, a meaningful orientation change or '
+      'low-acceleration phase, then about two seconds of stillness. These '
+      'values tune the candidate phases.';
   @override
   String get freeFallLabel => 'Free-fall threshold';
   @override
@@ -170,9 +170,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get impactDesc => '‖accel‖ spike must exceed this to detect impact';
   @override
-  String get tiltLabel => 'Tilt threshold';
+  String get tiltLabel => 'Orientation change';
   @override
-  String get tiltDesc => 'Angle from upright must exceed this after impact';
+  String get tiltDesc =>
+      'Minimum wrist-orientation change from before the impact';
   @override
   String get freeFallDurationLabel => 'Min free-fall duration';
   @override

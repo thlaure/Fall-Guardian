@@ -152,6 +152,31 @@ Core environment variables:
 Do not commit production values. Use local `.env.local`, CI secrets, or runtime
 secret injection.
 
+## Production Compose Deployment
+
+Use `compose.prod.yaml` with an immutable image tag and a server-side environment
+file based on `.env.prod.example`. PostgreSQL is intentionally internal-only;
+do not add a published database port.
+
+Safe deployment order:
+
+```sh
+docker compose --env-file /secure/path/fall-guardian.env \
+  -f compose.prod.yaml pull
+docker compose --env-file /secure/path/fall-guardian.env \
+  -f compose.prod.yaml run --rm migrate
+docker compose --env-file /secure/path/fall-guardian.env \
+  -f compose.prod.yaml up -d --remove-orphans
+docker compose --env-file /secure/path/fall-guardian.env \
+  -f compose.prod.yaml ps
+```
+
+`SERVER_NAME`, `POSTGRES_PASSWORD`, `APP_SECRET`,
+`DEVICE_TOKEN_HASH_SECRET`, and `PUSH_PROVIDER` are mandatory. A CD workflow
+must stop when migration fails and must deploy the exact image digest/tag that
+passed CI. Database backups and a restore drill remain mandatory before family
+or commercial production use.
+
 ## Push Providers
 
 `fake` writes outgoing messages under:

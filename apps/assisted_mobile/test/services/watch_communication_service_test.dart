@@ -28,7 +28,7 @@ void main() {
         () async {
       final service = WatchCommunicationService();
       int? receivedTimestamp;
-      service.setFallDetectedCallback((timestamp) {
+      service.setFallDetectedCallback((timestamp, _) {
         receivedTimestamp = timestamp;
       });
 
@@ -38,11 +38,27 @@ void main() {
       service.dispose();
     });
 
+    test('onFallDetected forwards the native idempotency key', () async {
+      final service = WatchCommunicationService();
+      String? receivedClientAlertId;
+      service.setFallDetectedCallback((_, clientAlertId) {
+        receivedClientAlertId = clientAlertId;
+      });
+
+      await simulateNativeCall('onFallDetected', {
+        'timestamp': 1710000000000,
+        'clientAlertId': 'wear-os-1710000000000',
+      });
+
+      expect(receivedClientAlertId, 'wear-os-1710000000000');
+      service.dispose();
+    });
+
     test('onFallDetected falls back to now() when timestamp is missing',
         () async {
       final service = WatchCommunicationService();
       int? receivedTimestamp;
-      service.setFallDetectedCallback((timestamp) {
+      service.setFallDetectedCallback((timestamp, _) {
         receivedTimestamp = timestamp;
       });
 
@@ -79,7 +95,7 @@ void main() {
     test('dispose clears the channel handler', () async {
       final service = WatchCommunicationService();
       var fallDetected = false;
-      service.setFallDetectedCallback((_) => fallDetected = true);
+      service.setFallDetectedCallback((_, __) => fallDetected = true);
 
       service.dispose();
 
@@ -100,6 +116,24 @@ void main() {
       await WatchCommunicationService.sendCancelAlert();
 
       expect(captured?.method, 'sendCancelAlert');
+    });
+
+    test('configureNativeAlertRelay sends only the backend URL', () async {
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        captured = call;
+        return null;
+      });
+
+      await WatchCommunicationService.configureNativeAlertRelay(
+        'https://api.example.test',
+      );
+
+      expect(captured?.method, 'configureNativeAlertRelay');
+      expect(captured?.arguments, {
+        'baseUrl': 'https://api.example.test',
+      });
     });
 
     test('sendCancelAlert swallows platform errors', () async {

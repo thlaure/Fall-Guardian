@@ -163,10 +163,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get thresholdsSection => 'Seuils de détection de chutes';
   @override
   String get thresholdsInfo =>
-      'Ces seuils contrôlent la sensibilité. Des seuils de chute libre plus bas '
-      'et d\'impact plus élevés réduisent les fausses alertes. Certaines chutes '
-      'manquent de phase de chute libre — impact + inclinaison seuls '
-      'déclencheront une alerte.';
+      'Une chute nécessite un impact, un changement d’orientation significatif '
+      'ou une phase de faible accélération, puis environ deux secondes '
+      'd’immobilité. Ces valeurs règlent les phases candidates.';
   @override
   String get freeFallLabel => 'Seuil de chute libre';
   @override
@@ -178,10 +177,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get impactDesc =>
       'Le pic ‖accel‖ doit dépasser ce seuil pour détecter l\'impact';
   @override
-  String get tiltLabel => 'Seuil d\'inclinaison';
+  String get tiltLabel => 'Changement d’orientation';
   @override
   String get tiltDesc =>
-      'L\'angle par rapport à la verticale doit dépasser ce seuil après l\'impact';
+      'Changement minimal du poignet par rapport à avant l’impact';
   @override
   String get freeFallDurationLabel => 'Durée min. de chute libre';
   @override

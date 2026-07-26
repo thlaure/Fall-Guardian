@@ -104,11 +104,19 @@ class WearDataListenerService : WearableListenerService() {
     }
 
     private fun handleFallDetected(timestamp: Long) {
+        // Persist and schedule backend registration before touching UI. The
+        // JobService survives a missing Flutter engine, process death and
+        // temporary network loss. Dart receives the same idempotency key when
+        // it is available, so native and Flutter retries create one incident.
+        val clientAlertId = NativeAlertRelay.enqueueFall(
+            applicationContext,
+            timestamp
+        )
         val activity = MainActivity.getInstance()
         if (activity != null && activity.isInForeground) {
             // App is visible — invoke the Flutter channel directly.
             // No notification needed: Flutter will push FallAlertScreen immediately.
-            activity.sendFallDetectedToFlutter(timestamp)
+            activity.sendFallDetectedToFlutter(timestamp, clientAlertId)
             return
         }
 
@@ -127,24 +135,30 @@ class WearDataListenerService : WearableListenerService() {
         // taps the notification. A dedup guard in MainActivity prevents a double FallAlertScreen
         // if the user later taps the notification (which fires onNewIntent with the same
         // timestamp).
-        showFallNotification(timestamp)
-        activity?.sendFallDetectedToFlutter(timestamp)
+        showFallNotification(timestamp, clientAlertId)
+        activity?.sendFallDetectedToFlutter(timestamp, clientAlertId)
     }
 
-    private fun showFallNotification(timestamp: Long) {
+    private fun showFallNotification(timestamp: Long, clientAlertId: String) {
         val nm = getSystemService(NotificationManager::class.java)
 
         // Create the channel if it doesn't exist yet (idempotent — no-op if
         // flutter_local_notifications already created it with the same ID).
-        nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Fall Alerts", NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = "Urgent fall detection alerts" }
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "Fall Alerts",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply { description = "Urgent fall detection alerts" }
+            )
+        }
 
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             `package` = packageName
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra("fall_timestamp", timestamp)
+            putExtra("client_alert_id", clientAlertId)
         }
         val pendingIntent = PendingIntent.getActivity(
             this, 0, launchIntent,
@@ -180,6 +194,7 @@ class WearDataListenerService : WearableListenerService() {
 
         val prefs = getSharedPreferences("fall_guardian", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("pending_alert_cancelled", true).apply()
+        NativeAlertRelay.requestCancel(applicationContext)
 
         MainActivity.getInstance()?.sendCancelAlertToFlutter()
     }

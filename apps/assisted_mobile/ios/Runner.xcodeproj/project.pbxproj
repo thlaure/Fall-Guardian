@@ -26,6 +26,7 @@
 		F6C100142024072400000001 /* FallGuardianApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C100062024072400000001 /* FallGuardianApp.swift */; };
 		F6C100152024072400000001 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C100072024072400000001 /* WatchSessionManager.swift */; };
 		F6C100162024072400000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F6C100022024072400000001 /* Assets.xcassets */; };
+		F6C100172024072600000001 /* WatchAlertDeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C100082024072600000001 /* WatchAlertDeadline.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 		F6C100052024072400000001 /* FallDetectionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallDetectionManager.swift; sourceTree = "<group>"; };
 		F6C100062024072400000001 /* FallGuardianApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallGuardianApp.swift; sourceTree = "<group>"; };
 		F6C100072024072400000001 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		F6C100082024072600000001 /* WatchAlertDeadline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchAlertDeadline.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -225,6 +227,7 @@
 				F6C100052024072400000001 /* FallDetectionManager.swift */,
 				F6C100062024072400000001 /* FallGuardianApp.swift */,
 				F6C100072024072400000001 /* WatchSessionManager.swift */,
+				F6C100082024072600000001 /* WatchAlertDeadline.swift */,
 			);
 			name = "FallGuardian Watch App";
 			path = "../../watchos/FallGuardian/FallGuardian Watch App";
@@ -495,6 +498,7 @@
 				F6C100132024072400000001 /* FallDetectionManager.swift in Sources */,
 				F6C100142024072400000001 /* FallGuardianApp.swift in Sources */,
 				F6C100152024072400000001 /* WatchSessionManager.swift in Sources */,
+				F6C100172024072600000001 /* WatchAlertDeadline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

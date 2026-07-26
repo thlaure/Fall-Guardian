@@ -5,21 +5,12 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.Settings
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.os.Build
 import android.util.Log
-import android.util.Base64
 import com.google.android.gms.wearable.Wearable
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.nio.charset.StandardCharsets
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 class MainActivity : FlutterActivity() {
 
@@ -29,8 +20,6 @@ class MainActivity : FlutterActivity() {
         const val PREFS_NAME = "fall_guardian"
         const val PENDING_THRESHOLDS_KEY = "pending_thresholds_json"
         const val PENDING_CANCEL_KEY = "pending_alert_cancelled"
-        private const val SECURE_STORE_KEY_ALIAS = "fall_guardian_secure_store"
-        private const val SECURE_STORE_PREFIX = "secure:"
 
         // WeakReference prevents Activity leak; @Volatile ensures cross-thread visibility.
         @Volatile
@@ -44,6 +33,9 @@ class MainActivity : FlutterActivity() {
     private lateinit var secureStorageChannel: MethodChannel
     private val prefs: SharedPreferences by lazy {
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+    }
+    private val secureStore: AndroidSecureStore by lazy {
+        AndroidSecureStore(applicationContext)
     }
 
     // Tracks the last timestamp forwarded to Flutter so we never push two
@@ -78,6 +70,21 @@ class MainActivity : FlutterActivity() {
                     sendCancelAlertToWatch()
                     result.success(null)
                 }
+                "configureNativeAlertRelay" -> {
+                    val baseUrl =
+                        (call.arguments as? Map<*, *>)?.get("baseUrl") as? String
+                    if (baseUrl == null ||
+                        !NativeAlertRelay.configure(applicationContext, baseUrl)
+                    ) {
+                        result.error(
+                            "INVALID_BASE_URL",
+                            "Native alert relay requires an allowed backend URL",
+                            null
+                        )
+                    } else {
+                        result.success(null)
+                    }
+                }
                 "sendCompanionEnrollment" -> {
                     @Suppress("UNCHECKED_CAST")
                     val args = call.arguments as? Map<String, Any>
@@ -99,7 +106,7 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "Missing key", null)
                         return@setMethodCallHandler
                     }
-                    result.success(readSecureValue(key))
+                    result.success(secureStore.read(key))
                 }
                 "write" -> {
                     val value = args?.get("value") as? String
@@ -107,7 +114,7 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "Missing key/value", null)
                         return@setMethodCallHandler
                     }
-                    writeSecureValue(key, value)
+                    secureStore.write(key, value)
                     result.success(null)
                 }
                 "delete" -> {
@@ -115,7 +122,7 @@ class MainActivity : FlutterActivity() {
                         result.error("INVALID_ARGS", "Missing key", null)
                         return@setMethodCallHandler
                     }
-                    deleteSecureValue(key)
+                    secureStore.delete(key)
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -126,9 +133,7 @@ class MainActivity : FlutterActivity() {
         requestFullScreenIntentPermissionIfNeeded()
         // Handle fall event launched via intent (activity was not running)
         if (isTrustedIntent(intent)) {
-            intent?.getLongExtra("fall_timestamp", Long.MIN_VALUE)
-                ?.takeIf { it != Long.MIN_VALUE }
-                ?.let { sendFallDetectedToFlutter(it) }
+            forwardIntentFall(intent)
         }
     }
 
@@ -137,9 +142,7 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         // Handle fall event when activity is already running (singleTop)
         if (isTrustedIntent(intent)) {
-            intent.getLongExtra("fall_timestamp", Long.MIN_VALUE)
-                .takeIf { it != Long.MIN_VALUE }
-                ?.let { sendFallDetectedToFlutter(it) }
+            forwardIntentFall(intent)
         }
     }
 
@@ -163,7 +166,7 @@ class MainActivity : FlutterActivity() {
      * countdown starts) and also shows a notification. If the user taps the notification, onNewIntent
      * fires with the same timestamp — without dedup we would push FallAlertScreen twice.
      */
-    fun sendFallDetectedToFlutter(timestamp: Long) {
+    fun sendFallDetectedToFlutter(timestamp: Long, clientAlertId: String? = null) {
         if (timestamp == lastForwardedTimestamp) return  // duplicate — already in progress
         lastForwardedTimestamp = timestamp
         runOnUiThread {
@@ -172,8 +175,22 @@ class MainActivity : FlutterActivity() {
             // when the app was backgrounded or killed — FallAlertScreen takes over.
             getSystemService(NotificationManager::class.java)
                 ?.cancel(WearDataListenerService.FALL_WAKEUP_NOTIF_ID)
-            channel.invokeMethod("onFallDetected", mapOf("timestamp" to timestamp))
+            channel.invokeMethod(
+                "onFallDetected",
+                mapOf(
+                    "timestamp" to timestamp,
+                    "clientAlertId" to clientAlertId
+                )
+            )
         }
+    }
+
+    private fun forwardIntentFall(intent: Intent?) {
+        val timestamp = intent?.getLongExtra("fall_timestamp", Long.MIN_VALUE)
+            ?.takeIf { it != Long.MIN_VALUE }
+            ?: return
+        val clientAlertId = intent.getStringExtra("client_alert_id")
+        sendFallDetectedToFlutter(timestamp, clientAlertId)
     }
 
     fun sendCancelAlertToFlutter() {
@@ -185,6 +202,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun sendCancelAlertToWatch() {
+        // Queue backend cancellation before best-effort watch delivery. This
+        // remains effective when Flutter is suspended or killed.
+        NativeAlertRelay.requestCancel(applicationContext)
         val payload = """{"event":"alert_cancelled"}""".toByteArray(Charsets.UTF_8)
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
@@ -334,69 +354,5 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         super.onDestroy()
         weakInstance = null
-    }
-
-    private fun readSecureValue(key: String): String? {
-        val encoded = prefs.getString(SECURE_STORE_PREFIX + key, null) ?: return null
-        return try {
-            decrypt(encoded)
-        } catch (e: Exception) {
-            Log.e("MainActivity", "readSecureValue failed for $key", e)
-            prefs.edit().remove(SECURE_STORE_PREFIX + key).apply()
-            null
-        }
-    }
-
-    private fun writeSecureValue(key: String, value: String) {
-        val encrypted = encrypt(value)
-        prefs.edit().putString(SECURE_STORE_PREFIX + key, encrypted).apply()
-    }
-
-    private fun deleteSecureValue(key: String) {
-        prefs.edit().remove(SECURE_STORE_PREFIX + key).apply()
-    }
-
-    private fun encrypt(value: String): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
-        val iv = cipher.iv
-        val encrypted = cipher.doFinal(value.toByteArray(StandardCharsets.UTF_8))
-        return Base64.encodeToString(iv, Base64.NO_WRAP) + ":" +
-            Base64.encodeToString(encrypted, Base64.NO_WRAP)
-    }
-
-    private fun decrypt(payload: String): String {
-        val parts = payload.split(":")
-        require(parts.size == 2) { "Invalid secure payload" }
-        val iv = Base64.decode(parts[0], Base64.NO_WRAP)
-        val encrypted = Base64.decode(parts[1], Base64.NO_WRAP)
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(
-            Cipher.DECRYPT_MODE,
-            getOrCreateSecretKey(),
-            GCMParameterSpec(128, iv)
-        )
-        return String(cipher.doFinal(encrypted), StandardCharsets.UTF_8)
-    }
-
-    private fun getOrCreateSecretKey(): SecretKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = keyStore.getKey(SECURE_STORE_KEY_ALIAS, null) as? SecretKey
-        if (existing != null) return existing
-
-        val keyGenerator = KeyGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_AES,
-            "AndroidKeyStore"
-        )
-        val spec = KeyGenParameterSpec.Builder(
-            SECURE_STORE_KEY_ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .build()
-        keyGenerator.init(spec)
-        return keyGenerator.generateKey()
     }
 }

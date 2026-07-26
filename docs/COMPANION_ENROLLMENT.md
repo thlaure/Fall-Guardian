@@ -235,8 +235,10 @@ long as the phone and watch use their native pairing channel.
 
 - persistent queue on the watch side;
 - direct HTTPS;
-- native Android reception independent of Flutter;
-- resumption after a killed process or restart.
+- 🟡 native Android reception and authenticated submission independent of
+  Flutter;
+- 🟡 phone-side resumption after process death, restart, or network loss;
+- watch-side direct/offline transport remains to be implemented.
 
 ## 7. Enrollment acceptance criteria
 
@@ -258,11 +260,15 @@ long as the phone and watch use their native pairing channel.
 Enrollment does not yet guarantee:
 
 - direct submission of a fall from the watch;
-- native relay when Flutter is not running;
-- offline resumption;
+- native relay when Flutter is not running on iOS;
+- watch-side offline resumption;
 - revocation of a lost watch;
 - server-side display of the companion device list;
 - automatic rotation of the durable token.
 
 These items remain separate increments. Revocation will need to be
 addressed before a commercial release.
+
+The Android assisted app now has a phone-side native relay for Wear OS
+incidents. It uses the already-enrolled phone credential and therefore does
+not replace companion enrollment or direct watch transport.

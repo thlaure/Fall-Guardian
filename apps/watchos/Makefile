@@ -6,19 +6,25 @@ PROJECT := FallGuardian/FallGuardian.xcodeproj
 SCHEME := FallGuardian Watch App
 DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)
 TEST_BINARY := build/tests/watch-alert-deadline-tests
+ALGORITHM_TEST_BINARY := build/tests/fall-algorithm-tests
 
 help: ## Show available commands
 	@echo "Fall Guardian watchOS app"
 	@echo ""
 	@grep -E '(^[a-zA-Z_-]+:.*?##.*$$)' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
-test: ## Run deterministic watch alert deadline tests
+test: ## Run deterministic watch alert deadline and fall algorithm tests
 	mkdir -p "$(dir $(TEST_BINARY))"
 	xcrun swiftc \
 		"FallGuardian/FallGuardian Watch App/WatchAlertDeadline.swift" \
 		"FallGuardianTests/WatchAlertDeadlineExecutableTests.swift" \
 		-o "$(TEST_BINARY)"
 	"$(TEST_BINARY)"
+	xcrun swiftc \
+		"FallGuardian/FallGuardian Watch App/FallAlgorithm.swift" \
+		"FallGuardianTests/FallAlgorithmExecutableTests.swift" \
+		-o "$(ALGORITHM_TEST_BINARY)"
+	"$(ALGORITHM_TEST_BINARY)"
 
 analyze: ## Run Xcode static analyzer
 	xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" analyze
