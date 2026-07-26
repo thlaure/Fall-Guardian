@@ -503,25 +503,6 @@ class BackendApiService
     );
   }
 
-  Future<void> deleteLinkedCaregiver(String linkId) async {
-    final credentials = await _credentials();
-    final response = await _send(
-      _client.delete(
-        Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers/$linkId'),
-        headers: _jsonHeaders(token: credentials.deviceToken),
-      ),
-      'Remove caregiver request timed out',
-    );
-
-    if (response.statusCode != 204) {
-      throw BackendApiException(
-        'Failed to remove caregiver link',
-        statusCode: response.statusCode,
-        body: response.body,
-      );
-    }
-  }
-
   Future<_BackendCredentials> _credentials({bool forceRefresh = false}) async {
     if (!forceRefresh) {
       final deviceId = await _store.read(_deviceIdKey);

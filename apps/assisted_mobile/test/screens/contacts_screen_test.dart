@@ -29,6 +29,7 @@ void main() {
     expect(find.text('Caregiver 1'), findsOneWidget);
     expect(find.text('Add Contact'), findsNothing);
     expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byIcon(Icons.link_off), findsNothing);
 
     final inviteTop = tester.getTopLeft(find.text('Invite a caregiver')).dy;
     final caregiverTop = tester.getTopLeft(find.text('Caregiver 1')).dy;
@@ -81,7 +82,4 @@ class _FakeBackendApiService extends BackendApiService {
       'expiresAt': '2026-06-21T10:00:00+00:00',
     };
   }
-
-  @override
-  Future<void> deleteLinkedCaregiver(String linkId) async {}
 }

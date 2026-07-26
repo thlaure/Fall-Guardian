@@ -45,8 +45,6 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get contactsScreenTitle => 'Aidants';
   @override
-  String contactsRemoveTitle(String name) => 'Retirer $name des aidants ?';
-  @override
   String get contactsEmpty => 'Aucun contact';
   @override
   String get contactsEmptyHint =>
@@ -90,7 +88,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get cancellationUnconfirmed =>
       'Annulation non confirmée. Vos aidants peuvent encore être alertés.';
   @override
-  String get cancelAlert => 'Je vais bien — Annuler l\'alerte';
+  String get cancelAlert => 'Je vais bien\nAnnuler l\'alerte';
 
   // ── History ──────────────────────────────────────────────────────────────
   @override

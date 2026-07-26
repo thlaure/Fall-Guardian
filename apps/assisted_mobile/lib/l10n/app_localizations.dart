@@ -40,7 +40,6 @@ abstract class AppLocalizations {
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   String get contactsScreenTitle;
-  String contactsRemoveTitle(String name);
   String get contactsEmpty;
   String get contactsEmptyHint;
   String get addContact;

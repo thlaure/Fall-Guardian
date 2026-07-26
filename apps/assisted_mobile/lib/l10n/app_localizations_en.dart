@@ -45,8 +45,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get contactsScreenTitle => 'Caregivers';
   @override
-  String contactsRemoveTitle(String name) => 'Remove $name from caregivers?';
-  @override
   String get contactsEmpty => 'No contacts yet';
   @override
   String get contactsEmptyHint => 'Add caregivers to notify on fall detection.';
@@ -89,7 +87,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancellationUnconfirmed =>
       'Cancellation was not confirmed. Caregivers may still be alerted.';
   @override
-  String get cancelAlert => "I'm OK — Cancel Alert";
+  String get cancelAlert => "I'm OK\nCancel Alert";
 
   // ── History ──────────────────────────────────────────────────────────────
   @override
