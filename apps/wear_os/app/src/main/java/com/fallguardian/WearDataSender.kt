@@ -42,6 +42,13 @@ import java.nio.ByteBuffer
  */
 object WearDataSender {
 
+    /**
+     * Owned by FallDetectionService. The callback keeps alarm presentation
+     * synchronized with the single alert state machine: true starts the urgent
+     * notification and sound, false stops both on every cancellation path.
+     */
+    var onAlertStateChanged: ((Boolean) -> Unit)? = null
+
     // --- Compose-observable UI state ---
     // `mutableStateOf` creates a Compose state holder. Any @Composable function
     // that reads these variables will automatically recompose (re-render) when
@@ -83,6 +90,7 @@ object WearDataSender {
             } else {
                 // Countdown expired without cancellation — time is up.
                 alertActive = false                     // Dismiss AlertScreen; return to IdleScreen.
+                onAlertStateChanged?.invoke(false)      // Stop sound and urgent notification.
                 // Note: the phone is responsible for sending the SMS to emergency
                 // contacts when its own 30-second countdown expires.
             }
@@ -106,17 +114,24 @@ object WearDataSender {
      *                   origin to keep their countdowns in sync.
      */
     fun sendFallEvent(context: Context, timestamp: Long) {
-        // Encode the 8-byte Long timestamp into a raw byte array for the message payload.
-        val payload = ByteBuffer.allocate(8).putLong(timestamp).array()
-        sendToPhone(context, "/fall_event", payload, "fall event")
-        queueForPhone(context, "/fall_event", timestamp, "fall event")
+        val applicationContext = context.applicationContext
+        handler.post {
+            // One incident owns one countdown. Repeated sensor signatures must
+            // not restart the 30-second grace period or replay the alarm.
+            if (alertActive) return@post
 
-        // Reset any previous countdown before starting a new one.
-        handler.removeCallbacks(tickRunnable)
-        fallTimestampMs = timestamp
-        alertActive = true        // Tell Compose to switch to AlertScreen.
-        remainingSeconds = (30 - ((System.currentTimeMillis() - timestamp) / 1000L).toInt()).coerceIn(0, 30)
-        handler.post(tickRunnable)
+            // Encode the 8-byte Long timestamp into a raw byte array for the message payload.
+            val payload = ByteBuffer.allocate(8).putLong(timestamp).array()
+            sendToPhone(applicationContext, "/fall_event", payload, "fall event")
+            queueForPhone(applicationContext, "/fall_event", timestamp, "fall event")
+
+            handler.removeCallbacks(tickRunnable)
+            fallTimestampMs = timestamp
+            alertActive = true        // Tell Compose to switch to AlertScreen.
+            remainingSeconds = (30 - ((System.currentTimeMillis() - timestamp) / 1000L).toInt()).coerceIn(0, 30)
+            onAlertStateChanged?.invoke(true)
+            handler.post(tickRunnable)
+        }
     }
 
     /**
@@ -130,10 +145,13 @@ object WearDataSender {
      * @param context  Android context needed to reach Wearable APIs.
      */
     fun sendCancelAlert(context: Context) {
-        handler.removeCallbacks(tickRunnable)  // Stop the countdown timer.
-        alertActive = false                    // Return to IdleScreen immediately.
-        fallTimestampMs = 0L
-        remainingSeconds = 30                  // Reset for the next alert.
+        handler.post {
+            handler.removeCallbacks(tickRunnable)  // Stop the countdown timer.
+            alertActive = false                    // Return to IdleScreen immediately.
+            fallTimestampMs = 0L
+            remainingSeconds = 30                  // Reset for the next alert.
+            onAlertStateChanged?.invoke(false)
+        }
         // Empty payload — the phone only needs to know that cancel happened, not any data.
         sendToPhone(context, "/cancel_alert", ByteArray(0), "cancel alert")
         queueForPhone(context, "/cancel_alert", System.currentTimeMillis(), "cancel alert")
@@ -156,6 +174,7 @@ object WearDataSender {
             alertActive = false                   // Return to IdleScreen.
             fallTimestampMs = 0L
             remainingSeconds = 30                 // Reset for the next alert.
+            onAlertStateChanged?.invoke(false)
         }
     }
 

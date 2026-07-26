@@ -25,7 +25,10 @@ class DebugAutomationReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_SIMULATE_FALL -> {
                 Log.d("DebugAutomation", "simulate fall broadcast received")
-                context.startForegroundService(Intent(context, FallDetectionService::class.java))
+                // Physical debug flows launch the app once before backgrounding
+                // it, so the persistent detection service is already running.
+                // Starting a foreground service from this background receiver is
+                // forbidden on modern Wear OS and would crash the test hook.
                 WearDataSender.sendFallEvent(context.applicationContext, System.currentTimeMillis())
             }
 

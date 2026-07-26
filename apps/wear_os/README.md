@@ -17,12 +17,21 @@ the assisted Android phone.
 Wear OS sensors emit motion data
 -> native detector evaluates fall threshold
 -> watch app marks a possible fall
+-> watch wakes an urgent countdown surface and starts alarm sound
 -> watch sends event to assisted Android phone
 -> assisted app owns countdown and escalation
 ```
 
 The watch does not notify caregivers directly. It only reports possible falls to
-the assisted phone.
+the assisted phone. During the 30-second cancellation window, the watch plays a
+looping alarm and posts a full-screen-intent notification. If Android does not
+grant full-screen access, the same notification remains as a persistent
+heads-up alert with an **I'm OK — Cancel** action.
+
+Android 13 and newer require notification permission. Android 14 and newer can
+also require the user to allow full-screen alerts in special app access. Sound
+and the notification stop for watch cancellation, phone cancellation, or
+countdown expiry.
 
 The next Wear OS increment is to consume the one-time enrollment from the
 phone, claim watch-specific credentials, and store them with Android Keystore.
@@ -122,6 +131,8 @@ Prioritize tests around:
 - false-positive guardrails;
 - event payload shape sent to the assisted app;
 - lifecycle behavior when the watch app is backgrounded;
+- urgent notification, sound, and cancellation lifecycle;
+- full-screen-intent denial falling back to an actionable notification;
 - debug automation paths not being exposed in production.
 
 ## Sensor And Safety Notes

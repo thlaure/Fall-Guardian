@@ -1,7 +1,10 @@
 package com.fallguardian
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -61,6 +64,10 @@ import androidx.wear.compose.material.*
  */
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        const val EXTRA_SHOW_FALL_ALERT = "show_fall_alert"
+    }
+
     // --- Belt-and-suspenders cancel listener ---
     // PhoneMessageListenerService handles "/cancel_alert" when the app is
     // backgrounded. However, WearableListenerService is unreliable in the
@@ -80,6 +87,21 @@ class MainActivity : ComponentActivity() {
     // onCreate() is called by the Android OS when the Activity is first created.
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Allows the urgent full-screen notification to reveal the countdown
+        // over the lock screen and wake the display without bypassing device
+        // authentication for any other content.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                100
+            )
+        }
 
         // Register the foreground cancel listener while this Activity is alive.
         Wearable.getMessageClient(this).addListener(cancelAlertListener)

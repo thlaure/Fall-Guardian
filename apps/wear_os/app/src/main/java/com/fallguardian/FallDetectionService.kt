@@ -3,17 +3,23 @@ package com.fallguardian
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.AudioAttributes
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 /**
  * Persistent foreground service that runs the PSP fall detection algorithm.
@@ -81,6 +87,11 @@ class FallDetectionService : Service(), SensorEventListener {
     // Compared against the current time to enforce the cooldown window.
     private var lastFallMs: Long = 0L
 
+    // The alarm sound belongs to the active incident, not to the Activity.
+    // Keeping it in the foreground service means it continues while the watch
+    // is locked and can be stopped by watch-, phone-, or timeout cancellation.
+    private var alarmRingtone: Ringtone? = null
+
     // Minimum gap between two successive fall alerts. 5 seconds prevents a
     // single tumble from firing the alarm multiple times (e.g. if the user
     // rolls after hitting the ground and triggers the sensor again).
@@ -104,11 +115,13 @@ class FallDetectionService : Service(), SensorEventListener {
         // per category — e.g. they can silence "Fall Detection" without affecting
         // other app notifications.
         const val CHANNEL_ID = "fall_detection"
+        const val ALERT_CHANNEL_ID = "fall_alerts"
 
         // Every notification needs a unique integer ID so the OS knows which
         // notification to update or remove. 1001 is arbitrary — it just must be
         // unique within this app.
         const val NOTIF_ID = 1001
+        const val ALERT_NOTIF_ID = 1002
     }
 
     // --- Step 1: Service startup ---
@@ -144,6 +157,10 @@ class FallDetectionService : Service(), SensorEventListener {
         // signals to the OS that this service must not be killed under memory pressure.
         createNotificationChannel() // Must exist before posting any notification.
         startForeground(NOTIF_ID, buildNotification())
+
+        WearDataSender.onAlertStateChanged = { active ->
+            if (active) showUrgentFallAlert() else dismissUrgentFallAlert()
+        }
 
         // --- Step 2: Begin reading the accelerometer ---
         registerSensors()
@@ -246,6 +263,8 @@ class FallDetectionService : Service(), SensorEventListener {
     // Called when the service is finally shutting down (e.g. user force-quits).
     // Every resource acquired in onCreate() must be released here to avoid leaks.
     override fun onDestroy() {
+        WearDataSender.onAlertStateChanged = null
+        dismissUrgentFallAlert()
         prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener) // Stop threshold watching.
         sensorManager.unregisterListener(this)    // Stop receiving sensor events.
         if (wakeLock.isHeld) wakeLock.release()   // Release the CPU wake lock.
@@ -263,14 +282,28 @@ class FallDetectionService : Service(), SensorEventListener {
      * persistent background-monitoring status indicator.
      */
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
+        val monitoringChannel = NotificationChannel(
             CHANNEL_ID,
             "Fall Detection",
             NotificationManager.IMPORTANCE_LOW
         ).apply { description = "Fall monitoring is active" }
 
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        manager.createNotificationChannel(monitoringChannel)
+
+        val alertChannel = NotificationChannel(
+            ALERT_CHANNEL_ID,
+            "Fall alerts",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Urgent fall countdown alerts"
+            enableVibration(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            // Sound is controlled explicitly below so it can loop for exactly
+            // the active countdown and stop immediately on every cancel path.
+            setSound(null, null)
+        }
+        manager.createNotificationChannel(alertChannel)
     }
 
     /**
@@ -286,4 +319,91 @@ class FallDetectionService : Service(), SensorEventListener {
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true) // Pinned — cannot be dismissed by swipe.
             .build()
+
+    /**
+     * Posts the highest-priority Wear OS alert surface and asks SystemUI to open
+     * MainActivity over the lock screen. Android 14 can deny full-screen intent
+     * access; in that case the same notification remains as a persistent,
+     * expanded heads-up alert with a direct "I'm OK" cancellation action.
+     */
+    private fun showUrgentFallAlert() {
+        Log.i("FallDetectionService", "Starting urgent fall presentation")
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_SHOW_FALL_ALERT, true)
+        }
+        val launchPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val cancelIntent = Intent(this, AlertActionReceiver::class.java).apply {
+            action = AlertActionReceiver.ACTION_CANCEL_FALL_ALERT
+        }
+        val cancelPendingIntent = PendingIntent.getBroadcast(
+            this,
+            1,
+            cancelIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Fall detected")
+            .setContentText("Tap I'm OK to cancel the alert")
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setContentIntent(launchPendingIntent)
+            .setFullScreenIntent(launchPendingIntent, true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "I'm OK — Cancel",
+                cancelPendingIntent
+            )
+            .build()
+
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            !manager.canUseFullScreenIntent()
+        ) {
+            Log.w(
+                "FallDetectionService",
+                "Full-screen intent access denied; using persistent heads-up alert"
+            )
+        }
+        manager.notify(ALERT_NOTIF_ID, notification)
+        playAlarmSound()
+    }
+
+    private fun playAlarmSound() {
+        if (alarmRingtone?.isPlaying == true) return
+
+        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        alarmRingtone = RingtoneManager.getRingtone(this, soundUri)?.apply {
+            audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            isLooping = true
+            play()
+            Log.i("FallDetectionService", "Fall alarm sound started")
+        }
+    }
+
+    private fun dismissUrgentFallAlert() {
+        alarmRingtone?.run {
+            if (isPlaying) stop()
+        }
+        alarmRingtone = null
+        getSystemService(NotificationManager::class.java).cancel(ALERT_NOTIF_ID)
+        Log.i("FallDetectionService", "Urgent fall presentation stopped")
+    }
 }

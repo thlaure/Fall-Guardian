@@ -157,10 +157,18 @@ On `main`:
 - ✅ real-time transmission to the iPhone with WatchConnectivity;
 - ✅ deferred transfer if the real-time message does not go through;
 - ✅ countdown and cancellation on the watch;
+- ✅ time-sensitive notification with sound and an explicit cancellation
+  action when the interface is closed;
+- ✅ restoration of the synchronized countdown after the notification opens
+  the app;
 - ✅ retransmission of the cancellation to the iPhone;
 - ✅ integration of the Watch target into the main iOS project;
 - ⚠️ a simple tap can cancel, which favors accidental cancellations;
 - ⚠️ no direct submission to the API;
+- ⚠️ watchOS does not permit forced foreground launch; the system
+  notification is the supported urgent surface;
+- ⚠️ the standard sound respects silent/Focus settings; bypassing them
+  requires Apple's separate Critical Alerts entitlement;
 - ⚠️ Apple approved the Fall Detection capability (2026-07-25) and the
   signed build has been verified to embed it correctly under team
   `PTXCAH5P4R`; physical installation on a real Apple Watch is untested;
@@ -176,9 +184,16 @@ These features joined `main` with
 - ✅ detection based on free fall, impact, and tilt change;
 - ✅ service restart after the watch boots;
 - ✅ countdown and local cancellation;
+- ✅ looping alarm sound for the active 30-second countdown;
+- ✅ full-screen alert request that wakes the locked watch when Android grants
+  full-screen-intent access;
+- ✅ persistent heads-up notification with a direct cancellation action when
+  full-screen access is unavailable;
 - ✅ immediate message to the Android phone;
 - ✅ urgent data persisted in the Data Layer as a fallback;
 - ⚠️ no direct submission to the API;
+- ⚠️ Android 14+ or Google Play policy can withhold full-screen-intent access;
+  the actionable notification remains the fallback;
 - ⚠️ if the phone app's process is killed, Android may show a
   notification, but server registration still waits for the Flutter
   activity to start.

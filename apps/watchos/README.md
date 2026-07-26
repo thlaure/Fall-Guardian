@@ -17,11 +17,22 @@ assisted iPhone.
 Apple Watch sensors emit motion data
 -> native detector evaluates fall threshold
 -> watch app marks a possible fall
+-> watchOS presents a time-sensitive notification with sound and cancel action
 -> watch sends event to assisted iPhone
 -> assisted app owns countdown and escalation
 ```
 
 The watch app does not call the backend and does not notify caregivers directly.
+watchOS does not allow a third-party app to force itself into the foreground.
+The supported background surface is therefore a time-sensitive local
+notification that wakes the display, plays the default notification sound, and
+offers **I'm OK — Cancel Alert**. Tapping the notification launches the app and
+restores the original synchronized countdown.
+
+The standard sound respects the person's notification and Focus settings.
+Bypassing silent mode or Focus would require Apple's separately approved
+Critical Alerts entitlement.
+
 The next increment is to consume the one-time enrollment sent by the iPhone,
 claim watch-specific credentials, and store them in Keychain. See
 `../../docs/COMPANION_ENROLLMENT.md`.
@@ -105,6 +116,8 @@ Prioritize tests around:
 - edge cases around sensor spikes;
 - watch-to-phone message payloads;
 - lifecycle behavior when the watch app is paused or resumed.
+- notification action cancellation while the interface is closed;
+- countdown restoration after opening a fall notification.
 
 ## Sensor And Safety Notes
 

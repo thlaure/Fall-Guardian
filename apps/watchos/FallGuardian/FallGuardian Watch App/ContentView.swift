@@ -245,7 +245,8 @@ class ContentViewModel {
         // Fall Detection is unavailable or permission is denied.
         let systemService = SystemFallDetectionService.shared
         systemService.onFallDetected = { [weak self] timestamp in
-            self?.alertDidFire(timestamp: timestamp)
+            // The system service already scheduled the background notification.
+            self?.alertDidFire(timestamp: timestamp, notifyUser: false)
         }
         systemService.onAuthorizationChanged = { [weak self] status in
             self?.applyFallDetectionAuthorization(status)
@@ -258,6 +259,19 @@ class ContentViewModel {
         // knows it cancelled — we only need to update the watch UI.
         WatchSessionManager.shared.onAlertCancelled = { [weak self] in
             self?.cancelAlert(notifyPhone: false)
+        }
+
+        let notificationService = WatchAlertNotificationService.shared
+        notificationService.onCancelRequested = { [weak self] in
+            // The notification action already notified the phone.
+            self?.cancelAlert(notifyPhone: false)
+        }
+        notificationService.requestAuthorizationIfNeeded()
+
+        // If watchOS launched the app because the wearer tapped a fall
+        // notification, restore the incident's original synchronized countdown.
+        if let timestamp = notificationService.activeFallTimestamp() {
+            alertDidFire(timestamp: timestamp, notifyUser: false)
         }
 
         // In DEBUG + simulator builds, also start polling for test-script triggers.
@@ -332,6 +346,7 @@ class ContentViewModel {
         WatchSessionManager.shared.stopPolling() // Stop waiting for a phone cancel.
         isAlertActive = false                    // Switch UI back to idleView.
         remainingSeconds = 30                    // Reset so the next alert starts at 30.
+        WatchAlertNotificationService.shared.clearAlert()
         startForegroundFallbackIfNeeded()
         if notifyPhone {
             // Tell the phone to dismiss its FallAlertScreen.
@@ -356,10 +371,16 @@ class ContentViewModel {
     ///    - When remaining reaches 0: stops polling and hides the alert.
     ///    - Note: the SMS is sent by the PHONE, not the watch — the watch just
     ///      dismisses its own UI when time runs out.
-    private func alertDidFire(timestamp: Int64) {
+    private func alertDidFire(timestamp: Int64, notifyUser: Bool = true) {
         guard !isAlertActive else { return }
         fallTimestamp = timestamp
         isAlertActive = true
+
+        if notifyUser {
+            WatchAlertNotificationService.shared.presentFallAlert(
+                timestamp: timestamp
+            )
+        }
 
         // Compute how many full seconds remain.  If the phone sent this event and
         // there was 2 s of Bluetooth latency, we start at 28 s, not 30 s, so both
@@ -397,6 +418,7 @@ class ContentViewModel {
                     await MainActor.run {
                         WatchSessionManager.shared.stopPolling()
                         isAlertActive = false  // SwiftUI switches back to idleView.
+                        WatchAlertNotificationService.shared.clearAlert()
                         startForegroundFallbackIfNeeded()
                     }
                     return  // Exit the loop — task is done.

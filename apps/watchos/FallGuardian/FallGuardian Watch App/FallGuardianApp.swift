@@ -1,6 +1,7 @@
 import SwiftUI
 import WatchKit
 import CoreMotion
+import UserNotifications
 
 @main
 struct FallGuardianApp: App {
@@ -18,8 +19,137 @@ struct FallGuardianApp: App {
 /// background without creating the SwiftUI interface.
 final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
+        WatchAlertNotificationService.shared.configure()
         WatchSessionManager.shared.startSession()
+        WatchSessionManager.shared.onAlertCancelled = {
+            WatchAlertNotificationService.shared.clearAlert()
+        }
         SystemFallDetectionService.shared.configure()
+    }
+}
+
+/// Presents the safety-critical watch alert when watchOS detects a fall while
+/// the SwiftUI interface is closed. watchOS does not let third-party apps force
+/// themselves into the foreground, so the system notification is the supported
+/// surface that wakes the display, plays sound, and exposes a cancellation action.
+final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = WatchAlertNotificationService()
+
+    private let notificationIdentifier = "fall-guardian-active-fall"
+    private let categoryIdentifier = "FALL_GUARDIAN_FALL_ALERT"
+    private let cancelActionIdentifier = "FALL_GUARDIAN_CANCEL_ALERT"
+    private let activeFallTimestampKey = "active_watch_fall_timestamp"
+
+    var onCancelRequested: (() -> Void)?
+
+    private override init() {
+        super.init()
+    }
+
+    func configure() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+
+        let cancelAction = UNNotificationAction(
+            identifier: cancelActionIdentifier,
+            title: "I'm OK — Cancel Alert",
+            options: []
+        )
+        center.setNotificationCategories([
+            UNNotificationCategory(
+                identifier: categoryIdentifier,
+                actions: [cancelAction],
+                intentIdentifiers: [],
+                options: []
+            ),
+        ])
+    }
+
+    /// Called only while the app is visible so watchOS can safely show its
+    /// one-time notification permission sheet.
+    func requestAuthorizationIfNeeded() {
+        UNUserNotificationCenter.current().requestAuthorization(
+            options: [.alert, .sound]
+        ) { granted, error in
+            if let error {
+                NSLog("[WatchAlert] notification authorization failed: \(error)")
+            } else {
+                NSLog("[WatchAlert] notification authorization granted=\(granted)")
+            }
+        }
+    }
+
+    func presentFallAlert(timestamp: Int64) {
+        UserDefaults.standard.set(Double(timestamp), forKey: activeFallTimestampKey)
+
+        let content = UNMutableNotificationContent()
+        content.title = "Fall detected"
+        content.body = "Tap “I'm OK” to cancel the alert."
+        content.categoryIdentifier = categoryIdentifier
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+
+        let request = UNNotificationRequest(
+            identifier: notificationIdentifier,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                NSLog("[WatchAlert] failed to present notification: \(error)")
+            }
+        }
+    }
+
+    /// Lets ContentView restore the same incident when the wearer taps the
+    /// notification and watchOS launches the app after background detection.
+    func activeFallTimestamp() -> Int64? {
+        let timestamp = Int64(
+            UserDefaults.standard.double(forKey: activeFallTimestampKey)
+        )
+        guard timestamp > 0 else { return nil }
+
+        let elapsedMs = Int64(Date().timeIntervalSince1970 * 1000) - timestamp
+        guard elapsedMs < 30_000 else {
+            clearAlert()
+            return nil
+        }
+        return timestamp
+    }
+
+    func clearAlert() {
+        UserDefaults.standard.removeObject(forKey: activeFallTimestampKey)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(
+            withIdentifiers: [notificationIdentifier]
+        )
+        center.removeDeliveredNotifications(
+            withIdentifiers: [notificationIdentifier]
+        )
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if response.actionIdentifier == cancelActionIdentifier {
+            clearAlert()
+            WatchSessionManager.shared.sendCancelAlert()
+            DispatchQueue.main.async { [weak self] in
+                self?.onCancelRequested?()
+            }
+        }
+        completionHandler()
     }
 }
 
@@ -101,6 +231,7 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
 
         // Queue phone delivery before touching UI: background launches may never
         // construct ContentView, but the incident must still leave the Watch.
+        WatchAlertNotificationService.shared.presentFallAlert(timestamp: timestamp)
         WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)
         DispatchQueue.main.async { [weak self] in
             self?.onFallDetected?(timestamp)
