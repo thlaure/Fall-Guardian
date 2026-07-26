@@ -65,6 +65,9 @@ object WearDataSender {
     var remainingSeconds by mutableStateOf(30)
         private set
 
+    var alertPresentationIssue by mutableStateOf<AlertPresentationIssue?>(null)
+        private set
+
     // Shared countdown origin used to keep the watch UI aligned with the phone.
     private var fallTimestampMs: Long = 0L
 
@@ -81,8 +84,10 @@ object WearDataSender {
     // so the Runnable can reference itself via `this` to reschedule.
     private val tickRunnable = object : Runnable {
         override fun run() {
-            val elapsedSeconds = ((System.currentTimeMillis() - fallTimestampMs) / 1000L).toInt()
-            val remaining = (30 - elapsedSeconds).coerceIn(0, 30)
+            val remaining = alertRemainingSeconds(
+                fallTimestampMs,
+                System.currentTimeMillis()
+            )
             remainingSeconds = remaining
 
             if (remaining > 0) {
@@ -91,8 +96,8 @@ object WearDataSender {
                 // Countdown expired without cancellation — time is up.
                 alertActive = false                     // Dismiss AlertScreen; return to IdleScreen.
                 onAlertStateChanged?.invoke(false)      // Stop sound and urgent notification.
-                // Note: the phone is responsible for sending the SMS to emergency
-                // contacts when its own 30-second countdown expires.
+                // Backend escalation and caregiver notification continue
+                // independently after the local grace period expires.
             }
         }
     }
@@ -118,7 +123,8 @@ object WearDataSender {
         handler.post {
             // One incident owns one countdown. Repeated sensor signatures must
             // not restart the 30-second grace period or replay the alarm.
-            if (alertActive) return@post
+            val now = System.currentTimeMillis()
+            if (!shouldStartAlert(alertActive, timestamp, now)) return@post
 
             // Encode the 8-byte Long timestamp into a raw byte array for the message payload.
             val payload = ByteBuffer.allocate(8).putLong(timestamp).array()
@@ -128,7 +134,7 @@ object WearDataSender {
             handler.removeCallbacks(tickRunnable)
             fallTimestampMs = timestamp
             alertActive = true        // Tell Compose to switch to AlertScreen.
-            remainingSeconds = (30 - ((System.currentTimeMillis() - timestamp) / 1000L).toInt()).coerceIn(0, 30)
+            remainingSeconds = alertRemainingSeconds(timestamp, now)
             onAlertStateChanged?.invoke(true)
             handler.post(tickRunnable)
         }
@@ -145,16 +151,26 @@ object WearDataSender {
      * @param context  Android context needed to reach Wearable APIs.
      */
     fun sendCancelAlert(context: Context) {
+        val applicationContext = context.applicationContext
         handler.post {
+            if (!alertActive) return@post
             handler.removeCallbacks(tickRunnable)  // Stop the countdown timer.
             alertActive = false                    // Return to IdleScreen immediately.
             fallTimestampMs = 0L
             remainingSeconds = 30                  // Reset for the next alert.
             onAlertStateChanged?.invoke(false)
+            sendToPhone(applicationContext, "/cancel_alert", ByteArray(0), "cancel alert")
+            queueForPhone(
+                applicationContext,
+                "/cancel_alert",
+                System.currentTimeMillis(),
+                "cancel alert"
+            )
         }
-        // Empty payload — the phone only needs to know that cancel happened, not any data.
-        sendToPhone(context, "/cancel_alert", ByteArray(0), "cancel alert")
-        queueForPhone(context, "/cancel_alert", System.currentTimeMillis(), "cancel alert")
+    }
+
+    fun updateAlertPresentationIssue(issue: AlertPresentationIssue?) {
+        handler.post { alertPresentationIssue = issue }
     }
 
     /**

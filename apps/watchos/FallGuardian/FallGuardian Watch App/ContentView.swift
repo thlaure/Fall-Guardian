@@ -369,8 +369,8 @@ class ContentViewModel {
     /// 6. Launch the countdown Task:
     ///    - Wakes every 0.5 s to recompute remainingSeconds from the wall clock.
     ///    - When remaining reaches 0: stops polling and hides the alert.
-    ///    - Note: the SMS is sent by the PHONE, not the watch — the watch just
-    ///      dismisses its own UI when time runs out.
+    ///    - Backend escalation continues independently; the watch dismisses its
+    ///      own UI when the local grace period ends.
     private func alertDidFire(timestamp: Int64, notifyUser: Bool = true) {
         guard !isAlertActive else { return }
         fallTimestamp = timestamp
@@ -413,8 +413,8 @@ class ContentViewModel {
                 await MainActor.run { remainingSeconds = remaining }
 
                 if remaining <= 0 {
-                    // Time is up.  The phone handles SMS sending; the watch just
-                    // dismisses its alert UI.
+                    // Time is up. Backend escalation continues independently;
+                    // the watch dismisses its local alert UI.
                     await MainActor.run {
                         WatchSessionManager.shared.stopPolling()
                         isAlertActive = false  // SwiftUI switches back to idleView.
