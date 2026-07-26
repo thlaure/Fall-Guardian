@@ -144,8 +144,9 @@ jobs:
       - name: Validate production Compose
         env:
           SERVER_NAME: https://fall.example.test
-          POSTGRES_PASSWORD: ci-only
-          APP_SECRET: ci-only
-          DEVICE_TOKEN_HASH_SECRET: ci-only
           PUSH_PROVIDER: fake
-        run: docker compose -f compose.prod.yaml --profile tools config --quiet
+        run: |
+          export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          export APP_SECRET="$(openssl rand -hex 32)"
+          export DEVICE_TOKEN_HASH_SECRET="$(openssl rand -hex 32)"
+          docker compose -f compose.prod.yaml --profile tools config --quiet
