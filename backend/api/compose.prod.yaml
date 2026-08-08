@@ -16,6 +16,7 @@ services:
         environment:
             SERVER_NAME: ${SERVER_NAME:?SERVER_NAME must be set to the public HTTPS domain}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
+            CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?CORS_ALLOW_ORIGIN must be set explicitly}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
@@ -64,6 +65,7 @@ services:
         environment:
             APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
+            CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?CORS_ALLOW_ORIGIN must be set explicitly}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
@@ -93,6 +95,7 @@ services:
         environment:
             APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
             TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1}
+            CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?CORS_ALLOW_ORIGIN must be set explicitly}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages
@@ -123,6 +126,7 @@ services:
         restart: "no"
         environment:
             APP_SECRET: ${APP_SECRET:?APP_SECRET must be set}
+            CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:?CORS_ALLOW_ORIGIN must be set explicitly}
             DEVICE_TOKEN_HASH_SECRET: ${DEVICE_TOKEN_HASH_SECRET:?DEVICE_TOKEN_HASH_SECRET must be set}
             DATABASE_URL: postgresql://${POSTGRES_USER:-fall_guardian}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-fall_guardian}?serverVersion=${POSTGRES_VERSION:-16}&charset=utf8
             MESSENGER_TRANSPORT_DSN: redis://redis:6379/messages

@@ -10,5 +10,7 @@ interface DeviceRepositoryInterface
 {
     public function findActiveByTokenHash(string $tokenHash): ?Device;
 
+    public function findByPublicId(string $publicId): ?Device;
+
     public function save(Device $device): void;
 }
