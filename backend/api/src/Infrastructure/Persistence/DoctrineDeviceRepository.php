@@ -27,6 +27,11 @@ final class DoctrineDeviceRepository extends ServiceEntityRepository implements 
         ]);
     }
 
+    public function findByPublicId(string $publicId): ?Device
+    {
+        return $this->findOneBy(['publicId' => $publicId]);
+    }
+
     public function save(Device $device): void
     {
         $this->getEntityManager()->persist($device);

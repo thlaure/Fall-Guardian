@@ -177,6 +177,9 @@ must stop when migration fails and must deploy the exact image digest/tag that
 passed CI. Database backups and a restore drill remain mandatory before family
 or commercial production use.
 
+For an OVH VPS family-beta deployment checklist, see
+[`docs/OVH_VPS_SECURITY.md`](docs/OVH_VPS_SECURITY.md).
+
 ## Push Providers
 
 `fake` writes outgoing messages under:
