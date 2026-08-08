@@ -17,6 +17,27 @@ remplace pas la validation produit, médicale ou réglementaire.
    SSH. Restreindre SSH à l'adresse IP d'administration quand possible.
    PostgreSQL et Redis restent accessibles uniquement dans le réseau Docker.
 
+## GitHub Actions
+
+Créer environnement GitHub `production` et exiger une approbation avant le job
+de déploiement. Ajouter ces secrets de dépôt :
+
+- `OVH_SSH_HOST` : IP publique ou nom DNS du VPS ;
+- `OVH_SSH_USER` : utilisateur Linux de déploiement, non-root ;
+- `OVH_SSH_PRIVATE_KEY` : clé privée Ed25519 dédiée à GitHub Actions ;
+- `OVH_KNOWN_HOSTS` : sortie de `ssh-keyscan -H <IP_DU_VPS>` vérifiée hors
+  GitHub ;
+- `OVH_DEPLOY_PATH` : répertoire absolu, par exemple `/opt/fall-guardian-api` ;
+- `OVH_ENV_FILE` : chemin absolu du fichier d'environnement du serveur, par
+  exemple `/etc/fall-guardian/api.env`.
+
+Sur VPS, installer Docker Compose, créer `OVH_DEPLOY_PATH`, puis créer le
+fichier `OVH_ENV_FILE` en permissions `0600`, propriétaire de l'utilisateur de
+déploiement. Ce fichier reprend `.env.prod.example` avec secrets réels. Ne pas
+le copier dans GitHub ni dans le dépôt. Rendre le package GHCR accessible au
+VPS avec un token à lecture seule (`read:packages`) et faire `docker login
+ghcr.io` une fois avec cet utilisateur.
+
 ## À chaque déploiement
 
 1. Vérifier la sauvegarde PostgreSQL la plus récente.

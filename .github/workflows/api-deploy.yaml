@@ -1,0 +1,74 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/api/**
+      - .github/workflows/api-deploy.yaml
+  workflow_dispatch: ~
+
+concurrency:
+  group: api-production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/fall-guardian-api
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/api
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: backend/api
+          file: backend/api/.docker/api/Dockerfile
+          target: frankenphp_prod
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure SSH
+        env:
+          OVH_SSH_PRIVATE_KEY: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
+          OVH_KNOWN_HOSTS: ${{ secrets.OVH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$OVH_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$OVH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload production Compose file
+        env:
+          OVH_SSH_HOST: ${{ secrets.OVH_SSH_HOST }}
+          OVH_SSH_USER: ${{ secrets.OVH_SSH_USER }}
+          OVH_DEPLOY_PATH: ${{ secrets.OVH_DEPLOY_PATH }}
+        run: |
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes backend/api/compose.prod.yaml "$OVH_SSH_USER@$OVH_SSH_HOST:$OVH_DEPLOY_PATH/compose.prod.yaml"
+      - name: Migrate and deploy exact image
+        env:
+          OVH_SSH_HOST: ${{ secrets.OVH_SSH_HOST }}
+          OVH_SSH_USER: ${{ secrets.OVH_SSH_USER }}
+          OVH_DEPLOY_PATH: ${{ secrets.OVH_DEPLOY_PATH }}
+          OVH_ENV_FILE: ${{ secrets.OVH_ENV_FILE }}
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "$OVH_SSH_USER@$OVH_SSH_HOST" \
+            "cd '$OVH_DEPLOY_PATH' && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml pull && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml run --rm migrate && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml up -d --no-build --remove-orphans && docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml exec -T app curl -fsS http://localhost/health"
