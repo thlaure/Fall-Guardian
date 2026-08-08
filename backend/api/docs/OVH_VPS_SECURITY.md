@@ -3,6 +3,9 @@
 Ce guide couvre le minimum opérationnel pour déployer l'API familiale. Il ne
 remplace pas la validation produit, médicale ou réglementaire.
 
+The full English step-by-step guide, including commands and their explanations,
+is in [`OVH_GITHUB_ACTIONS_DEPLOYMENT.md`](OVH_GITHUB_ACTIONS_DEPLOYMENT.md).
+
 ## Avant premier déploiement
 
 1. Configurer `api.votre-domaine.fr` vers l'adresse IPv4/IPv6 du VPS.
