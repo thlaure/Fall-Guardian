@@ -39,11 +39,10 @@ Raw algorithm defaults are `0.7 g` low acceleration, `2.5 g` impact,
 An impact alone never triggers: the detector also requires orientation change
 or qualified low acceleration, followed by about two seconds of stillness.
 
-Foreground cancellation requires a deliberate 1.5-second hold. In Debug,
-the raw detector stays active while the app is visible even when Apple's
-system detector is authorized. Raw accelerometer streaming stops when watchOS
-suspends the app; Release background behavior comes from
-`CMFallDetectionManager`, not the raw algorithm.
+Foreground cancellation requires a deliberate 1.5-second hold. The raw
+detector stays active while the app is visible. Raw accelerometer streaming
+stops when watchOS suspends the app, so the current custom detector does not
+provide continuous background monitoring.
 
 The next increment is to consume the one-time enrollment sent by the iPhone,
 claim watch-specific credentials, and store them in Keychain. See

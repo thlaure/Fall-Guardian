@@ -33,11 +33,10 @@ import CoreMotion  // CMMotionManager and CMAccelerometerData — Apple's accele
 /// ensures ContentView, background tasks, and the debug debug simulator all share
 /// the same session rather than competing for the hardware.
 ///
-/// ## Foreground fallback
-/// Raw accelerometer delivery stops when watchOS suspends this app. Production
-/// background detection is handled by SystemFallDetectionService using Apple's
-/// CMFallDetectionManager. This class remains useful on unsupported devices or
-/// when the wearer declines system Fall Detection permission.
+/// ## Runtime limitation
+/// Raw accelerometer delivery stops when watchOS suspends this app. The UI must
+/// therefore communicate that custom-sensor monitoring is active only while the
+/// app remains open.
 class FallDetectionManager: NSObject {
 
     // MARK: - Singleton
