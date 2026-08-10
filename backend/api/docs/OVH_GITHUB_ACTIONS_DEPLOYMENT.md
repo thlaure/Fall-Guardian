@@ -10,8 +10,10 @@ A change under `backend/api/` merged into `main` starts
 
 1. GitHub builds a production image and pushes it to GHCR.
 2. After `production` environment approval, GitHub logs into the VPS.
-3. The VPS pulls that exact commit image, runs migrations, starts the API,
-   Messenger worker, and alert reconciler, then checks `/health`.
+3. The VPS pulls that exact commit image, runs migrations, and starts the API,
+   Messenger worker, and alert reconciler.
+4. It retries the API `/health` endpoint for up to 180 seconds. Workers do not
+   need individual health checks to make the deployment succeed.
 
 PostgreSQL, Redis, and all application secrets remain on the VPS.
 
@@ -255,7 +257,8 @@ Merge a green PR into `main`. The **Deploy API** workflow starts automatically
 (or may be run from GitHub **Actions**). If protected, after the build completes
 click **Review deployments** → select `production` → **Approve and deploy**.
 
-The job pulls the image, migrates, starts services, and checks health. Then
+The job pulls the image, migrates, starts services, then retries the API health
+endpoint for up to 180 seconds. Then
 verify:
 
 ```text
