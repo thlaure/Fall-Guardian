@@ -244,19 +244,11 @@ class ContentViewModel {
             DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp) }
         }
 
-        // Apple's system service keeps working when the Watch UI is closed.
-        // Raw accelerometer detection remains a foreground-only fallback when
-        // Fall Detection is unavailable or permission is denied.
-        let systemService = SystemFallDetectionService.shared
-        systemService.onFallDetected = { [weak self] timestamp in
-            // The system service already scheduled the background notification.
-            self?.alertDidFire(timestamp: timestamp, notifyUser: false)
-        }
-        systemService.onAuthorizationChanged = { [weak self] status in
-            self?.applyFallDetectionAuthorization(status)
-        }
-        systemService.requestAuthorizationIfNeeded()
-        applyFallDetectionAuthorization(systemService.authorizationStatus)
+        // Fall Guardian's own algorithm is the source of truth. Its thresholds
+        // are configured by the paired phone and sent through WatchConnectivity.
+        // watchOS may suspend raw accelerometer delivery when this app is closed,
+        // so the status deliberately does not promise background monitoring.
+        startCustomSensorMonitoring()
 
         // Wire the cancel callback from the phone.
         // `notifyPhone: false` prevents the ping-pong loop: the phone already
@@ -351,7 +343,7 @@ class ContentViewModel {
         isAlertActive = false                    // Switch UI back to idleView.
         remainingSeconds = 30                    // Reset so the next alert starts at 30.
         WatchAlertNotificationService.shared.clearAlert()
-        startForegroundFallbackIfNeeded()
+        startCustomSensorMonitoring()
         if notifyPhone {
             WKInterfaceDevice.current().play(.success)
             // Tell the phone to dismiss its FallAlertScreen.
@@ -424,7 +416,7 @@ class ContentViewModel {
                         WatchSessionManager.shared.stopPolling()
                         isAlertActive = false  // SwiftUI switches back to idleView.
                         WatchAlertNotificationService.shared.clearAlert()
-                        startForegroundFallbackIfNeeded()
+                        startCustomSensorMonitoring()
                     }
                     return  // Exit the loop — task is done.
                 }
@@ -432,50 +424,8 @@ class ContentViewModel {
         }
     }
 
-    private func applyFallDetectionAuthorization(_ status: CMAuthorizationStatus) {
-        guard SystemFallDetectionService.shared.isAvailable else {
-            monitoringStatusText = "Open-app monitoring only"
-            startForegroundFallbackIfNeeded()
-            return
-        }
-
-        switch status {
-        case .authorized:
-            #if DEBUG
-            // Device Debug builds deliberately keep the raw accelerometer
-            // detector active alongside Apple's background detector. This
-            // allows developers to exercise and tune FallAlgorithm using real
-            // watch motion. Release builds use only Apple's system detector
-            // when authorized, avoiding duplicate alerts and battery drain.
-            monitoringStatusText = "Background + raw debug monitoring"
-            FallDetectionManager.shared.start()
-            #else
-            monitoringStatusText = "Background monitoring active"
-            FallDetectionManager.shared.stop()
-            #endif
-        case .notDetermined:
-            monitoringStatusText = "Permission required"
-            startForegroundFallbackIfNeeded()
-        case .denied, .restricted:
-            monitoringStatusText = "Open-app monitoring only"
-            startForegroundFallbackIfNeeded()
-        @unknown default:
-            monitoringStatusText = "Open-app monitoring only"
-            startForegroundFallbackIfNeeded()
-        }
-    }
-
-    private func startForegroundFallbackIfNeeded() {
-        #if DEBUG
-        // Raw detection is part of the physical-device test surface in Debug,
-        // even when the system Fall Detection permission is authorized.
+    private func startCustomSensorMonitoring() {
+        monitoringStatusText = "Open-app custom sensor monitoring active"
         FallDetectionManager.shared.start()
-        #else
-        guard !SystemFallDetectionService.shared.usesSystemDetection else {
-            FallDetectionManager.shared.stop()
-            return
-        }
-        FallDetectionManager.shared.start()
-        #endif
     }
 }

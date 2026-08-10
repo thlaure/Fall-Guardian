@@ -24,7 +24,6 @@ final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
         WatchSessionManager.shared.onAlertCancelled = {
             WatchAlertNotificationService.shared.clearAlert()
         }
-        SystemFallDetectionService.shared.configure()
     }
 }
 
