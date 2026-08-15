@@ -14,7 +14,7 @@ class LocationService implements AlertLocationProvider {
     try {
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        return Geolocator.requestPermission();
+        return await Geolocator.requestPermission();
       }
       return permission;
     } catch (error, stackTrace) {
