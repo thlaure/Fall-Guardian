@@ -194,6 +194,18 @@ import WatchConnectivity
             case "sendCancelAlert":
                 self?.watchSession?.sendCancelAlert()
 
+            case "configureNativeAlertRelay":
+                guard let args = call.arguments as? [String: Any],
+                      let baseURL = args["baseUrl"] as? String,
+                      NativeAppleWatchAlertRelay.shared.configure(baseURL: baseURL) else {
+                    result(FlutterError(
+                        code: "INVALID_RELAY_CONFIGURATION",
+                        message: "The fall-alert relay requires a valid backend URL.",
+                        details: nil
+                    ))
+                    return
+                }
+
             case "sendCompanionEnrollment":
                 // `details` carries the precise precondition that failed so a
                 // failed pairing is diagnosable from logs. It never contains

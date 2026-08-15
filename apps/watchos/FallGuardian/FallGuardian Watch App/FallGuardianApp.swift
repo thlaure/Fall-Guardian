@@ -21,6 +21,9 @@ final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
         WatchAlertNotificationService.shared.configure()
         WatchSessionManager.shared.startSession()
+        // Must be configured before SwiftUI exists: watchOS can launch this
+        // extension directly in the background for an Apple fall event.
+        SystemFallDetectionService.shared.configure()
         WatchSessionManager.shared.onAlertCancelled = {
             WatchAlertNotificationService.shared.clearAlert()
         }
@@ -254,6 +257,24 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
         defer { completionHandler() }
 
         let timestamp = Int64(event.date.timeIntervalSince1970 * 1000)
+        processDetectedFall(timestamp: timestamp, resolution: event.resolution)
+    }
+
+    /// Sends a system-detection-style event through the same WatchConnectivity
+    /// path in debug builds. This tests our relay, not Apple's sensor model.
+    #if DEBUG || TESTING
+    func simulateFallForTesting() {
+        processDetectedFall(
+            timestamp: Int64(Date().timeIntervalSince1970 * 1000),
+            resolution: .unresponsive
+        )
+    }
+    #endif
+
+    private func processDetectedFall(
+        timestamp: Int64,
+        resolution: CMFallDetectionEvent.UserResolution
+    ) {
         let defaults = UserDefaults.standard
         let lastTimestamp = Int64(defaults.double(forKey: lastProcessedEventKey))
 
@@ -262,7 +283,7 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
         defaults.set(Double(timestamp), forKey: lastProcessedEventKey)
 
         // "Rejected" explicitly means the wearer told watchOS they did not fall.
-        guard event.resolution != .rejected else { return }
+        guard resolution != .rejected else { return }
 
         // Queue phone delivery before touching UI: background launches may never
         // construct ContentView, but the incident must still leave the Watch.
