@@ -176,4 +176,50 @@ void main() {
 
     expect(find.text('Watch setup expired. Try again.'), findsOneWidget);
   });
+
+  testWidgets('custom detection thresholds are hidden for watchOS',
+      (tester) async {
+    final coordinator = CompanionEnrollmentCoordinator(
+      backend: _FakeBackend(),
+      sendToWatch: (_) async {},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SettingsScreen(
+          enrollmentCoordinator: coordinator,
+          platformOverride: CompanionPlatform.watchOS,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fall Detection Thresholds'), findsNothing);
+    expect(find.text('Save'), findsNothing);
+  });
+
+  testWidgets('custom detection thresholds remain available for Wear OS',
+      (tester) async {
+    final coordinator = CompanionEnrollmentCoordinator(
+      backend: _FakeBackend(),
+      sendToWatch: (_) async {},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SettingsScreen(
+          enrollmentCoordinator: coordinator,
+          platformOverride: CompanionPlatform.wearOS,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fall Detection Thresholds'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
+  });
 }

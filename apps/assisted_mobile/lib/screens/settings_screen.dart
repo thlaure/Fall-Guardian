@@ -181,7 +181,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
-        actions: [TextButton(onPressed: _save, child: Text(l10n.save))],
+        actions: _companionPlatform == CompanionPlatform.wearOS
+            ? [TextButton(onPressed: _save, child: Text(l10n.save))]
+            : null,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -191,69 +193,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _sectionHeader(l10n.watchConnectionSection, cs),
                 const SizedBox(height: 8),
                 _watchConnectionCard(l10n, cs),
-                const SizedBox(height: 32),
-                _sectionHeader(l10n.thresholdsSection, cs),
-                const SizedBox(height: 8),
-                _infoCard(l10n.thresholdsInfo, cs),
-                const SizedBox(height: 24),
-                _sliderTile(
-                  label: l10n.freeFallLabel,
-                  value: _freeFallThreshold,
-                  unit: l10n.unitG,
-                  min: 0.1,
-                  max: 1.0,
-                  divisions: 18,
-                  description: l10n.freeFallDesc,
-                  onChanged: (v) => setState(() => _freeFallThreshold = v),
-                  cs: cs,
-                ),
-                _sliderTile(
-                  label: l10n.impactLabel,
-                  value: _impactThreshold,
-                  unit: l10n.unitG,
-                  min: 1.5,
-                  max: 5.0,
-                  divisions: 35,
-                  description: l10n.impactDesc,
-                  onChanged: (v) => setState(() => _impactThreshold = v),
-                  cs: cs,
-                ),
-                _sliderTile(
-                  label: l10n.tiltLabel,
-                  value: _tiltThreshold,
-                  unit: l10n.unitDeg,
-                  min: 20.0,
-                  max: 90.0,
-                  divisions: 70,
-                  description: l10n.tiltDesc,
-                  onChanged: (v) => setState(() => _tiltThreshold = v),
-                  cs: cs,
-                ),
-                _sliderTile(
-                  label: l10n.freeFallDurationLabel,
-                  value: _freeFallMinMs.toDouble(),
-                  unit: l10n.unitMs,
-                  min: 40,
-                  max: 200,
-                  divisions: 32,
-                  description: l10n.freeFallDurationDesc,
-                  onChanged: (v) => setState(() => _freeFallMinMs = v.round()),
-                  cs: cs,
-                ),
-                const SizedBox(height: 32),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    setState(() {
-                      _freeFallThreshold = 0.7;
-                      _impactThreshold = 2.5;
-                      _tiltThreshold = 50.0;
-                      _freeFallMinMs = 60;
-                    });
-                    await _save();
-                  },
-                  icon: const Icon(Icons.restore),
-                  label: Text(l10n.resetDefaults),
-                ),
+                if (_companionPlatform == CompanionPlatform.wearOS) ...[
+                  const SizedBox(height: 32),
+                  _sectionHeader(l10n.thresholdsSection, cs),
+                  const SizedBox(height: 8),
+                  _infoCard(l10n.thresholdsInfo, cs),
+                  const SizedBox(height: 24),
+                  _sliderTile(
+                    label: l10n.freeFallLabel,
+                    value: _freeFallThreshold,
+                    unit: l10n.unitG,
+                    min: 0.1,
+                    max: 1.0,
+                    divisions: 18,
+                    description: l10n.freeFallDesc,
+                    onChanged: (v) => setState(() => _freeFallThreshold = v),
+                    cs: cs,
+                  ),
+                  _sliderTile(
+                    label: l10n.impactLabel,
+                    value: _impactThreshold,
+                    unit: l10n.unitG,
+                    min: 1.5,
+                    max: 5.0,
+                    divisions: 35,
+                    description: l10n.impactDesc,
+                    onChanged: (v) => setState(() => _impactThreshold = v),
+                    cs: cs,
+                  ),
+                  _sliderTile(
+                    label: l10n.tiltLabel,
+                    value: _tiltThreshold,
+                    unit: l10n.unitDeg,
+                    min: 20.0,
+                    max: 90.0,
+                    divisions: 70,
+                    description: l10n.tiltDesc,
+                    onChanged: (v) => setState(() => _tiltThreshold = v),
+                    cs: cs,
+                  ),
+                  _sliderTile(
+                    label: l10n.freeFallDurationLabel,
+                    value: _freeFallMinMs.toDouble(),
+                    unit: l10n.unitMs,
+                    min: 40,
+                    max: 200,
+                    divisions: 32,
+                    description: l10n.freeFallDurationDesc,
+                    onChanged: (v) =>
+                        setState(() => _freeFallMinMs = v.round()),
+                    cs: cs,
+                  ),
+                  const SizedBox(height: 32),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      setState(() {
+                        _freeFallThreshold = 0.7;
+                        _impactThreshold = 2.5;
+                        _tiltThreshold = 50.0;
+                        _freeFallMinMs = 60;
+                      });
+                      await _save();
+                    },
+                    icon: const Icon(Icons.restore),
+                    label: Text(l10n.resetDefaults),
+                  ),
+                ],
               ],
             ),
     );

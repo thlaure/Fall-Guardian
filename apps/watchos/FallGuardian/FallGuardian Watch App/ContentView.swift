@@ -14,12 +14,11 @@
 //   - FallDetectionManager / WatchSessionManager are the MODEL layer.
 //
 // How data flows end-to-end when a fall happens:
-//   1. CMMotionManager samples accelerometer → FallDetectionManager.process()
-//   2. FallAlgorithm.processSample() returns true
-//   3. FallDetectionManager calls onFallDetected(timestamp)
-//   4. ContentViewModel.alertDidFire(timestamp:) sets isAlertActive = true
-//   5. SwiftUI re-renders ContentView, showing alertView
-//   6. WatchSessionManager.sendFallEvent() notifies the iPhone
+//   1. CMFallDetectionManager wakes the app with Apple's system event
+//   2. SystemFallDetectionService validates and deduplicates the event
+//   3. ContentViewModel.alertDidFire(timestamp:) sets isAlertActive = true
+//   4. SwiftUI re-renders ContentView, showing alertView
+//   5. WatchSessionManager.sendFallEvent() notifies the iPhone
 //
 // How data flows when the alert is cancelled:
 //   Watch side:   deliberate 1.5 s hold → viewModel.cancelAlert()
@@ -163,12 +162,6 @@ struct ContentView: View {
             // Test builds only — stripped from App Store / release builds.
             // The condition is evaluated at compile time, not runtime.
             #if DEBUG || TESTING
-            Button("Simulate Fall (debug)") {
-                viewModel.simulateFall()
-            }
-            .font(.system(size: 11))
-            .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
-
             Button("Test Apple relay (debug)") {
                 viewModel.simulateAppleSystemFall()
             }
@@ -240,29 +233,19 @@ class ContentViewModel {
     /// app warm-up.  `startIfNeeded()` guards against double-starting and only
     /// runs the side-effecting setup once the view is actually on screen.
     func startIfNeeded() {
-        // Wire the fall-detected callback.  Using `[weak self]` breaks the
-        // reference cycle: FallDetectionManager holds the closure, closure
-        // holds self, self holds the reference to FallDetectionManager.
-        // Without `weak`, none of these objects would ever be released.
-        FallDetectionManager.shared.onFallDetected = { [weak self] timestamp in
-            // The callback may arrive on any thread — dispatch to main for UI safety.
-            DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp) }
-        }
-
-        // Raw detection is a foreground-only supplement. Apple system detection
-        // is configured in the application delegate and remains available when
-        // watchOS suspends this UI.
-        startCustomSensorMonitoring()
+        // Raw accelerometer detection is intentionally suspended on watchOS.
+        // Only Apple's supported background fall API drives production alerts.
+        FallDetectionManager.shared.stop()
 
         let systemDetection = SystemFallDetectionService.shared
         systemDetection.onFallDetected = { [weak self] timestamp in
             DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp, notifyUser: false) }
         }
         systemDetection.onAuthorizationChanged = { [weak self] status in
-            DispatchQueue.main.async { self?.updateMonitoringStatus(for: status) }
+            DispatchQueue.main.async { self?.applyDetectionMode(for: status) }
         }
         systemDetection.requestAuthorizationIfNeeded()
-        updateMonitoringStatus(for: systemDetection.authorizationStatus)
+        applyDetectionMode(for: systemDetection.authorizationStatus)
 
         // Wire the cancel callback from the phone.
         // `notifyPhone: false` prevents the ping-pong loop: the phone already
@@ -366,7 +349,7 @@ class ContentViewModel {
         isAlertActive = false                    // Switch UI back to idleView.
         remainingSeconds = 30                    // Reset so the next alert starts at 30.
         WatchAlertNotificationService.shared.clearAlert()
-        startCustomSensorMonitoring()
+        resumeDetectionMonitoring()
         if notifyPhone {
             WKInterfaceDevice.current().play(.success)
             // Tell the phone to dismiss its FallAlertScreen.
@@ -409,8 +392,9 @@ class ContentViewModel {
 
         alertExpireTask?.cancel()  // Cancel stale task if alertDidFire is called twice.
 
-        // Start watching for a phone-side cancel.
-        WatchSessionManager.shared.startPollingForCancel()
+        // Watch for a phone-side cancellation. The incident timestamp is required
+        // so a durable context left by an older incident cannot close this alert.
+        WatchSessionManager.shared.startPollingForCancel(timestamp: timestamp)
 
         // Launch the countdown timer as a Swift Concurrency Task.
         // Swift Concurrency (`async/await`) is Apple's modern threading model.
@@ -439,7 +423,7 @@ class ContentViewModel {
                         WatchSessionManager.shared.stopPolling()
                         isAlertActive = false  // SwiftUI switches back to idleView.
                         WatchAlertNotificationService.shared.clearAlert()
-                        startCustomSensorMonitoring()
+                        resumeDetectionMonitoring()
                     }
                     return  // Exit the loop — task is done.
                 }
@@ -447,23 +431,22 @@ class ContentViewModel {
         }
     }
 
-    private func startCustomSensorMonitoring() {
-        if SystemFallDetectionService.shared.usesSystemDetection {
-            monitoringStatusText = "Apple background fall detection active"
-        } else {
-            monitoringStatusText = "Open-app custom sensor monitoring active"
-        }
-        FallDetectionManager.shared.start()
+    private func resumeDetectionMonitoring() {
+        applyDetectionMode(for: SystemFallDetectionService.shared.authorizationStatus)
     }
 
-    private func updateMonitoringStatus(for status: CMAuthorizationStatus) {
+    /// Apple detection is the only production source because it can wake the app
+    /// in the background. Raw accelerometer detection stays suspended in every
+    /// authorization state.
+    private func applyDetectionMode(for status: CMAuthorizationStatus) {
+        FallDetectionManager.shared.stop()
         switch status {
         case .authorized:
             monitoringStatusText = "Apple background fall detection active"
         case .notDetermined:
             monitoringStatusText = "Allow Apple fall detection for background alerts"
         default:
-            monitoringStatusText = "Open-app custom sensor monitoring active"
+            monitoringStatusText = "Apple fall detection unavailable — monitoring inactive"
         }
     }
 }
