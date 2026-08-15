@@ -169,6 +169,12 @@ struct ContentView: View {
             }
             .font(.system(size: 11))
             .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
+
+            Button("Test Apple relay (debug)") {
+                viewModel.simulateAppleSystemFall()
+            }
+            .font(.system(size: 11))
+            .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
             #endif
         }
         .containerBackground(.black, for: .navigation)
@@ -244,11 +250,20 @@ class ContentViewModel {
             DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp) }
         }
 
-        // Fall Guardian's own algorithm is the source of truth. Its thresholds
-        // are configured by the paired phone and sent through WatchConnectivity.
-        // watchOS may suspend raw accelerometer delivery when this app is closed,
-        // so the status deliberately does not promise background monitoring.
+        // Raw detection is a foreground-only supplement. Apple system detection
+        // is configured in the application delegate and remains available when
+        // watchOS suspends this UI.
         startCustomSensorMonitoring()
+
+        let systemDetection = SystemFallDetectionService.shared
+        systemDetection.onFallDetected = { [weak self] timestamp in
+            DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp, notifyUser: false) }
+        }
+        systemDetection.onAuthorizationChanged = { [weak self] status in
+            DispatchQueue.main.async { self?.updateMonitoringStatus(for: status) }
+        }
+        systemDetection.requestAuthorizationIfNeeded()
+        updateMonitoringStatus(for: systemDetection.authorizationStatus)
 
         // Wire the cancel callback from the phone.
         // `notifyPhone: false` prevents the ping-pong loop: the phone already
@@ -330,6 +345,15 @@ class ContentViewModel {
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)  // ms since epoch
         alertDidFire(timestamp: timestamp)                          // Update this device's UI.
         WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)  // Notify the phone.
+    }
+
+    /// Tests the same relay used by CMFallDetectionManager. It deliberately does
+    /// not claim to emulate Apple's proprietary fall-detection sensor model.
+    func simulateAppleSystemFall() {
+        guard !isAlertActive else { return }
+        #if DEBUG
+        SystemFallDetectionService.shared.simulateFallForTesting()
+        #endif
     }
 
     /// Cancels the active alert, stops the countdown, and optionally notifies the phone.
@@ -425,7 +449,22 @@ class ContentViewModel {
     }
 
     private func startCustomSensorMonitoring() {
-        monitoringStatusText = "Open-app custom sensor monitoring active"
+        if SystemFallDetectionService.shared.usesSystemDetection {
+            monitoringStatusText = "Apple background fall detection active"
+        } else {
+            monitoringStatusText = "Open-app custom sensor monitoring active"
+        }
         FallDetectionManager.shared.start()
+    }
+
+    private func updateMonitoringStatus(for status: CMAuthorizationStatus) {
+        switch status {
+        case .authorized:
+            monitoringStatusText = "Apple background fall detection active"
+        case .notDetermined:
+            monitoringStatusText = "Allow Apple fall detection for background alerts"
+        default:
+            monitoringStatusText = "Open-app custom sensor monitoring active"
+        }
     }
 }
