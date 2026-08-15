@@ -160,10 +160,9 @@ struct ContentView: View {
                 .foregroundColor(Color(red: 0.820, green: 0.878, blue: 0.843))  // Light mint
                 .multilineTextAlignment(.center)
 
-            // DEBUG only — stripped from App Store / release builds.
-            // `#if DEBUG` is evaluated at compile time, not runtime, so the button
-            // code does not exist in production binaries.
-            #if DEBUG
+            // Test builds only — stripped from App Store / release builds.
+            // The condition is evaluated at compile time, not runtime.
+            #if DEBUG || TESTING
             Button("Simulate Fall (debug)") {
                 viewModel.simulateFall()
             }
@@ -351,7 +350,7 @@ class ContentViewModel {
     /// not claim to emulate Apple's proprietary fall-detection sensor model.
     func simulateAppleSystemFall() {
         guard !isAlertActive else { return }
-        #if DEBUG
+        #if DEBUG || TESTING
         SystemFallDetectionService.shared.simulateFallForTesting()
         #endif
     }

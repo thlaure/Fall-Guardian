@@ -262,7 +262,7 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
 
     /// Sends a system-detection-style event through the same WatchConnectivity
     /// path in debug builds. This tests our relay, not Apple's sensor model.
-    #if DEBUG
+    #if DEBUG || TESTING
     func simulateFallForTesting() {
         processDetectedFall(
             timestamp: Int64(Date().timeIntervalSince1970 * 1000),

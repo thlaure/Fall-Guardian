@@ -123,7 +123,7 @@ make test
 
 ## Testing Guidance
 
-For a physical integration test, install a **debug** build on the paired
+For a physical integration test, install a **debug or profile test** build on the paired
 iPhone and Watch, open the Watch app, then choose **Test Apple relay (debug)**.
 It invokes the exact app-side path used after `CMFallDetectionManager` reports
 an event: WatchConnectivity, the iPhone native relay, the API, and its
