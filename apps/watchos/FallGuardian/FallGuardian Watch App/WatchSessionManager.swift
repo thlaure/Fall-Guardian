@@ -142,6 +142,11 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// Delivery strategy: same as sendCancelAlert (simulator file → sendMessage → transferUserInfo).
     func sendFallEvent(timestamp: Int64) {
+        // Keep the incident identity even when watchOS launches us directly in
+        // the background and never constructs ContentView. Phone-side cancels
+        // are accepted only when they carry this same timestamp.
+        activeFallTimestamp = timestamp
+
         // Persist first. A system fall can launch this extension before WCSession
         // finishes activating; activationDidCompleteWith retries the pending event.
         UserDefaults.standard.set(Double(timestamp), forKey: pendingFallTimestampKey)
@@ -176,6 +181,12 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         deliverPendingFallEvent()
     }
 
+    /// Restores the incident persisted by the notification service after watchOS
+    /// relaunches the extension in the background.
+    func restoreActiveFall(timestamp: Int64) {
+        activeFallTimestamp = timestamp
+    }
+
     // MARK: - Cancel-status polling (watch waiting for phone to cancel)
     //
     // The watch needs to know if the user cancelled the alert on the PHONE side.
@@ -197,6 +208,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// The running background poll task.  Stored so we can cancel it in stopPolling().
     private var pollTask: Task<Void, Never>?
+    private var activeFallTimestamp: Int64?
 
     /// Starts the 2-second polling loop that watches for a phone-side cancellation.
     ///
@@ -209,8 +221,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///   - `Task.isCancelled` is checked before and after the sleep so the loop
     ///     exits immediately when stopPolling() cancels the task.
     ///   - `try? await Task.sleep(nanoseconds:)` pauses without blocking the main thread.
-    func startPollingForCancel() {
+    func startPollingForCancel(timestamp: Int64) {
         stopPolling()  // Cancel any stale poll from a previous alert.
+        activeFallTimestamp = timestamp
         pollTask = Task {
             while !Task.isCancelled {
                 // Sleep 2 seconds between checks.  2 s feels responsive while keeping
@@ -225,7 +238,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 guard WCSession.default.activationState == .activated else { continue }
                 #endif
 
-                let cancelled = await checkCancelledOnPhone()
+                let cancelled = await checkCancelledOnPhone(for: timestamp)
                 NSLog("[WCSession] poll: cancelled=\(cancelled)")
                 if cancelled {
                     // Jump back to the main thread before touching UI-facing state.
@@ -247,7 +260,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Simulator: checks for the existence of `/tmp/com.fallguardian.cancelAlert`.
     /// The iOS simulator writes that file when the user taps Cancel on the phone.
     /// We delete it after reading so we don't double-fire the cancellation.
-    private func checkCancelledOnPhone() async -> Bool {
+    private func checkCancelledOnPhone(for timestamp: Int64) async -> Bool {
         #if targetEnvironment(simulator)
         let path = "/tmp/com.fallguardian.cancelAlert"
         guard FileManager.default.fileExists(atPath: path) else { return false }
@@ -255,10 +268,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         try? FileManager.default.removeItem(atPath: path)
         return true
         #else
-        // On a real device, read the latest application context the phone published.
-        // `as? Bool ?? false` safely handles the case where the key is absent or
-        // the value is not a Bool (e.g. on first launch before any context is set).
-        return WCSession.default.receivedApplicationContext["alertCancelled"] as? Bool ?? false
+        let context = WCSession.default.receivedApplicationContext
+        let cancelledTimestamp = Int64(context["fallTimestamp"] as? Int ?? 0)
+        return context["alertCancelled"] as? Bool == true && cancelledTimestamp == timestamp
         #endif
     }
 
@@ -269,6 +281,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     func stopPolling() {
         pollTask?.cancel()  // Signals Task.isCancelled inside the loop.
         pollTask = nil      // Release the reference so ARC can deallocate the task.
+        activeFallTimestamp = nil
     }
 
     // MARK: - Inbound (phone → watch) — WCSessionDelegate callbacks
@@ -325,8 +338,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// We also handle this in the polling loop as a belt-and-suspenders safety net.
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        NSLog("[WCSession] didReceiveApplicationContext: alertCancelled=\(applicationContext["alertCancelled"] as? Bool ?? false)")
-        if applicationContext["alertCancelled"] as? Bool == true {
+        let cancelledTimestamp = Int64(applicationContext["fallTimestamp"] as? Int ?? 0)
+        NSLog("[WCSession] didReceiveApplicationContext: alertCancelled=\(applicationContext["alertCancelled"] as? Bool ?? false) timestamp=\(cancelledTimestamp)")
+        if applicationContext["alertCancelled"] as? Bool == true,
+           cancelledTimestamp == activeFallTimestamp {
             // The callback touches UI state — must run on the main thread.
             DispatchQueue.main.async { self.onAlertCancelled?() }
         }
@@ -379,6 +394,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         case "alert_cancelled":
             // The phone cancelled — dismiss the watch alert without sending another
             // cancel back to the phone (ContentViewModel handles that via notifyPhone: false).
+            let cancelledTimestamp = Int64(message["fallTimestamp"] as? Int ?? 0)
+            guard cancelledTimestamp == activeFallTimestamp else { return }
             DispatchQueue.main.async { self.onAlertCancelled?() }
 
         default:

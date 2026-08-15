@@ -19,7 +19,11 @@ struct FallGuardianApp: App {
 /// background without creating the SwiftUI interface.
 final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
-        WatchAlertNotificationService.shared.configure()
+        let notificationService = WatchAlertNotificationService.shared
+        notificationService.configure()
+        if let timestamp = notificationService.activeFallTimestamp() {
+            WatchSessionManager.shared.restoreActiveFall(timestamp: timestamp)
+        }
         WatchSessionManager.shared.startSession()
         // Must be configured before SwiftUI exists: watchOS can launch this
         // extension directly in the background for an Apple fall event.

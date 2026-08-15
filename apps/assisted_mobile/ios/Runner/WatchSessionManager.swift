@@ -70,6 +70,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     //   false → when resetCancelContext() is called (a new fall event begins)
     /// Set to true when the phone alert is cancelled so the watch poll gets the right answer.
     private var alertCancelledFlag = false
+    private var activeFallTimestamp: Int64?
 
     // MARK: - Simulator IPC: background (Task handles)
     //
@@ -270,7 +271,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         UNUserNotificationCenter.current()
             .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
         NSLog("[WCSession][Phone] drainPendingFallEvent: forwarding timestamp=\(timestamp) to Flutter")
-        resetCancelContext()
+        resetCancelContext(fallTimestamp: Int64(timestamp))
         var arguments: [String: Any] = ["timestamp": timestamp]
         if let clientAlertId {
             arguments["clientAlertId"] = clientAlertId
@@ -438,18 +439,16 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
         // The watch detected a fall and is starting its 30-second countdown.
         case "fall_detected":
-            // Reset cancel state so a leftover cancellation from a previous alert
-            // does not immediately dismiss the new one.
-            resetCancelContext()  // new fall resets cancel state + applicationContext
-
             // Extract the timestamp (milliseconds since epoch) that the watch wrote
             // at the moment of detection. Both the watch and the phone use this same
             // value as the countdown origin, keeping the timers in sync even if there
             // is a small delay delivering the message.
             let timestamp = message["timestamp"] as? Int ??
                 Int(Date().timeIntervalSince1970 * 1000)
+            let fallTimestamp = Int64(timestamp)
+            resetCancelContext(fallTimestamp: fallTimestamp)
             let clientAlertId = NativeAppleWatchAlertRelay.shared.enqueueFall(
-                timestamp: Int64(timestamp)
+                timestamp: fallTimestamp
             )
 
             // Show the native UNNotification immediately, before involving Flutter.
@@ -597,7 +596,11 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
         NSLog("[WCSession][Phone] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
 
-        let message: [String: Any] = ["event": "alert_cancelled"]
+        let fallTimestamp = activeFallTimestamp
+        let message: [String: Any] = [
+            "event": "alert_cancelled",
+            "fallTimestamp": Int(fallTimestamp ?? 0),
+        ]
 
         // Three delivery paths, ordered most → least real-time:
         //
@@ -614,7 +617,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         //     reads when it next launches. This ensures the cancel survives an
         //     app restart on either device. Only the latest context is kept
         //     (unlike transferUserInfo which queues all calls).
-        try? WCSession.default.updateApplicationContext(["alertCancelled": true])
+        try? WCSession.default.updateApplicationContext([
+            "alertCancelled": true,
+            "fallTimestamp": Int(fallTimestamp ?? 0),
+        ])
     }
 
     /// Reset all cancel state when a NEW fall event begins.
@@ -629,14 +635,20 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///      the watch also sees the clean state on its next context check.
     ///   4. Simulator IPC: removes all three flag files so stale state
     ///      from a previous test run cannot affect the new alert.
-    func resetCancelContext() {
+    func resetCancelContext(fallTimestamp: Int64? = nil) {
+        if let fallTimestamp {
+            activeFallTimestamp = fallTimestamp
+        }
         alertCancelledFlag = false
         stopPollingForWatchCancel()
 
         // Update the persistent application context so the watch side also resets.
         // The watch reads this when it launches or when it calls
         // WCSession.default.receivedApplicationContext.
-        try? WCSession.default.updateApplicationContext(["alertCancelled": false])
+        try? WCSession.default.updateApplicationContext([
+            "alertCancelled": false,
+            "fallTimestamp": Int(activeFallTimestamp ?? 0),
+        ])
 
         // Simulator-only cleanup: remove all IPC flag files.
         // This prevents a previous test's leftover files from triggering events
