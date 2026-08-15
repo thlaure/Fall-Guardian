@@ -162,12 +162,6 @@ struct ContentView: View {
             // Test builds only — stripped from App Store / release builds.
             // The condition is evaluated at compile time, not runtime.
             #if DEBUG || TESTING
-            Button("Simulate Fall (debug)") {
-                viewModel.simulateFall()
-            }
-            .font(.system(size: 11))
-            .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
-
             Button("Test Apple relay (debug)") {
                 viewModel.simulateAppleSystemFall()
             }
