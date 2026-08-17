@@ -1,0 +1,35 @@
+version: 2
+updates:
+  - package-ecosystem: composer
+    directory: /backend/api
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "symfony/*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: pub
+    directory: /apps/assisted_mobile
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+  - package-ecosystem: pub
+    directory: /apps/caregiver_mobile
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+  - package-ecosystem: gradle
+    directory: /apps/wear_os
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+  - package-ecosystem: swift
+    directory: /apps/watchos
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

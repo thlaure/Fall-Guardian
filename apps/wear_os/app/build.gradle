@@ -36,6 +36,10 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+        // The watch's own backend base URL for its direct companion-enrollment
+        // claim call. Must come from the signed build, never from a Data Layer
+        // message — see CompanionEnrollmentClient.kt.
+        buildConfigField "String", "BACKEND_BASE_URL", "\"http://localhost:8002\""
     }
 
     signingConfigs {

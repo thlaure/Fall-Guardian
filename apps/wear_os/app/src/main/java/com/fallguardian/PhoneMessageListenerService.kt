@@ -22,11 +22,14 @@ import org.json.JSONObject
  * knows to wake this class when a message arrives.
  *
  * --- What messages arrive here? ---
- * Two paths are handled:
- *   "/thresholds"   — The phone user changed sensitivity settings. The payload
- *                     is a UTF-8 JSON string with updated threshold values.
- *   "/cancel_alert" — The phone user (or the phone's auto-timeout) cancelled
- *                     the alert. No payload needed.
+ * Three paths are handled:
+ *   "/thresholds"            — The phone user changed sensitivity settings. The
+ *                              payload is a UTF-8 JSON string with updated
+ *                              threshold values.
+ *   "/cancel_alert"          — The phone user (or the phone's auto-timeout)
+ *                              cancelled the alert. No payload needed.
+ *   "/companion_enrollment"  — The phone relayed a one-time enrollment token;
+ *                              see CompanionEnrollmentClient.
  *
  * --- How this connects to the other files ---
  * • Threshold changes: written to SharedPreferences here →
@@ -56,6 +59,8 @@ class PhoneMessageListenerService : WearableListenerService() {
         when (messageEvent.path) {
             "/thresholds"  -> handleThresholds(messageEvent.data)  // Phone pushed new settings.
             "/cancel_alert" -> WearDataSender.cancelAlertFromPhone() // Phone user cancelled the alert.
+            "/companion_enrollment" ->
+                CompanionEnrollmentClient.handleEnrollmentMessage(applicationContext, messageEvent.data)
         }
     }
 

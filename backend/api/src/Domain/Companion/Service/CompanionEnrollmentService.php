@@ -65,7 +65,25 @@ final readonly class CompanionEnrollmentService implements CompanionEnrollmentSe
                 ->getOneOrNullResult();
 
             if (!$enrollment instanceof CompanionEnrollment
-                || $platform !== $enrollment->getPlatform()
+                || $platform !== $enrollment->getPlatform()) {
+                throw new DomainException('Enrollment token is invalid, expired, or already used.');
+            }
+
+            // Lock the creating device's own row for the rest of this
+            // transaction. Without this, a concurrent revoke() of that
+            // device could commit between reading isRevoked() below and
+            // this transaction's own commit, letting a claim slip through
+            // for a creator that is (or is about to be) revoked.
+            $creatorDevice = $entityManager->getRepository(Device::class)
+                ->createQueryBuilder('device')
+                ->andWhere('device.id = :id')
+                ->setParameter('id', $enrollment->getCreatedByDevice()->getId(), 'uuid')
+                ->getQuery()
+                ->setLockMode(LockMode::PESSIMISTIC_READ)
+                ->getOneOrNullResult();
+
+            if (!$creatorDevice instanceof Device
+                || $creatorDevice->isRevoked()
                 || !$enrollment->claim($this->clock->now())) {
                 throw new DomainException('Enrollment token is invalid, expired, or already used.');
             }

@@ -14,7 +14,11 @@
 //   - FallDetectionManager / WatchSessionManager are the MODEL layer.
 //
 // How data flows end-to-end when a fall happens:
-//   1. CMFallDetectionManager wakes the app with Apple's system event
+//   1. CMFallDetectionManager wakes the app with Apple's system event —
+//      or, whenever Apple's detector is unavailable/not authorized,
+//      FallDetectionManager's raw accelerometer fallback fires instead
+//      while the app is open (watchOS gives third-party apps no other
+//      continuous background sensor access; see applyDetectionMode()).
 //   2. SystemFallDetectionService validates and deduplicates the event
 //   3. ContentViewModel.alertDidFire(timestamp:) sets isAlertActive = true
 //   4. SwiftUI re-renders ContentView, showing alertView
@@ -233,10 +237,6 @@ class ContentViewModel {
     /// app warm-up.  `startIfNeeded()` guards against double-starting and only
     /// runs the side-effecting setup once the view is actually on screen.
     func startIfNeeded() {
-        // Raw accelerometer detection is intentionally suspended on watchOS.
-        // Only Apple's supported background fall API drives production alerts.
-        FallDetectionManager.shared.stop()
-
         let systemDetection = SystemFallDetectionService.shared
         systemDetection.onFallDetected = { [weak self] timestamp in
             DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp, notifyUser: false) }
@@ -244,6 +244,14 @@ class ContentViewModel {
         systemDetection.onAuthorizationChanged = { [weak self] status in
             DispatchQueue.main.async { self?.applyDetectionMode(for: status) }
         }
+
+        // The raw accelerometer detector is the only protection available
+        // whenever Apple's system detector is unavailable or not authorized —
+        // applyDetectionMode() below decides whether it should run.
+        FallDetectionManager.shared.onFallDetected = { [weak self] timestamp in
+            self?.alertDidFire(timestamp: timestamp)
+        }
+
         systemDetection.requestAuthorizationIfNeeded()
         applyDetectionMode(for: systemDetection.authorizationStatus)
 
@@ -435,18 +443,24 @@ class ContentViewModel {
         applyDetectionMode(for: SystemFallDetectionService.shared.authorizationStatus)
     }
 
-    /// Apple detection is the only production source because it can wake the app
-    /// in the background. Raw accelerometer detection stays suspended in every
-    /// authorization state.
+    /// Apple's system detector is preferred because it can wake the app in the
+    /// background. Whenever it is not authorized (or the hardware doesn't
+    /// support it), watchOS gives third-party apps no other continuous
+    /// background sensor access — the raw accelerometer detector becomes the
+    /// only protection available, and only while the app stays open on
+    /// screen. Running it in that state is strictly better than leaving the
+    /// wearer with no detection at all.
     private func applyDetectionMode(for status: CMAuthorizationStatus) {
-        FallDetectionManager.shared.stop()
         switch status {
         case .authorized:
+            FallDetectionManager.shared.stop()
             monitoringStatusText = "Apple background fall detection active"
         case .notDetermined:
-            monitoringStatusText = "Allow Apple fall detection for background alerts"
+            FallDetectionManager.shared.start()
+            monitoringStatusText = "Allow Apple fall detection for background alerts — foreground monitoring active"
         default:
-            monitoringStatusText = "Apple fall detection unavailable — monitoring inactive"
+            FallDetectionManager.shared.start()
+            monitoringStatusText = "Apple fall detection unavailable — foreground monitoring active"
         }
     }
 }

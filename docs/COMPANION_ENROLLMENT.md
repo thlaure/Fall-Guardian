@@ -1,11 +1,14 @@
 # Watch enrollment — contract and integration plan
 
-> Reference status as of July 25, 2026.
+> Reference status as of August 16, 2026.
 >
 > Server support has been available on `main` since PR
 > [#79](https://github.com/thlaure/Fall-Guardian/pull/79). The phone
-> application can create and transmit the enrollment. The watchOS and Wear
-> OS apps do not consume it yet.
+> application can create and transmit the enrollment. Both watchOS and Wear
+> OS now consume it: they validate the message, claim watch-specific
+> credentials, store them (Keychain / Android Keystore), and send a
+> best-effort confirmation back to the phone. Neither watch uses these
+> credentials for direct incident submission yet (PR D/E, still open).
 >
 > This file owns the enrollment contract and its client PR breakdown (§6).
 > The overall system roadmap phases live in `docs/SYSTEM_OVERVIEW.md` (§14);
@@ -209,20 +212,24 @@ long as the phone and watch use their native pairing channel.
 
 ### PR B — watchOS consumption
 
-- receive the enrollment message;
-- call `/claim` with `URLSession`;
-- store the credentials in Keychain;
-- confirm success to the iPhone;
-- cover success, expiration, malformed input, restart, and missing
-  secret.
+- ✅ receive the enrollment message;
+- ✅ call `/claim` with `URLSession`;
+- ✅ store the credentials in Keychain;
+- ✅ confirm success to the iPhone;
+- ✅ cover validation (schema, platform, malformed/expired token) with
+  deterministic tests; 🔴 restart and missing-secret recovery paths (the
+  watch has nothing to recover from yet, since direct submission does not
+  use these credentials until PR D).
 
 ### PR C — Wear OS consumption
 
-- receive the message via the Data Layer;
-- call `/claim` with a native HTTPS client;
-- store the secret via Android Keystore;
-- confirm success to the phone;
-- cover the same cases as watchOS.
+- ✅ receive the message via the Data Layer;
+- ✅ call `/claim` with a native HTTPS client (`HttpURLConnection`, matching
+  the phone's own native relay);
+- ✅ store the secret via Android Keystore;
+- ✅ confirm success to the phone;
+- ✅ cover validation with deterministic tests, same cases as watchOS;
+  🔴 restart and missing-secret recovery paths (same reasoning as PR B).
 
 ### PR D — direct watchOS transport
 

@@ -159,8 +159,10 @@ On `main`:
 - ✅ activation at watchOS extension startup;
 - ✅ possible reception of a fall in the background;
 - ✅ persistence and retry of an event that was not transmitted;
-- 🟡 custom raw detection in Debug while the app is open, for physical
-  tuning; Release uses Apple's system detector when authorized;
+- ✅ custom raw accelerometer detection runs as a foreground-only fallback,
+  in every build configuration, whenever Apple's system detector is
+  unavailable or not authorized — so the wearer is never left with zero
+  detection while the app is open;
 - ✅ real-time transmission to the iPhone with WatchConnectivity;
 - ✅ deferred transfer if the real-time message does not go through;
 - ✅ countdown and cancellation on the watch;
@@ -172,8 +174,12 @@ On `main`:
   30-second deadline;
 - ✅ retransmission of the cancellation to the iPhone;
 - ✅ integration of the Watch target into the main iOS project;
+- ✅ consumes the phone's companion-enrollment token, claims its own
+  device credentials, and stores them in Keychain
+  (docs/COMPANION_ENROLLMENT.md, PR B);
 - 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
-- ⚠️ no direct submission to the API;
+- ⚠️ no direct submission to the API yet — the claimed credentials are not
+  used for anything until PR D;
 - ⚠️ watchOS does not permit forced foreground launch; the system
   notification is the supported urgent surface;
 - ⚠️ the standard sound respects silent/Focus settings; bypassing them
@@ -210,7 +216,11 @@ These features joined `main` with
   authenticated relay before starting any Flutter UI;
 - 🟡 cancellation uses the same durable native path;
 - 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
-- ⚠️ no direct submission to the API;
+- ✅ consumes the phone's companion-enrollment token, claims its own
+  device credentials, and stores them via Android Keystore
+  (docs/COMPANION_ENROLLMENT.md, PR C);
+- ⚠️ no direct submission to the API yet — the claimed credentials are not
+  used for anything until PR E;
 - ⚠️ Android 14+ or Google Play policy can withhold full-screen-intent access;
   the actionable notification remains the fallback;
 - ⚠️ killed-process relay is covered by native unit/lint tests but still
@@ -232,6 +242,12 @@ phone, and cancellation stopped the urgent presentation.
 - ✅ credentials specific to each watch, without copying the phone's
   token;
 - ✅ invitations and links between assisted persons and caregivers;
+- ✅ a protected person can revoke a linked caregiver, which stops future
+  fall-alert push notifications and location to that caregiver
+  immediately; the caregiver receives a best-effort push notice;
+- ✅ revoking a device also invalidates any outstanding companion-enrollment
+  token it created, so a stolen phone cannot mint a new watch credential
+  after being revoked;
 - ✅ idempotent alert creation for a person and a `clientAlertId`;
 - ✅ deduplication of an incident received from multiple devices;
 - ✅ 30-second server cancellation window;
@@ -442,6 +458,7 @@ POST   /api/v1/fall-alerts/{id}/receipt
 POST   /api/v1/fall-alerts/{id}/acknowledge
 POST   /api/v1/invites
 POST   /api/v1/invites/{code}/accept
+POST   /api/v1/protected/linked-caregivers/{linkId}/revoke
 POST   /api/v1/caregiver/push-token
 GET    /api/v1/caregiver/alerts
 GET    /api/v1/caregiver/protected-persons
@@ -501,7 +518,9 @@ The architecture changes below can now build on this common base.
 - ⚠️ the Android killed-process path is implemented but not yet physically
   validated end to end;
 - 🔴 the offline queue is not unified and durable end to end;
-- 🔴 the watch apps do not yet consume the new companion enrollment;
+- ✅ both watch apps now consume the companion enrollment and hold their
+  own claimed device credentials; neither uses them for direct submission
+  yet (that remains PR D/E);
 - 🔴 the renotification policy when there is no caregiver response is
   incomplete;
 - ⚠️ the delay's start time differs between some watch interfaces and

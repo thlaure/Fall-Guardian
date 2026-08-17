@@ -7,6 +7,7 @@ SCHEME := FallGuardian Watch App
 DESTINATION ?= platform=watchOS Simulator,name=Apple Watch Series 11 (46mm)
 TEST_BINARY := build/tests/watch-alert-deadline-tests
 ALGORITHM_TEST_BINARY := build/tests/fall-algorithm-tests
+ENROLLMENT_TEST_BINARY := build/tests/companion-enrollment-validation-tests
 
 help: ## Show available commands
 	@echo "Fall Guardian watchOS app"
@@ -25,6 +26,11 @@ test: ## Run deterministic watch alert deadline and fall algorithm tests
 		"FallGuardianTests/FallAlgorithmExecutableTests.swift" \
 		-o "$(ALGORITHM_TEST_BINARY)"
 	"$(ALGORITHM_TEST_BINARY)"
+	xcrun swiftc \
+		"FallGuardian/FallGuardian Watch App/CompanionEnrollmentValidation.swift" \
+		"FallGuardianTests/CompanionEnrollmentValidationExecutableTests.swift" \
+		-o "$(ENROLLMENT_TEST_BINARY)"
+	"$(ENROLLMENT_TEST_BINARY)"
 
 analyze: ## Run Xcode static analyzer
 	xcodebuild -project "$(PROJECT)" -scheme "$(SCHEME)" -destination "$(DESTINATION)" analyze

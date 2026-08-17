@@ -53,8 +53,11 @@ is intentionally suspended on watchOS in every authorization state. If Apple
 detection is unavailable or the wearer denies permission, the app reports that
 monitoring is inactive instead of implying background protection.
 
-The next increment is to consume the one-time enrollment sent by the iPhone,
-claim watch-specific credentials, and store them in Keychain. See
+The app now consumes the one-time enrollment sent by the iPhone
+(`CompanionEnrollmentClient`), claims watch-specific credentials via
+`POST /api/v1/companion-enrollments/claim`, and stores them in Keychain
+(`CompanionEnrollmentKeychainStore`). The next increment is to actually use
+those credentials for direct HTTPS incident submission. See
 `../../docs/COMPANION_ENROLLMENT.md`.
 
 ## Project Layout
@@ -75,8 +78,16 @@ Core source files include:
 - `FallAlgorithm.swift`: fall detection rule.
 - `FallDetectionManager.swift`: sensor lifecycle and detection coordination.
 - `WatchSessionManager.swift`: communication with the iPhone.
-- `FallGuardianTests/FallAlgorithmExecutableTests.swift`: deterministic
-  algorithm tests run by `make test`.
+- `CompanionEnrollmentValidation.swift`: pure validation of an inbound
+  enrollment message.
+- `CompanionEnrollmentClient.swift`: claims watch-specific credentials from
+  `/api/v1/companion-enrollments/claim`.
+- `CompanionEnrollmentKeychainStore.swift`: Keychain storage for the
+  claimed credentials.
+- `BackendConfiguration.swift`: the watch's own backend base URL.
+- `FallGuardianTests/FallAlgorithmExecutableTests.swift`,
+  `FallGuardianTests/CompanionEnrollmentValidationExecutableTests.swift`:
+  deterministic tests run by `make test`.
 
 ## Requirements
 

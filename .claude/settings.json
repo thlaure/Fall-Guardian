@@ -38,6 +38,10 @@
       "Bash(rtk git add:*)",
       "Bash(git fetch:*)",
       "Bash(rtk git fetch:*)",
+      "Bash(git commit:*)",
+      "Bash(rtk git commit:*)",
+      "Bash(git push:*)",
+      "Bash(rtk git push:*)",
       "Read",
       "Write",
       "Edit"

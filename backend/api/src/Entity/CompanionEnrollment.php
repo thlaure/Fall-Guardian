@@ -46,6 +46,11 @@ class CompanionEnrollment
         return $this->protectedPerson;
     }
 
+    public function getCreatedByDevice(): Device
+    {
+        return $this->createdByDevice;
+    }
+
     public function getTokenHash(): string
     {
         return $this->tokenHash;

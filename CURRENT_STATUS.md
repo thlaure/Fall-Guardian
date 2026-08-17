@@ -37,7 +37,11 @@ make status
 - server-side `cancelDeadlineAt` deadline;
 - `watchos` or `wearos` enrollment valid for five minutes, single-use,
   platform-enforced, with the token stored only as an HMAC hash;
-- caregiver notifications, receipts, acknowledgements, and history.
+- caregiver notifications, receipts, acknowledgements, and history;
+- a protected person can revoke a linked caregiver, which invalidates the
+  link immediately and stops that caregiver from receiving future alerts;
+- revoking a device invalidates any outstanding companion-enrollment token
+  it created.
 
 ### Assisted person application
 
@@ -62,15 +66,20 @@ make status
   open, countdown, cancellation, and WatchConnectivity relay;
 - Wear OS: foreground detection service, countdown, cancellation, and Data
   Layer relay to Android;
-- no watch consumes the enrollment yet;
-- no watch sends an incident directly to the API yet.
+- both watches now consume the companion enrollment, claim their own
+  device credentials, and store them (Keychain / Android Keystore) —
+  docs/COMPANION_ENROLLMENT.md PR B and PR C;
+- no watch sends an incident directly to the API yet — the claimed
+  credentials are not used for anything until PR D/E.
 - on `agent/family-beta-readiness`, both raw algorithms reject impact-only
   table knocks and require a fall phase plus two seconds of stillness;
 - defaults are `0.7 g`, `2.5 g`, `50°`, and `60 ms`, with migration from
   untouched legacy defaults;
 - foreground cancellation requires a deliberate 1.5-second hold;
-- watchOS Debug keeps raw monitoring available while the app is visible;
-  Release background detection remains Apple's `CMFallDetectionManager`.
+- watchOS: Apple's `CMFallDetectionManager` is preferred whenever authorized,
+  in every build configuration; the raw accelerometer detector runs as a
+  foreground-only fallback whenever Apple detection is unavailable or not
+  authorized, so the wearer is never left with zero detection.
 
 ### Caregiver application
 

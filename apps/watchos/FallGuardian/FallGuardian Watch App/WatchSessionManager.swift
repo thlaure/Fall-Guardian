@@ -362,6 +362,15 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///       We fire `onAlertCancelled` on the main thread so ContentViewModel
     ///       can dismiss the UI immediately.
     private func handleMessage(_ message: [String: Any]) {
+        // Companion-enrollment messages use a "type" envelope instead of the
+        // "event" key every other message type uses — dispatch them before
+        // the event switch below, which would otherwise silently ignore them.
+        if message["type"] as? String == "companionEnrollment" {
+            NSLog("[WCSession] handleMessage: type=companionEnrollment")
+            CompanionEnrollmentClient.shared.handleEnrollmentMessage(message)
+            return
+        }
+
         NSLog("[WCSession] handleMessage: event=\(message["event"] as? String ?? "nil")")
         switch message["event"] as? String {
 

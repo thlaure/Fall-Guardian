@@ -60,6 +60,15 @@ final readonly class SendFallAlertPushMessageHandler
 
         foreach ($links as $link) {
             $caregiverDevice = $link->getCaregiverDevice();
+
+            // The link itself may still be Active while the caregiver's own
+            // device was separately revoked (e.g. self-revoked after losing
+            // the phone) — never push to a revoked device regardless of link
+            // status.
+            if ($caregiverDevice->isRevoked()) {
+                continue;
+            }
+
             $pushToken = $this->pushTokenRepository->findByDevice($caregiverDevice);
 
             if (!$pushToken instanceof CaregiverPushToken) {

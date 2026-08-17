@@ -42,9 +42,12 @@ and the notification stop for watch cancellation, phone cancellation, or
 countdown expiry. The idle screen exposes the missing access and opens the
 relevant system setting when tapped.
 
-The next Wear OS increment is to consume the one-time enrollment from the
-phone, claim watch-specific credentials, and store them with Android Keystore.
-See `../../docs/COMPANION_ENROLLMENT.md`.
+The app now consumes the one-time enrollment relayed from the phone over the
+Data Layer (`CompanionEnrollmentClient`), claims watch-specific credentials via
+`POST /api/v1/companion-enrollments/claim`, and stores them with Android
+Keystore (`CompanionEnrollmentSecureStore`). The next increment is to actually
+use those credentials for direct HTTPS incident submission. See
+`../../docs/COMPANION_ENROLLMENT.md`.
 
 ## Project Layout
 
