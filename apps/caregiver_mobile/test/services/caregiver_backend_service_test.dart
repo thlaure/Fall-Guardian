@@ -228,11 +228,13 @@ void main() {
             jsonEncode({
               'hydra:member': [
                 {
+                  'linkId': 'link-1',
                   'protectedDeviceId': 'protected-1',
                   'protectedDevicePlatform': 'ios',
                   'protectedPersonName': 'Marie',
                 },
                 {
+                  'linkId': 'link-2',
                   'protectedDeviceId': 'protected-2',
                   'protectedDevicePlatform': 'android',
                   'protectedPersonName': 'Paul',
@@ -247,6 +249,7 @@ void main() {
       final protectedPersons = await service.getLinkedProtectedPersons();
 
       expect(protectedPersons, hasLength(2));
+      expect(protectedPersons.first.linkId, 'link-1');
       expect(protectedPersons.first.protectedDeviceId, 'protected-1');
       expect(protectedPersons.first.protectedDevicePlatform, 'ios');
       expect(protectedPersons.first.protectedPersonName, 'Marie');
@@ -254,6 +257,52 @@ void main() {
       expect(protectedPersons.last.protectedPersonName, 'Paul');
     },
   );
+
+  test('removeProtectedPersonLink uses caregiver bearer credentials', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+
+    late http.Request capturedRequest;
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async {
+        capturedRequest = request;
+        return http.Response('', 204);
+      }),
+    );
+
+    await service.removeProtectedPersonLink('link-1');
+
+    expect(capturedRequest.method, 'DELETE');
+    expect(
+      capturedRequest.url.path,
+      '/api/v1/caregiver/protected-persons/link-1',
+    );
+    expect(capturedRequest.headers['Authorization'], 'Bearer token-1');
+  });
+
+  test('removeProtectedPersonLink reports API failures', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient((request) async => http.Response('forbidden', 403)),
+    );
+
+    await expectLater(
+      service.removeProtectedPersonLink('link-1'),
+      throwsA(
+        isA<CaregiverApiException>()
+            .having((error) => error.statusCode, 'statusCode', 403)
+            .having((error) => error.body, 'body', 'forbidden'),
+      ),
+    );
+  });
 
   test(
     'getLinkedProtectedPersons throws typed exception on API failure',

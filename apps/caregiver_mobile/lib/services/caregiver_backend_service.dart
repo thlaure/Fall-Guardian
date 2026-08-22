@@ -127,6 +127,36 @@ class CaregiverBackendService {
     );
   }
 
+  Future<void> removeProtectedPersonLink(String linkId) async {
+    var credentials = await _credentials();
+    var response = await _removeProtectedPersonLink(linkId, credentials);
+    if (response.statusCode == HttpStatus.unauthorized) {
+      credentials = await _credentials(forceRefresh: true);
+      response = await _removeProtectedPersonLink(linkId, credentials);
+    }
+
+    if (!_isSuccess(response.statusCode)) {
+      throw CaregiverApiException(
+        'Failed to remove protected person link',
+        statusCode: response.statusCode,
+        body: response.body,
+      );
+    }
+  }
+
+  Future<http.Response> _removeProtectedPersonLink(
+    String linkId,
+    _CaregiverCredentials credentials,
+  ) {
+    return _send(
+      _client.delete(
+        Uri.parse('$_baseUrl/api/v1/caregiver/protected-persons/$linkId'),
+        headers: _jsonHeaders(token: credentials.deviceToken),
+      ),
+      'Protected person link removal timed out',
+    );
+  }
+
   Future<void> acceptInvite(
     String code, {
     required String protectedPersonName,
@@ -470,6 +500,7 @@ class CaregiverApiException implements Exception {
 
 class LinkedProtectedPerson {
   const LinkedProtectedPerson({
+    required this.linkId,
     required this.protectedDeviceId,
     required this.protectedDevicePlatform,
     required this.protectedPersonName,
@@ -477,6 +508,7 @@ class LinkedProtectedPerson {
 
   factory LinkedProtectedPerson.fromJson(Map<String, dynamic> json) {
     return LinkedProtectedPerson(
+      linkId: '${json['linkId'] ?? ''}',
       protectedDeviceId: '${json['protectedDeviceId'] ?? 'unknown'}',
       protectedDevicePlatform:
           '${json['protectedDevicePlatform'] ?? 'unknown'}',
@@ -484,6 +516,7 @@ class LinkedProtectedPerson {
     );
   }
 
+  final String linkId;
   final String protectedDeviceId;
   final String protectedDevicePlatform;
   final String? protectedPersonName;

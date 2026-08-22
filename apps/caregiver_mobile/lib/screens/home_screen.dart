@@ -9,11 +9,13 @@ class CaregiverHomeScreen extends StatefulWidget {
     super.key,
     required this.isLinked,
     this.onLinked,
+    this.onLinkStateChanged,
     this.backend,
   });
 
   final bool isLinked;
   final VoidCallback? onLinked;
+  final ValueChanged<bool>? onLinkStateChanged;
   final CaregiverBackendService? backend;
 
   @override
@@ -45,7 +47,12 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     try {
       final persons = await _backend.getLinkedProtectedPersons();
       if (!mounted) return;
-      setState(() => _protectedPersonsCount = persons.length);
+      final linked = persons.isNotEmpty;
+      setState(() {
+        _protectedPersonsCount = persons.length;
+        _linked = linked;
+      });
+      widget.onLinkStateChanged?.call(linked);
     } catch (_) {
       if (!mounted) return;
       setState(() => _protectedPersonsCount = null);
@@ -60,6 +67,12 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(l10n.linkedSnackbar)));
+  }
+
+  void _onLinksChanged(bool linked) {
+    setState(() => _linked = linked);
+    widget.onLinkStateChanged?.call(linked);
+    _loadProtectedPersonsCount();
   }
 
   @override
@@ -100,7 +113,10 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                 await Navigator.push(
                   context,
                   MaterialPageRoute<void>(
-                    builder: (_) => ProtectedPersonsScreen(onLinked: _onLinked),
+                    builder: (_) => ProtectedPersonsScreen(
+                      onLinked: _onLinked,
+                      onLinksChanged: _onLinksChanged,
+                    ),
                   ),
                 );
                 await _loadProtectedPersonsCount();

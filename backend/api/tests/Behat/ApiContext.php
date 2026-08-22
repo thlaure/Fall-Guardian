@@ -156,6 +156,14 @@ final class ApiContext implements Context
         $this->sendRequest(Request::METHOD_GET, $this->interpolate($path), null);
     }
 
+    /**
+     * @When I send a DELETE request to :path
+     */
+    public function iSendADeleteRequestTo(string $path): void
+    {
+        $this->sendRequest(Request::METHOD_DELETE, $this->interpolate($path), null);
+    }
+
     // ─── Then ──────────────────────────────────────────────────────────────────
 
     /**
@@ -265,6 +273,26 @@ final class ApiContext implements Context
     public function iStoreTheResponseJsonFieldAs(string $field, string $key): void
     {
         $this->stored[$key] = $this->requireResponseField($field);
+    }
+
+    /**
+     * @Then I store the first response collection field :field as :key
+     */
+    public function iStoreTheFirstResponseCollectionFieldAs(string $field, string $key): void
+    {
+        $members = $this->lastResponseData['hydra:member'] ?? (is_array($this->lastResponseData) && array_is_list($this->lastResponseData) ? $this->lastResponseData : null);
+
+        if (!is_array($members) || !isset($members[0]) || !is_array($members[0]) || !array_key_exists($field, $members[0])) {
+            throw new RuntimeException(sprintf('Field "%s" not found in first collection item: %s', $field, json_encode($this->lastResponseData, JSON_THROW_ON_ERROR)));
+        }
+
+        $value = $members[0][$field];
+
+        if (!is_scalar($value)) {
+            throw new RuntimeException(sprintf('Field "%s" in first collection item is not scalar.', $field));
+        }
+
+        $this->stored[$key] = (string) $value;
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────

@@ -445,6 +445,7 @@ POST   /api/v1/invites/{code}/accept
 POST   /api/v1/caregiver/push-token
 GET    /api/v1/caregiver/alerts
 GET    /api/v1/caregiver/protected-persons
+DELETE /api/v1/caregiver/protected-persons/{id}
 GET    /api/v1/protected/linked-caregivers
 GET    /health
 ```

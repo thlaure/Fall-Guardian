@@ -66,6 +66,28 @@ final class DoctrineCaregiverLinkRepository extends ServiceEntityRepository impl
         return $result;
     }
 
+    public function findActiveByIdAndCaregiverDevice(string $id, Device $caregiverDevice): ?CaregiverLink
+    {
+        try {
+            $uuid = Uuid::fromString($id);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        /** @var CaregiverLink|null $result */
+        $result = $this->createQueryBuilder('link')
+            ->andWhere('link.id = :id')
+            ->andWhere('link.caregiverDevice = :caregiverDevice')
+            ->andWhere('link.status = :status')
+            ->setParameter('id', $uuid, 'uuid')
+            ->setParameter('caregiverDevice', $caregiverDevice)
+            ->setParameter('status', CaregiverLinkStatus::Active)
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        return $result;
+    }
+
     public function findExistingPair(Device $protectedDevice, Device $caregiverDevice): ?CaregiverLink
     {
         /** @var CaregiverLink|null $link */

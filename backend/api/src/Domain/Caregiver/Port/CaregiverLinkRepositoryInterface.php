@@ -14,6 +14,8 @@ interface CaregiverLinkRepositoryInterface
 
     public function findActiveByIdAndProtectedDevice(string $id, Device $protectedDevice): ?CaregiverLink;
 
+    public function findActiveByIdAndCaregiverDevice(string $id, Device $caregiverDevice): ?CaregiverLink;
+
     public function findExistingPair(Device $protectedDevice, Device $caregiverDevice): ?CaregiverLink;
 
     /** @return list<CaregiverLink> */

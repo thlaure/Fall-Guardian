@@ -116,6 +116,23 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String protectedPersonsCount(int count) =>
       count == 1 ? '1 personne protégée' : '$count personnes protégées';
+  @override
+  String get removeProtectedPersonTooltip => 'Retirer la liaison';
+  @override
+  String removeProtectedPersonTitle(String name) => 'Retirer $name ?';
+  @override
+  String removeProtectedPersonBody(String name) =>
+      'Vous ne recevrez plus les alertes de chute de $name. Son compte et ses autres aidants ne seront pas affectés.';
+  @override
+  String get removeProtectedPersonCancel => 'Annuler';
+  @override
+  String get removeProtectedPersonConfirm => 'Retirer';
+  @override
+  String removeProtectedPersonSuccess(String name) =>
+      'La liaison avec $name a été retirée.';
+  @override
+  String get removeProtectedPersonFailed =>
+      'Impossible de retirer la liaison. Réessayez.';
 
   // ── History ───────────────────────────────────────────────────────────────
   @override
