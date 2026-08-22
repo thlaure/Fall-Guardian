@@ -84,11 +84,13 @@ void main() {
         home: ProtectedPersonsScreen(
           backend: _FakeCaregiverBackendService([
             const LinkedProtectedPerson(
+              linkId: 'link-1',
               protectedDeviceId: 'protected-device-1',
               protectedDevicePlatform: 'ios',
               protectedPersonName: 'Marie',
             ),
             const LinkedProtectedPerson(
+              linkId: 'link-2',
               protectedDeviceId: 'protected-device-2',
               protectedDevicePlatform: 'android',
               protectedPersonName: 'Paul',
@@ -106,6 +108,50 @@ void main() {
     expect(find.text('Paul'), findsOneWidget);
     expect(find.text('Device ID'), findsNothing);
     expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.byIcon(Icons.close), findsNWidgets(2));
+  });
+
+  testWidgets('removing a protected person requires confirmation', (
+    tester,
+  ) async {
+    final backend = _FakeCaregiverBackendService([
+      const LinkedProtectedPerson(
+        linkId: 'link-1',
+        protectedDeviceId: 'protected-device-1',
+        protectedDevicePlatform: 'ios',
+        protectedPersonName: 'Marie',
+      ),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: ProtectedPersonsScreen(backend: backend),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove Marie?'), findsOneWidget);
+    expect(find.textContaining('stop receiving fall alerts'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(backend.removedLinkIds, isEmpty);
+    expect(find.text('Marie'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(backend.removedLinkIds, ['link-1']);
+    expect(find.text('Marie'), findsNothing);
+    expect(find.text('No protected persons yet'), findsOneWidget);
   });
 
   testWidgets('link screen accepts the grouped 32-character invite format', (
@@ -159,9 +205,16 @@ class _FakeCaregiverBackendService extends CaregiverBackendService {
   _FakeCaregiverBackendService(this.protectedPersons);
 
   final List<LinkedProtectedPerson> protectedPersons;
+  final List<String> removedLinkIds = [];
 
   @override
   Future<List<LinkedProtectedPerson>> getLinkedProtectedPersons() async {
     return protectedPersons;
+  }
+
+  @override
+  Future<void> removeProtectedPersonLink(String linkId) async {
+    removedLinkIds.add(linkId);
+    protectedPersons.removeWhere((person) => person.linkId == linkId);
   }
 }

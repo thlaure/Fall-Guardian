@@ -114,6 +114,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String protectedPersonsCount(int count) =>
       count == 1 ? '1 protected person' : '$count protected persons';
+  @override
+  String get removeProtectedPersonTooltip => 'Remove link';
+  @override
+  String removeProtectedPersonTitle(String name) => 'Remove $name?';
+  @override
+  String removeProtectedPersonBody(String name) =>
+      'You will stop receiving fall alerts from $name. This does not delete their account or affect their other caregivers.';
+  @override
+  String get removeProtectedPersonCancel => 'Cancel';
+  @override
+  String get removeProtectedPersonConfirm => 'Remove';
+  @override
+  String removeProtectedPersonSuccess(String name) =>
+      'The link with $name was removed.';
+  @override
+  String get removeProtectedPersonFailed =>
+      'Failed to remove the link. Please try again.';
 
   // ── History ───────────────────────────────────────────────────────────────
   @override

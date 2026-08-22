@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Caregiver\Response;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\OpenApi\Model\Operation;
+use App\Domain\Caregiver\Processor\RevokeProtectedPersonLinkProcessor;
 use App\Domain\Caregiver\Provider\LinkedProtectedPersonsProvider;
 use App\Entity\CaregiverLink;
 use DateTimeInterface;
@@ -23,10 +25,23 @@ use DateTimeInterface;
         ),
         provider: LinkedProtectedPersonsProvider::class,
     ),
+    new Delete(
+        uriTemplate: '/api/v1/caregiver/protected-persons/{id}',
+        output: false,
+        read: false,
+        openapi: new Operation(
+            tags: ['Caregiver links'],
+            summary: 'Remove a protected-person link',
+            description: 'Revokes one link owned by the authenticated caregiver. The protected person and their other caregiver links are unchanged.',
+            security: [['deviceBearer' => []]],
+        ),
+        processor: RevokeProtectedPersonLinkProcessor::class,
+    ),
 ])]
 final readonly class LinkedProtectedPersonOutputDTO
 {
     public function __construct(
+        public string $linkId,
         public string $protectedDeviceId,
         public string $protectedDevicePlatform,
         public string $linkedAt,
@@ -39,6 +54,7 @@ final readonly class LinkedProtectedPersonOutputDTO
         $protectedDevice = $link->getProtectedDevice();
 
         return new self(
+            linkId: $link->getId()->toRfc4122(),
             protectedDeviceId: $protectedDevice->getPublicId(),
             protectedDevicePlatform: $protectedDevice->getPlatform(),
             linkedAt: $link->getCreatedAt()->format(DateTimeInterface::ATOM),

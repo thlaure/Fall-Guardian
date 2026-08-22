@@ -35,6 +35,41 @@ Feature: Caregiver invite flow
       """
     Then the response status code is 204
 
+  Scenario: Caregiver can remove one protected person link
+    Given I register a protected person device
+    And I register a caregiver device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/invites"
+    Then the response status code is 201
+    And I store the response JSON field "code" as "inviteCode"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/invites/{inviteCode}/accept"
+    Then the response status code is 204
+    When I send a GET request to "/api/v1/caregiver/protected-persons"
+    Then the response is a non-empty collection
+    And I store the first response collection field "linkId" as "linkId"
+    When I send a DELETE request to "/api/v1/caregiver/protected-persons/{linkId}"
+    Then the response status code is 204
+    When I send a GET request to "/api/v1/caregiver/protected-persons"
+    Then the response is an empty collection
+
+  Scenario: Protected person cannot remove a caregiver-owned protected person link
+    Given I register a protected person device
+    And I register a caregiver device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/invites"
+    Then the response status code is 201
+    And I store the response JSON field "code" as "inviteCode"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/invites/{inviteCode}/accept"
+    Then the response status code is 204
+    When I send a GET request to "/api/v1/caregiver/protected-persons"
+    Then the response is a non-empty collection
+    And I store the first response collection field "linkId" as "linkId"
+    And I am authenticated as the protected person
+    When I send a DELETE request to "/api/v1/caregiver/protected-persons/{linkId}"
+    Then the response status code is 404
+
   Scenario: Accepting a non-existent invite code returns 404
     Given I register a caregiver device
     And I am authenticated as the caregiver

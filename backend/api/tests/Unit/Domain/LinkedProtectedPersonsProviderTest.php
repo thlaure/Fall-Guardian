@@ -14,6 +14,7 @@ use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Uid\Uuid;
 
 final class LinkedProtectedPersonsProviderTest extends TestCase
 {
@@ -42,6 +43,7 @@ final class LinkedProtectedPersonsProviderTest extends TestCase
         $protectedDevice->method('getPlatform')->willReturn('ios');
 
         $link = $this->createMock(CaregiverLink::class);
+        $link->method('getId')->willReturn(Uuid::fromString('018f1d5e-3a2b-7c4d-8e9f-0123456789ab'));
         $link->method('getProtectedDevice')->willReturn($protectedDevice);
         $link->method('getCreatedAt')->willReturn(new DateTimeImmutable('2026-06-15T10:00:00+00:00'));
         $link->method('getProtectedPersonName')->willReturn('Marie');
@@ -52,6 +54,7 @@ final class LinkedProtectedPersonsProviderTest extends TestCase
         $result = $this->provider->provide($this->createMock(Operation::class));
 
         $this->assertCount(1, $result);
+        $this->assertSame('018f1d5e-3a2b-7c4d-8e9f-0123456789ab', $result[0]->linkId);
         $this->assertSame('protected-1', $result[0]->protectedDeviceId);
         $this->assertSame('ios', $result[0]->protectedDevicePlatform);
         $this->assertSame('Marie', $result[0]->protectedPersonName);

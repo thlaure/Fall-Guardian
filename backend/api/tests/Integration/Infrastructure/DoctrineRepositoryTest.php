@@ -70,8 +70,11 @@ final class DoctrineRepositoryTest extends KernelTestCase
         $protectedDevice = $this->device('protected');
         $caregiverDevice = $this->device('caregiver');
         $caregiverDevice->setDeviceType(DeviceType::Caregiver);
+        $otherCaregiverDevice = $this->device('other-caregiver');
+        $otherCaregiverDevice->setDeviceType(DeviceType::Caregiver);
         $deviceRepository->save($protectedDevice);
         $deviceRepository->save($caregiverDevice);
+        $deviceRepository->save($otherCaregiverDevice);
 
         $code = substr('A'.$this->suffix(), 0, 8);
         $invite = new CaregiverInvite($protectedDevice, $code, new DateTimeImmutable('+1 hour'));
@@ -85,6 +88,9 @@ final class DoctrineRepositoryTest extends KernelTestCase
         self::assertSame([$link], $linkRepository->findActiveByProtectedDevice($protectedDevice));
         self::assertSame($link, $linkRepository->findActiveByIdAndProtectedDevice($link->getId()->toRfc4122(), $protectedDevice));
         self::assertNull($linkRepository->findActiveByIdAndProtectedDevice('not-a-uuid', $protectedDevice));
+        self::assertSame($link, $linkRepository->findActiveByIdAndCaregiverDevice($link->getId()->toRfc4122(), $caregiverDevice));
+        self::assertNull($linkRepository->findActiveByIdAndCaregiverDevice($link->getId()->toRfc4122(), $otherCaregiverDevice));
+        self::assertNull($linkRepository->findActiveByIdAndCaregiverDevice('not-a-uuid', $caregiverDevice));
         self::assertSame($link, $linkRepository->findExistingPair($protectedDevice, $caregiverDevice));
         self::assertSame([$link], $linkRepository->findByCaregiverDevice($caregiverDevice));
 
@@ -99,6 +105,7 @@ final class DoctrineRepositoryTest extends KernelTestCase
         $linkRepository->save($link);
 
         self::assertNull($linkRepository->findActiveByIdAndProtectedDevice($link->getId()->toRfc4122(), $protectedDevice));
+        self::assertNull($linkRepository->findActiveByIdAndCaregiverDevice($link->getId()->toRfc4122(), $caregiverDevice));
         self::assertSame([], $linkRepository->findActiveByProtectedDevice($protectedDevice));
         $link->reactivate();
         $linkRepository->save($link);

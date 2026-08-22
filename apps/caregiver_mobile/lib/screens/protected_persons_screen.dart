@@ -7,9 +7,15 @@ import '../services/caregiver_backend_service.dart';
 import 'link_screen.dart';
 
 class ProtectedPersonsScreen extends StatefulWidget {
-  const ProtectedPersonsScreen({super.key, this.onLinked, this.backend});
+  const ProtectedPersonsScreen({
+    super.key,
+    this.onLinked,
+    this.onLinksChanged,
+    this.backend,
+  });
 
   final VoidCallback? onLinked;
+  final ValueChanged<bool>? onLinksChanged;
   final CaregiverBackendService? backend;
 
   @override
@@ -23,6 +29,7 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
   List<LinkedProtectedPerson> _protectedPersons = [];
   bool _loading = true;
   bool _loadFailed = false;
+  final Set<String> _removingLinkIds = {};
 
   @override
   void initState() {
@@ -71,6 +78,59 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
     );
   }
 
+  Future<void> _confirmAndRemove(
+    LinkedProtectedPerson protectedPerson,
+    int index,
+  ) async {
+    final l10n = AppLocalizations.of(context);
+    final name = _protectedPersonName(l10n, protectedPerson, index);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.removeProtectedPersonTitle(name)),
+        content: Text(l10n.removeProtectedPersonBody(name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.removeProtectedPersonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.removeProtectedPersonConfirm),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _removingLinkIds.add(protectedPerson.linkId));
+    try {
+      await _backend.removeProtectedPersonLink(protectedPerson.linkId);
+      await _load();
+      if (!mounted) return;
+      widget.onLinksChanged?.call(_protectedPersons.isNotEmpty);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.removeProtectedPersonSuccess(name))),
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Protected person link removal failed',
+        name: 'ProtectedPersonsScreen',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.removeProtectedPersonFailed)));
+    } finally {
+      if (mounted) {
+        setState(() => _removingLinkIds.remove(protectedPerson.linkId));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -105,6 +165,10 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
                       (entry) => _ProtectedPersonTile(
                         index: entry.$1,
                         protectedPerson: entry.$2,
+                        removing: _removingLinkIds.contains(entry.$2.linkId),
+                        onRemove: entry.$2.linkId.isEmpty
+                            ? null
+                            : () => _confirmAndRemove(entry.$2, entry.$1),
                       ),
                     ),
                   ],
@@ -114,16 +178,28 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
             ),
     );
   }
+
+  String _protectedPersonName(
+    AppLocalizations l10n,
+    LinkedProtectedPerson protectedPerson,
+    int index,
+  ) => protectedPerson.protectedPersonName?.trim().isNotEmpty == true
+      ? protectedPerson.protectedPersonName!.trim()
+      : l10n.protectedPersonLabel(index + 1);
 }
 
 class _ProtectedPersonTile extends StatelessWidget {
   const _ProtectedPersonTile({
     required this.index,
     required this.protectedPerson,
+    required this.removing,
+    required this.onRemove,
   });
 
   final int index;
   final LinkedProtectedPerson protectedPerson;
+  final bool removing;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +224,16 @@ class _ProtectedPersonTile extends StatelessWidget {
             _shortDeviceId(protectedPerson.protectedDeviceId),
           ),
         ),
+        trailing: removing
+            ? const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : IconButton(
+                tooltip: l10n.removeProtectedPersonTooltip,
+                onPressed: onRemove,
+                icon: const Icon(Icons.close),
+              ),
         iconColor: cs.primary,
       ),
     );

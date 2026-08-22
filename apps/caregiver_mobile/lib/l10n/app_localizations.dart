@@ -69,6 +69,13 @@ abstract class AppLocalizations {
   String get protectedPersonsEmptyBody;
   String get protectedPersonDeviceIdTitle;
   String protectedPersonsCount(int count);
+  String get removeProtectedPersonTooltip;
+  String removeProtectedPersonTitle(String name);
+  String removeProtectedPersonBody(String name);
+  String get removeProtectedPersonCancel;
+  String get removeProtectedPersonConfirm;
+  String removeProtectedPersonSuccess(String name);
+  String get removeProtectedPersonFailed;
 
   // ── History ───────────────────────────────────────────────────────────────
   String get historyTitle;

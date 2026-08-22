@@ -267,8 +267,17 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
         );
   }
 
+  void _onLinkStateChanged(bool linked) {
+    if (!mounted) return;
+    setState(() => _linked = linked);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return CaregiverHomeScreen(isLinked: _linked, onLinked: _onLinked);
+    return CaregiverHomeScreen(
+      isLinked: _linked,
+      onLinked: _onLinked,
+      onLinkStateChanged: _onLinkStateChanged,
+    );
   }
 }
