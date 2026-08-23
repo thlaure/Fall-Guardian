@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -274,7 +275,7 @@ private fun AlertScreen(context: Context) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Hold 1.5 s\nI'm OK",
+                    text = stringResource(R.string.alert_cancel_hold),
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -325,7 +326,7 @@ private fun IdleScreen(context: Context) {
                 )
             }
             Text(
-                text = "Fall Guardian",
+                text = stringResource(R.string.app_name),
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -334,10 +335,10 @@ private fun IdleScreen(context: Context) {
             Text(
                 text = when (presentationIssue) {
                     AlertPresentationIssue.NOTIFICATIONS_DISABLED ->
-                        "Notifications off\nTap to enable"
+                        stringResource(R.string.notifications_disabled)
                     AlertPresentationIssue.FULL_SCREEN_DISABLED ->
-                        "Heads-up alerts only\nTap to review"
-                    null -> "Monitoring active"
+                        stringResource(R.string.full_screen_disabled)
+                    null -> stringResource(R.string.monitoring_active)
                 },
                 color = if (presentationIssue == null) {
                     Color(0xFFD1E0D7)
@@ -366,7 +367,7 @@ private fun IdleScreen(context: Context) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Simulate Fall (debug)",
+                        text = stringResource(R.string.simulate_fall_debug),
                         fontSize = 11.sp,
                         color = Color(0xFFE5694A),
                         textAlign = TextAlign.Center

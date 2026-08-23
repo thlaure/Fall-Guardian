@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Fall Guardian</string>
+    <string name="alert_cancel_hold">Maintenir 1,5 s\nJe vais bien</string>
+    <string name="notifications_disabled">Notifications désactivées\nAppuyer pour activer</string>
+    <string name="full_screen_disabled">Alertes simplifiées\nAppuyer pour vérifier</string>
+    <string name="monitoring_active">Surveillance active</string>
+    <string name="simulate_fall_debug">Simuler une chute (debug)</string>
+    <string name="monitoring_channel_name">Détection de chute</string>
+    <string name="monitoring_channel_description">La surveillance des chutes est active</string>
+    <string name="alert_channel_name">Alertes de chute</string>
+    <string name="alert_channel_description">Alertes urgentes avec compte à rebours</string>
+    <string name="monitoring_notification_title">Fall Guardian actif</string>
+    <string name="monitoring_notification_text">La détection de chute fonctionne</string>
+    <string name="fall_detected_title">Chute détectée</string>
+    <string name="fall_detected_text">Appuyez sur « Je vais bien » pour annuler l’alerte</string>
+    <string name="fall_cancel_action">Je vais bien — Annuler</string>
+</resources>
