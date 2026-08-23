@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Fall Guardian</string>
+    <string name="alert_cancel_hold">Hold 1.5 s\nI’m OK</string>
+    <string name="notifications_disabled">Notifications off\nTap to enable</string>
+    <string name="full_screen_disabled">Heads-up alerts only\nTap to review</string>
+    <string name="monitoring_active">Monitoring active</string>
+    <string name="simulate_fall_debug">Simulate Fall (debug)</string>
+    <string name="monitoring_channel_name">Fall Detection</string>
+    <string name="monitoring_channel_description">Fall monitoring is active</string>
+    <string name="alert_channel_name">Fall alerts</string>
+    <string name="alert_channel_description">Urgent fall countdown alerts</string>
+    <string name="monitoring_notification_title">Fall Guardian Active</string>
+    <string name="monitoring_notification_text">Fall detection is running</string>
+    <string name="fall_detected_title">Fall detected</string>
+    <string name="fall_detected_text">Tap I’m OK to cancel the alert</string>
+    <string name="fall_cancel_action">I’m OK — Cancel</string>
 </resources>

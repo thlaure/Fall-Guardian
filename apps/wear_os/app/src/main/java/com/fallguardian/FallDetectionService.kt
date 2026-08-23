@@ -303,19 +303,19 @@ class FallDetectionService : Service(), SensorEventListener {
     private fun createNotificationChannel() {
         val monitoringChannel = NotificationChannel(
             CHANNEL_ID,
-            "Fall Detection",
+            getString(R.string.monitoring_channel_name),
             NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "Fall monitoring is active" }
+        ).apply { description = getString(R.string.monitoring_channel_description) }
 
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(monitoringChannel)
 
         val alertChannel = NotificationChannel(
             ALERT_CHANNEL_ID,
-            "Fall alerts",
+            getString(R.string.alert_channel_name),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Urgent fall countdown alerts"
+            description = getString(R.string.alert_channel_description)
             enableVibration(true)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             // Sound is controlled explicitly below so it can loop for exactly
@@ -333,8 +333,8 @@ class FallDetectionService : Service(), SensorEventListener {
      */
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Fall Guardian Active")
-            .setContentText("Fall detection is running")
+            .setContentTitle(getString(R.string.monitoring_notification_title))
+            .setContentText(getString(R.string.monitoring_notification_text))
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true) // Pinned — cannot be dismissed by swipe.
             .build()
@@ -372,8 +372,8 @@ class FallDetectionService : Service(), SensorEventListener {
 
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Fall detected")
-            .setContentText("Tap I'm OK to cancel the alert")
+            .setContentTitle(getString(R.string.fall_detected_title))
+            .setContentText(getString(R.string.fall_detected_text))
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -383,7 +383,7 @@ class FallDetectionService : Service(), SensorEventListener {
             .setFullScreenIntent(launchPendingIntent, true)
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                "I'm OK — Cancel",
+                getString(R.string.fall_cancel_action),
                 cancelPendingIntent
             )
             .build()
