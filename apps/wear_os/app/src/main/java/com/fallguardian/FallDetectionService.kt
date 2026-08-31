@@ -171,38 +171,42 @@ class FallDetectionService : Service(), SensorEventListener {
      * new FallAlgorithm. Called at startup and whenever the phone pushes updated
      * settings (via prefChangeListener).
      *
-     * Default values represent a balanced sensitivity for most users:
-     *   - 0.7 g freefall threshold  (loss-of-balance low acceleration)
-     *   - 2.5 g impact threshold    (sudden deceleration when hitting the ground)
-     *   - 50° orientation change     (relative to the pre-impact wrist posture)
-     *   - 60 ms freefall window      (minimum duration of low acceleration)
+     * Default values use a conservative wrist-specific profile:
+     *   - 0.35 g freefall threshold (loss-of-balance low acceleration)
+     *   - 4.2 g impact threshold    (sudden deceleration when hitting the ground)
+     *   - 80° orientation change     (relative to the pre-impact wrist posture)
+     *   - 160 ms freefall window     (minimum duration of low acceleration)
      */
     private fun loadAlgorithmFromPrefs(): FallAlgorithm {
-        if (prefs.getInt("fall_algorithm_version", 1) < 2) {
+        val algorithmVersion = prefs.getInt("fall_algorithm_version", 1)
+        if (algorithmVersion < 5) {
             prefs.edit().apply {
-                if (prefs.contains("thresh_freefall") &&
-                    prefs.getFloat("thresh_freefall", 0.5f) == 0.5f
-                ) {
-                    putFloat("thresh_freefall", 0.7f)
+                // Rebase only known defaults from earlier versions. Values
+                // deliberately tuned by the wearer remain untouched.
+                val freeFall = prefs.getFloat("thresh_freefall", if (algorithmVersion < 2) 0.5f else 0.7f)
+                if (freeFall == 0.5f || freeFall == 0.6f || freeFall == 0.7f) {
+                    putFloat("thresh_freefall", 0.35f)
                 }
-                if (prefs.contains("thresh_tilt") &&
-                    prefs.getFloat("thresh_tilt", 45f) == 45f
-                ) {
-                    putFloat("thresh_tilt", 50f)
+                val impact = prefs.getFloat("thresh_impact", 2.5f)
+                if (impact == 2.5f || impact == 3.1f || impact == 3.5f) {
+                    putFloat("thresh_impact", 4.2f)
                 }
-                if (prefs.contains("thresh_freefall_ms") &&
-                    prefs.getInt("thresh_freefall_ms", 80) == 80
-                ) {
-                    putInt("thresh_freefall_ms", 60)
+                val tilt = prefs.getFloat("thresh_tilt", if (algorithmVersion < 2) 45f else 50f)
+                if (tilt == 45f || tilt == 50f || tilt == 60f || tilt == 70f) {
+                    putFloat("thresh_tilt", 80f)
                 }
-                putInt("fall_algorithm_version", 2)
+                val freeFallMs = prefs.getInt("thresh_freefall_ms", if (algorithmVersion < 2) 80 else 60)
+                if (freeFallMs == 60 || freeFallMs == 80 || freeFallMs == 100 || freeFallMs == 120) {
+                    putInt("thresh_freefall_ms", 160)
+                }
+                putInt("fall_algorithm_version", 5)
             }.apply()
         }
         return FallAlgorithm(
-            freeFallThresholdG = prefs.getFloat("thresh_freefall", 0.7f).coerceIn(0.1f, 1.0f),
-            impactThresholdG = prefs.getFloat("thresh_impact", 2.5f).coerceIn(1.5f, 5.0f),
-            tiltThresholdDeg = prefs.getFloat("thresh_tilt", 50f).coerceIn(20f, 90f),
-            freeFallMinMs = prefs.getInt("thresh_freefall_ms", 60).coerceIn(40, 200).toLong()
+            freeFallThresholdG = prefs.getFloat("thresh_freefall", 0.35f).coerceIn(0.1f, 1.0f),
+            impactThresholdG = prefs.getFloat("thresh_impact", 4.2f).coerceIn(1.5f, 5.0f),
+            tiltThresholdDeg = prefs.getFloat("thresh_tilt", 80f).coerceIn(20f, 90f),
+            freeFallMinMs = prefs.getInt("thresh_freefall_ms", 160).coerceIn(40, 200).toLong()
         )
     }
 

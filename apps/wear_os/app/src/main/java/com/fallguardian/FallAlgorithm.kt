@@ -9,8 +9,9 @@ import kotlin.math.sqrt
  * A wrist impact is not enough: knocking a table can easily exceed 2.5 g.
  * Detection therefore waits for a stable post-impact posture and requires:
  *
- *   (qualified low-acceleration phase OR meaningful orientation change)
+ *       qualified low-acceleration phase
  *       AND impact
+ *       AND meaningful orientation change
  *       AND two seconds of post-impact stillness.
  *
  * Orientation is measured relative to the wrist orientation immediately
@@ -19,10 +20,10 @@ import kotlin.math.sqrt
  * absolute 45° "tilt" threshold before anything happened.
  */
 class FallAlgorithm(
-    var freeFallThresholdG: Float = 0.7f,
-    var impactThresholdG: Float = 2.5f,
-    var tiltThresholdDeg: Float = 50f,
-    var freeFallMinMs: Long = 60L
+    var freeFallThresholdG: Float = 0.35f,
+    var impactThresholdG: Float = 4.2f,
+    var tiltThresholdDeg: Float = 80f,
+    var freeFallMinMs: Long = 160L
 ) {
     private var freeFallStartMs: Long = 0L
     private var freeFallActive = false
@@ -135,7 +136,8 @@ class FallAlgorithm(
         val stillnessQualified =
             stillnessActive && nowMs - stillnessStartMs >= stillnessMinMs
         return stillnessQualified &&
-            (freeFallQualifiedLatch || orientationChangedLatch)
+            freeFallQualifiedLatch &&
+            orientationChangedLatch
     }
 
     private fun updateFreeFall(normG: Float, nowMs: Long) {

@@ -8,7 +8,8 @@ struct FallAlgorithmExecutableTests {
         tableImpactDoesNotTrigger()
         lossOfBalanceTriggers()
         movementAfterImpactDoesNotTrigger()
-        qualifiedLowAccelerationTriggers()
+        handDroppedOntoKneeDoesNotTrigger()
+        rapidArmRaiseDoesNotTrigger()
         staleLowAccelerationDoesNotTrigger()
         postImpactLowAccelerationDoesNotTrigger()
         strictOrientationThresholdSuppressesRotation()
@@ -25,7 +26,7 @@ struct FallAlgorithmExecutableTests {
         let algorithm = FallAlgorithm()
         baseline(algorithm)
         expect(
-            !algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500),
+            !algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 500),
             "table impact is not an immediate fall"
         )
         expect(
@@ -44,14 +45,15 @@ struct FallAlgorithmExecutableTests {
     private static func lossOfBalanceTriggers() {
         let algorithm = FallAlgorithm()
         baseline(algorithm)
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
         expect(
             samples(
                 algorithm,
                 x: 1,
                 y: 0,
                 z: 0,
-                startMs: 520,
+                startMs: 700,
                 durationMs: 4_000
             ),
             "impact, orientation change and stillness trigger"
@@ -61,7 +63,8 @@ struct FallAlgorithmExecutableTests {
     private static func movementAfterImpactDoesNotTrigger() {
         let algorithm = FallAlgorithm()
         baseline(algorithm)
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
 
         var triggered = false
         var time = 520.0
@@ -75,7 +78,7 @@ struct FallAlgorithmExecutableTests {
         expect(!triggered, "continued motion after impact stays rejected")
     }
 
-    private static func qualifiedLowAccelerationTriggers() {
+    private static func handDroppedOntoKneeDoesNotTrigger() {
         let algorithm = FallAlgorithm()
         baseline(algorithm)
         _ = samples(
@@ -84,19 +87,29 @@ struct FallAlgorithmExecutableTests {
             y: 0,
             z: 0,
             startMs: 500,
-            durationMs: 100
+            durationMs: 160
         )
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 620)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
         expect(
-            samples(
+            !samples(
                 algorithm,
                 x: 0,
                 y: 0,
                 z: 1,
-                startMs: 640,
+                startMs: 700,
                 durationMs: 3_500
             ),
-            "low acceleration, impact and stillness trigger"
+            "hand impact without orientation stays rejected"
+        )
+    }
+
+    private static func rapidArmRaiseDoesNotTrigger() {
+        let algorithm = FallAlgorithm()
+        baseline(algorithm)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 5, nowMs: 500)
+        expect(
+            !samples(algorithm, x: 1, y: 0, z: 0, startMs: 520, durationMs: 4_000),
+            "rapid arm raise stays rejected"
         )
     }
 
@@ -104,14 +117,15 @@ struct FallAlgorithmExecutableTests {
         let algorithm = FallAlgorithm()
         algorithm.tiltThresholdDeg = 100
         baseline(algorithm)
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
         expect(
             !samples(
                 algorithm,
                 x: 1,
                 y: 0,
                 z: 0,
-                startMs: 520,
+                startMs: 700,
                 durationMs: 4_000
             ),
             "orientation threshold changes rotation-path behavior"
@@ -185,9 +199,9 @@ struct FallAlgorithmExecutableTests {
             y: 0,
             z: 0,
             startMs: 500,
-            durationMs: 100
+            durationMs: 160
         )
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 620)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
         algorithm.reset()
         baseline(algorithm, startMs: 1_000)
         expect(

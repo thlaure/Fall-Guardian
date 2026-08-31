@@ -206,41 +206,6 @@ import WatchConnectivity
                     return
                 }
 
-            case "sendCompanionEnrollment":
-                // `details` carries the precise precondition that failed so a
-                // failed pairing is diagnosable from logs. It never contains
-                // the enrollment token.
-                guard let args = call.arguments as? [String: Any] else {
-                    result(
-                        FlutterError(
-                            code: "WATCH_UNAVAILABLE",
-                            message: "No paired Apple Watch can receive enrollment.",
-                            details: "invalid_payload"
-                        )
-                    )
-                    return
-                }
-                guard let watchSession = self?.watchSession else {
-                    result(
-                        FlutterError(
-                            code: "WATCH_UNAVAILABLE",
-                            message: "No paired Apple Watch can receive enrollment.",
-                            details: "watch_session_unavailable"
-                        )
-                    )
-                    return
-                }
-                if let failureReason = watchSession.sendCompanionEnrollment(args) {
-                    result(
-                        FlutterError(
-                            code: "WATCH_UNAVAILABLE",
-                            message: "No paired Apple Watch can receive enrollment.",
-                            details: failureReason
-                        )
-                    )
-                    return
-                }
-
             default:
                 result(FlutterMethodNotImplemented)
                 return

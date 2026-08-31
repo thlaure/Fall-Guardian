@@ -25,7 +25,6 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -43,10 +41,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.*
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
 /**
  * Entry point of the Wear OS application.
  *
@@ -185,7 +179,7 @@ fun WearApp() {
  *
  * Displays the 30-second countdown in large text, haptic-vibrates the watch
  * every second (more intensely under 10 s), and flashes red as time runs out.
- * Cancellation requires a deliberate 1.5-second hold on the green control.
+ * A single tap on the green control cancels the alert immediately.
  *
  * --- Why vibrate here instead of in FallDetectionService? ---
  * Haptic feedback is a UI concern — it signals urgency to the user. Keeping it
@@ -257,25 +251,13 @@ private fun AlertScreen(context: Context) {
                     .width(132.dp)
                     .height(42.dp)
                     .background(Color(0xFF2E7D32), RoundedCornerShape(21.dp))
-                    .pointerInput(context) {
-                        detectTapGestures(
-                            onPress = {
-                                val pressScope = this
-                                coroutineScope {
-                                    val holdJob = launch {
-                                        delay(1_500)
-                                        WearDataSender.sendCancelAlert(context)
-                                    }
-                                    pressScope.tryAwaitRelease()
-                                    holdJob.cancel()
-                                }
-                            }
-                        )
+                    .clickable {
+                        WearDataSender.sendCancelAlert(context)
                     },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = stringResource(R.string.alert_cancel_hold),
+                    text = stringResource(R.string.alert_cancel_button),
                     color = Color.White,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,

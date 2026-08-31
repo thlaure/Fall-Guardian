@@ -2,8 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../services/backend_api_service.dart';
-import '../services/companion_enrollment_service.dart';
-import '../services/watch_communication_service.dart';
 import 'contacts_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -21,11 +19,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final BackendApiService _backendApi =
       widget.backendApi ?? BackendApiService();
-  late final CompanionEnrollmentCoordinator _companionEnrollmentCoordinator =
-      CompanionEnrollmentCoordinator(
-    backend: _backendApi,
-    sendToWatch: WatchCommunicationService.sendCompanionEnrollment,
-  );
   int? _caregiverCount;
 
   @override
@@ -61,9 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute<void>(
-                builder: (_) => SettingsScreen(
-                  enrollmentCoordinator: _companionEnrollmentCoordinator,
-                ),
+                builder: (_) => const SettingsScreen(),
               ),
             ),
           ),

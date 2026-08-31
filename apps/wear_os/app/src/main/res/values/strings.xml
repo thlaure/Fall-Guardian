@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Fall Guardian</string>
-    <string name="alert_cancel_hold">Hold 1.5 s\nI’m OK</string>
+    <string name="alert_cancel_button">I’m OK\nCancel alert</string>
     <string name="notifications_disabled">Notifications off\nTap to enable</string>
     <string name="full_screen_disabled">Heads-up alerts only\nTap to review</string>
     <string name="monitoring_active">Monitoring active</string>
