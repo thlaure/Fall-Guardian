@@ -1,22 +1,8 @@
 import 'package:fall_guardian/l10n/app_localizations.dart';
 import 'package:fall_guardian/screens/settings_screen.dart';
-import 'package:fall_guardian/services/companion_enrollment_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-class _FakeBackend implements CompanionEnrollmentBackendGateway {
-  @override
-  Future<CompanionEnrollment> createCompanionEnrollment(
-    CompanionPlatform platform,
-  ) async {
-    return CompanionEnrollment(
-      token: 'a' * 64,
-      expiresAt: DateTime.now().add(const Duration(minutes: 5)),
-    );
-  }
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -25,201 +11,46 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('connect action enters waiting state after token is handed off',
+  Widget app({required bool wearOs, double bottomInset = 0}) => MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: MediaQuery(
+          data: MediaQueryData(
+            viewPadding: EdgeInsets.only(bottom: bottomInset),
+          ),
+          child: SettingsScreen(wearOsOverride: wearOs),
+        ),
+      );
+
+  testWidgets('watch connection feature is absent', (tester) async {
+    await tester.pumpWidget(app(wearOs: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Watch connection'), findsNothing);
+    expect(find.text('Connect watch'), findsNothing);
+    expect(find.text('Fall Detection Thresholds'), findsOneWidget);
+  });
+
+  testWidgets('custom detection thresholds are hidden outside Wear OS',
       (tester) async {
-    CompanionEnrollmentMessage? sent;
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (message) async => sent = message,
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Connect watch'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Waiting for the watch to finish setup'), findsOneWidget);
-    expect(sent?.platform, CompanionPlatform.watchOS);
-    expect(sent?.toMap()['schemaVersion'], 1);
-  });
-
-  testWidgets('native delivery failure offers retry', (tester) async {
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (_) => throw StateError('watch unavailable'),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Connect watch'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Try again'), findsOneWidget);
-    expect(
-      find.text(
-        'Could not send setup to the watch. Check that it is nearby.',
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets(
-      'missing watch app reports the actionable cause, not the generic '
-      'nearby hint', (tester) async {
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (_) => throw PlatformException(
-        code: 'WATCH_UNAVAILABLE',
-        message: 'No paired Apple Watch can receive enrollment.',
-        details: 'watch_app_not_installed',
-      ),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Connect watch'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('Install Fall Guardian on your watch, then try again.'),
-      findsOneWidget,
-    );
-    expect(find.text('Try again'), findsOneWidget);
-  });
-
-  testWidgets('an unrecognised native cause still shows a message',
-      (tester) async {
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (_) => throw PlatformException(
-        code: 'WATCH_UNAVAILABLE',
-        details: 'some_future_reason',
-      ),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Connect watch'));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text(
-        'Could not send setup to the watch. Check that it is nearby.',
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('waiting state expires and offers a fresh enrollment',
-      (tester) async {
-    final backend = _FakeBackend();
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: backend,
-      sendToWatch: (_) async {},
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Connect watch'));
-    await tester.pump();
-
-    await tester.pump(const Duration(minutes: 5, seconds: 1));
-
-    expect(find.text('Watch setup expired. Try again.'), findsOneWidget);
-  });
-
-  testWidgets('custom detection thresholds are hidden for watchOS',
-      (tester) async {
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (_) async {},
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.watchOS,
-        ),
-      ),
-    );
+    await tester.pumpWidget(app(wearOs: false));
     await tester.pumpAndSettle();
 
     expect(find.text('Fall Detection Thresholds'), findsNothing);
     expect(find.text('Save'), findsNothing);
   });
 
-  testWidgets('custom detection thresholds remain available for Wear OS',
+  testWidgets('reset button keeps bottom margin above system navigation',
       (tester) async {
-    final coordinator = CompanionEnrollmentCoordinator(
-      backend: _FakeBackend(),
-      sendToWatch: (_) async {},
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: SettingsScreen(
-          enrollmentCoordinator: coordinator,
-          platformOverride: CompanionPlatform.wearOS,
-        ),
-      ),
-    );
+    await tester.pumpWidget(app(wearOs: true, bottomInset: 32));
     await tester.pumpAndSettle();
 
-    expect(find.text('Fall Detection Thresholds'), findsOneWidget);
-    expect(find.text('Save'), findsOneWidget);
+    final listView = tester.widget<ListView>(find.byType(ListView));
+    expect(listView.padding, const EdgeInsets.fromLTRB(20, 20, 20, 52));
+
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset to defaults'), findsOneWidget);
   });
 }

@@ -3,15 +3,15 @@ import Foundation
 /// Multi-phase wrist fall detector tuned for loss-of-balance scenarios.
 ///
 /// A wrist impact alone is intentionally insufficient because knocking a table
-/// can exceed the impact threshold. A fall candidate must contain an impact,
-/// two seconds of post-impact stillness, and either a qualified low-acceleration
-/// phase or a meaningful orientation change relative to the pre-impact wrist
-/// orientation.
+/// can exceed the impact threshold. A fall candidate must contain a qualified
+/// low-acceleration phase, an impact, a meaningful orientation change relative
+/// to the pre-impact wrist orientation, and two seconds of post-impact
+/// stillness.
 final class FallAlgorithm {
-    var freeFallThresholdG: Double = 0.7
-    var impactThresholdG: Double = 2.5
-    var tiltThresholdDeg: Double = 50
-    var freeFallMinMs: Double = 60
+    var freeFallThresholdG: Double = 0.35
+    var impactThresholdG: Double = 4.2
+    var tiltThresholdDeg: Double = 80
+    var freeFallMinMs: Double = 160
 
     private var freeFallStartMs: Double = 0
     private var freeFallActive = false
@@ -120,7 +120,8 @@ final class FallAlgorithm {
         let stillnessQualified =
             stillnessActive && nowMs - stillnessStartMs >= stillnessMinMs
         return stillnessQualified &&
-            (freeFallQualifiedLatch || orientationChangedLatch)
+            freeFallQualifiedLatch &&
+            orientationChangedLatch
     }
 
     private func updateFreeFall(normG: Double, nowMs: Double) {

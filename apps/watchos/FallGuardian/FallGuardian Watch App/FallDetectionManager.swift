@@ -182,25 +182,29 @@ class FallDetectionManager: NSObject {
     /// Wear OS app — they are the shared contract defined in CLAUDE.md.
     private func loadThresholdsFromDefaults() {
         let d = UserDefaults.standard
-        if d.integer(forKey: "fall_algorithm_version") < 2 {
+        if d.integer(forKey: "fall_algorithm_version") < 5 {
             if d.object(forKey: "thresh_freefall") != nil,
-               d.double(forKey: "thresh_freefall") == 0.5 {
-                d.set(0.7, forKey: "thresh_freefall")
+               [0.5, 0.6, 0.7].contains(d.double(forKey: "thresh_freefall")) {
+                d.set(0.35, forKey: "thresh_freefall")
+            }
+            if d.object(forKey: "thresh_impact") != nil,
+               [2.5, 3.1, 3.5].contains(d.double(forKey: "thresh_impact")) {
+                d.set(4.2, forKey: "thresh_impact")
             }
             if d.object(forKey: "thresh_tilt") != nil,
-               d.double(forKey: "thresh_tilt") == 45.0 {
-                d.set(50.0, forKey: "thresh_tilt")
+               [45.0, 50.0, 60.0, 70.0].contains(d.double(forKey: "thresh_tilt")) {
+                d.set(80.0, forKey: "thresh_tilt")
             }
             if d.object(forKey: "thresh_freefall_ms") != nil,
-               d.double(forKey: "thresh_freefall_ms") == 80.0 {
-                d.set(60.0, forKey: "thresh_freefall_ms")
+               [60.0, 80.0, 100.0, 120.0].contains(d.double(forKey: "thresh_freefall_ms")) {
+                d.set(160.0, forKey: "thresh_freefall_ms")
             }
-            d.set(2, forKey: "fall_algorithm_version")
+            d.set(5, forKey: "fall_algorithm_version")
         }
-        algorithm.freeFallThresholdG = clampedDouble(d, key: "thresh_freefall", defaultValue: 0.7, range: 0.1...1.0)
-        algorithm.impactThresholdG   = clampedDouble(d, key: "thresh_impact", defaultValue: 2.5, range: 1.5...5.0)
-        algorithm.tiltThresholdDeg   = clampedDouble(d, key: "thresh_tilt", defaultValue: 50.0, range: 20.0...90.0)
-        algorithm.freeFallMinMs      = clampedDouble(d, key: "thresh_freefall_ms", defaultValue: 60.0, range: 40.0...200.0)
+        algorithm.freeFallThresholdG = clampedDouble(d, key: "thresh_freefall", defaultValue: 0.35, range: 0.1...1.0)
+        algorithm.impactThresholdG   = clampedDouble(d, key: "thresh_impact", defaultValue: 4.2, range: 1.5...5.0)
+        algorithm.tiltThresholdDeg   = clampedDouble(d, key: "thresh_tilt", defaultValue: 80.0, range: 20.0...90.0)
+        algorithm.freeFallMinMs      = clampedDouble(d, key: "thresh_freefall_ms", defaultValue: 160.0, range: 40.0...200.0)
     }
 
     private func clampedDouble(

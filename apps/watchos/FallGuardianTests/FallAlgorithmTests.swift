@@ -12,7 +12,7 @@ final class FallAlgorithmTests: XCTestCase {
     func testTableImpactWithoutOrientationChangeDoesNotTrigger() {
         baseline(algorithm)
         XCTAssertFalse(
-            algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+            algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 500)
         )
 
         XCTAssertFalse(
@@ -29,9 +29,8 @@ final class FallAlgorithmTests: XCTestCase {
 
     func testLossOfBalanceImpactOrientationChangeAndStillnessTriggers() {
         baseline(algorithm)
-        XCTAssertFalse(
-            algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
-        )
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        XCTAssertFalse(algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680))
 
         XCTAssertTrue(
             samples(
@@ -39,7 +38,7 @@ final class FallAlgorithmTests: XCTestCase {
                 x: 1,
                 y: 0,
                 z: 0,
-                startMs: 520,
+                startMs: 700,
                 durationMs: 4_000
             )
         )
@@ -47,7 +46,8 @@ final class FallAlgorithmTests: XCTestCase {
 
     func testOrientationChangeWithoutStillnessDoesNotTrigger() {
         baseline(algorithm)
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
 
         var triggered = false
         var time = 520.0
@@ -62,7 +62,7 @@ final class FallAlgorithmTests: XCTestCase {
         XCTAssertFalse(triggered)
     }
 
-    func testQualifiedLowAccelerationImpactAndStillnessTriggers() {
+    func testHandDroppedOntoKneeWithoutOrientationDoesNotTrigger() {
         baseline(algorithm)
         _ = samples(
             algorithm,
@@ -70,28 +70,35 @@ final class FallAlgorithmTests: XCTestCase {
             y: 0,
             z: 0,
             startMs: 500,
-            durationMs: 100
+            durationMs: 160
         )
-        XCTAssertFalse(
-            algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 620)
-        )
+        XCTAssertFalse(algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680))
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             samples(
                 algorithm,
                 x: 0,
                 y: 0,
                 z: 1,
-                startMs: 640,
+                startMs: 700,
                 durationMs: 3_500
             )
+        )
+    }
+
+    func testRapidArmRaiseDoesNotTrigger() {
+        baseline(algorithm)
+        XCTAssertFalse(algorithm.processSample(ax: 0, ay: 0, az: 5, nowMs: 500))
+        XCTAssertFalse(
+            samples(algorithm, x: 1, y: 0, z: 0, startMs: 520, durationMs: 4_000)
         )
     }
 
     func testRaisedOrientationThresholdSuppressesRotationPath() {
         algorithm.tiltThresholdDeg = 100
         baseline(algorithm)
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 160)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
 
         XCTAssertFalse(
             samples(
@@ -99,7 +106,7 @@ final class FallAlgorithmTests: XCTestCase {
                 x: 1,
                 y: 0,
                 z: 0,
-                startMs: 520,
+                startMs: 700,
                 durationMs: 4_000
             )
         )
@@ -113,9 +120,9 @@ final class FallAlgorithmTests: XCTestCase {
             y: 0,
             z: 0,
             startMs: 500,
-            durationMs: 100
+            durationMs: 160
         )
-        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 620)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 4.5, nowMs: 680)
 
         algorithm.reset()
         baseline(algorithm, startMs: 1_000)

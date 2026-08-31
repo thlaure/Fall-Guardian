@@ -29,12 +29,12 @@ temporary network loss. During the 30-second cancellation window, the watch play
 looping alarm and posts a full-screen-intent notification. If Android does not
 grant full-screen access, the same notification remains as a persistent
 heads-up alert with an **I'm OK — Cancel** action. Foreground cancellation
-requires a deliberate 1.5-second hold.
+uses a single tap on the displayed button.
 
-Algorithm defaults are `0.7 g` low acceleration, `2.5 g` impact, `50°`
-orientation change, and `60 ms` minimum low-acceleration duration. An impact
-alone is rejected; the detector also requires orientation change or qualified
-low acceleration, followed by about two seconds of stillness.
+Algorithm defaults are `0.35 g` low acceleration, `4.2 g` impact, `80°`
+orientation change, and `160 ms` minimum low-acceleration duration. Detection
+requires qualified low acceleration, impact, orientation change, and
+post-impact stillness; all four conditions must be present.
 
 Android 13 and newer require notification permission. Android 14 and newer can
 also require the user to allow full-screen alerts in special app access. Sound

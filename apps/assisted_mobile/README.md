@@ -54,7 +54,6 @@ lib/
     ├── alert_runtime.dart
     ├── app_bootstrap_service.dart
     ├── backend_api_service.dart
-    ├── companion_enrollment_service.dart
     ├── location_service.dart
     ├── notification_service.dart
     ├── secure_store.dart
@@ -66,8 +65,6 @@ Important services:
 - `AlertCoordinator`: orchestrates detection, countdown, cancellation, and
   escalation.
 - `BackendApiService`: talks to the Symfony backend.
-- `CompanionEnrollmentCoordinator`: creates a five-minute one-time enrollment
-  and immediately hands it to the native watch bridge.
 - `WatchCommunicationService`: receives watch-side fall events.
 - `NotificationService`: owns local mobile notifications.
 - `SecureStore`: stores sensitive local values.

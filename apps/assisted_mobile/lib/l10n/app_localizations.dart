@@ -79,18 +79,6 @@ abstract class AppLocalizations {
   // ── Settings ─────────────────────────────────────────────────────────────
   String get settingsTitle;
   String get settingsSaved;
-  String get watchConnectionSection;
-  String get watchNotConnected;
-  String get watchConnectionStarting;
-  String get watchConnectionWaiting;
-  String get watchConnectionFailed;
-  String get watchConnectionAppMissing;
-  String get watchConnectionNotPaired;
-  String get watchConnectionNotReady;
-  String get watchConnectionExpired;
-  String get connectWatch;
-  String get retryWatchConnection;
-  String watchConnectionExpires(DateTime expiresAt);
   String get thresholdsSection;
   String get thresholdsInfo;
   String get freeFallLabel;

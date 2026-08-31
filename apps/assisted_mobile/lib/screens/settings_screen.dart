@@ -1,52 +1,35 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
-import '../services/companion_enrollment_service.dart';
 import '../services/watch_communication_service.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({
-    super.key,
-    required this.enrollmentCoordinator,
-    this.platformOverride,
-  });
+  const SettingsScreen({super.key, this.wearOsOverride});
 
-  final CompanionEnrollmentCoordinator enrollmentCoordinator;
-  final CompanionPlatform? platformOverride;
+  final bool? wearOsOverride;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  double _freeFallThreshold = 0.7;
-  double _impactThreshold = 2.5;
-  double _tiltThreshold = 50.0;
-  int _freeFallMinMs = 60;
+  double _freeFallThreshold = 0.35;
+  double _impactThreshold = 4.2;
+  double _tiltThreshold = 80.0;
+  int _freeFallMinMs = 160;
   bool _loading = true;
-  _EnrollmentState _enrollmentState = _EnrollmentState.idle;
-  DateTime? _enrollmentExpiresAt;
-  Timer? _enrollmentExpiryTimer;
-
-  /// Machine-readable cause reported by the native watch bridge, used to show
-  /// the wearer what to actually do about it. Never contains the token.
-  String? _enrollmentFailureReason;
 
   static const _kFreeFall = 'thresh_freefall';
   static const _kImpact = 'thresh_impact';
   static const _kTilt = 'thresh_tilt';
   static const _kFreeFallMs = 'thresh_freefall_ms';
   static const _kAlgorithmVersion = 'fall_algorithm_version';
-  static const _algorithmVersion = 2;
+  static const _algorithmVersion = 5;
 
-  CompanionPlatform get _companionPlatform =>
-      widget.platformOverride ??
-      (Platform.isIOS ? CompanionPlatform.watchOS : CompanionPlatform.wearOS);
+  bool get _isWearOs => widget.wearOsOverride ?? Platform.isAndroid;
 
   @override
   void initState() {
@@ -56,24 +39,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    if ((prefs.getInt(_kAlgorithmVersion) ?? 1) < _algorithmVersion) {
+    final algorithmVersion = prefs.getInt(_kAlgorithmVersion) ?? 1;
+    if (algorithmVersion < _algorithmVersion) {
       // Rebase only untouched legacy defaults. User-tuned values remain intact.
-      if (prefs.getDouble(_kFreeFall) == 0.5) {
-        await prefs.setDouble(_kFreeFall, 0.7);
+      final freeFall = prefs.getDouble(_kFreeFall);
+      if (freeFall == null ||
+          freeFall == 0.5 ||
+          freeFall == 0.6 ||
+          freeFall == 0.7) {
+        await prefs.setDouble(_kFreeFall, 0.35);
       }
-      if (prefs.getDouble(_kTilt) == 45.0) {
-        await prefs.setDouble(_kTilt, 50.0);
+      final impact = prefs.getDouble(_kImpact);
+      if (impact == null || impact == 2.5 || impact == 3.1 || impact == 3.5) {
+        await prefs.setDouble(_kImpact, 4.2);
       }
-      if (prefs.getInt(_kFreeFallMs) == 80) {
-        await prefs.setInt(_kFreeFallMs, 60);
+      final tilt = prefs.getDouble(_kTilt);
+      if (tilt == null ||
+          tilt == 45.0 ||
+          tilt == 50.0 ||
+          tilt == 60.0 ||
+          tilt == 70.0) {
+        await prefs.setDouble(_kTilt, 80.0);
+      }
+      final freeFallMs = prefs.getInt(_kFreeFallMs);
+      if (freeFallMs == null ||
+          freeFallMs == 60 ||
+          freeFallMs == 80 ||
+          freeFallMs == 100 ||
+          freeFallMs == 120) {
+        await prefs.setInt(_kFreeFallMs, 160);
       }
       await prefs.setInt(_kAlgorithmVersion, _algorithmVersion);
     }
     setState(() {
-      _freeFallThreshold = prefs.getDouble(_kFreeFall) ?? 0.7;
-      _impactThreshold = prefs.getDouble(_kImpact) ?? 2.5;
-      _tiltThreshold = prefs.getDouble(_kTilt) ?? 50.0;
-      _freeFallMinMs = prefs.getInt(_kFreeFallMs) ?? 60;
+      _freeFallThreshold = prefs.getDouble(_kFreeFall) ?? 0.35;
+      _impactThreshold = prefs.getDouble(_kImpact) ?? 4.2;
+      _tiltThreshold = prefs.getDouble(_kTilt) ?? 80.0;
+      _freeFallMinMs = prefs.getInt(_kFreeFallMs) ?? 160;
       _loading = false;
     });
   }
@@ -101,78 +103,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _connectWatch() async {
-    _enrollmentExpiryTimer?.cancel();
-    setState(() {
-      _enrollmentState = _EnrollmentState.sending;
-      _enrollmentExpiresAt = null;
-      _enrollmentFailureReason = null;
-    });
-
-    try {
-      final enrollment = await widget.enrollmentCoordinator.start(
-        _companionPlatform,
-      );
-      if (!mounted) return;
-      setState(() {
-        _enrollmentState = _EnrollmentState.waitingForWatch;
-        _enrollmentExpiresAt = enrollment.expiresAt;
-      });
-      final remaining = enrollment.expiresAt.difference(DateTime.now());
-      if (remaining <= Duration.zero) {
-        _markEnrollmentExpired();
-      } else {
-        _enrollmentExpiryTimer = Timer(remaining, _markEnrollmentExpired);
-      }
-    } catch (error, stackTrace) {
-      // Watch pairing is a safety-critical setup step. Swallowing the cause
-      // makes a failed pairing impossible to diagnose from a bug report, so
-      // log it; the native side reports which precondition failed (for
-      // example `watch_app_not_installed`) without exposing the token.
-      developer.log(
-        'companion enrollment failed',
-        name: 'SettingsScreen',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      setState(() {
-        _enrollmentState = _EnrollmentState.failed;
-        _enrollmentFailureReason =
-            error is PlatformException && error.details is String
-                ? error.details as String
-                : null;
-      });
-    }
-  }
-
-  /// Maps the native bridge's failure cause to advice the wearer can act on.
-  /// An unrecognised or absent cause falls back to the generic message so a
-  /// new native reason can never leave the card blank.
-  String _enrollmentFailureMessage(AppLocalizations l10n) =>
-      switch (_enrollmentFailureReason) {
-        'watch_app_not_installed' => l10n.watchConnectionAppMissing,
-        'watch_not_paired' => l10n.watchConnectionNotPaired,
-        'session_not_activated' => l10n.watchConnectionNotReady,
-        _ => l10n.watchConnectionFailed,
-      };
-
-  void _markEnrollmentExpired() {
-    if (!mounted || _enrollmentState != _EnrollmentState.waitingForWatch) {
-      return;
-    }
-    setState(() {
-      _enrollmentState = _EnrollmentState.expired;
-      _enrollmentExpiresAt = null;
-    });
-  }
-
-  @override
-  void dispose() {
-    _enrollmentExpiryTimer?.cancel();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -181,20 +111,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.settingsTitle),
-        actions: _companionPlatform == CompanionPlatform.wearOS
+        actions: _isWearOs
             ? [TextButton(onPressed: _save, child: Text(l10n.save))]
             : null,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                20 + MediaQuery.viewPaddingOf(context).bottom,
+              ),
               children: [
-                _sectionHeader(l10n.watchConnectionSection, cs),
-                const SizedBox(height: 8),
-                _watchConnectionCard(l10n, cs),
-                if (_companionPlatform == CompanionPlatform.wearOS) ...[
-                  const SizedBox(height: 32),
+                if (_isWearOs) ...[
                   _sectionHeader(l10n.thresholdsSection, cs),
                   const SizedBox(height: 8),
                   _infoCard(l10n.thresholdsInfo, cs),
@@ -248,10 +179,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   OutlinedButton.icon(
                     onPressed: () async {
                       setState(() {
-                        _freeFallThreshold = 0.7;
-                        _impactThreshold = 2.5;
-                        _tiltThreshold = 50.0;
-                        _freeFallMinMs = 60;
+                        _freeFallThreshold = 0.35;
+                        _impactThreshold = 4.2;
+                        _tiltThreshold = 80.0;
+                        _freeFallMinMs = 160;
                       });
                       await _save();
                     },
@@ -284,65 +215,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
         ),
       );
-
-  Widget _watchConnectionCard(AppLocalizations l10n, ColorScheme cs) {
-    final sending = _enrollmentState == _EnrollmentState.sending;
-    final waiting = _enrollmentState == _EnrollmentState.waitingForWatch;
-    final failed = _enrollmentState == _EnrollmentState.failed;
-    final retryable = failed || _enrollmentState == _EnrollmentState.expired;
-    final status = switch (_enrollmentState) {
-      _EnrollmentState.idle => l10n.watchNotConnected,
-      _EnrollmentState.sending => l10n.watchConnectionStarting,
-      _EnrollmentState.waitingForWatch => l10n.watchConnectionWaiting,
-      _EnrollmentState.failed => _enrollmentFailureMessage(l10n),
-      _EnrollmentState.expired => l10n.watchConnectionExpired,
-    };
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  waiting ? Icons.watch_outlined : Icons.watch_off_outlined,
-                  color: failed ? cs.error : cs.primary,
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Text(status)),
-                if (sending)
-                  const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
-            if (_enrollmentExpiresAt != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                l10n.watchConnectionExpires(
-                  _enrollmentExpiresAt!.toLocal(),
-                ),
-                style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-              ),
-            ],
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: sending ? null : _connectWatch,
-              icon: const Icon(Icons.link),
-              label: Text(
-                retryable ? l10n.retryWatchConnection : l10n.connectWatch,
-                // Expired and delivery-failed states both restart safely with
-                // a new one-time token.
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _sliderTile({
     required String label,
@@ -399,12 +271,4 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-}
-
-enum _EnrollmentState {
-  idle,
-  sending,
-  waitingForWatch,
-  failed,
-  expired,
 }
