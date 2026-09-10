@@ -18,7 +18,6 @@ import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 /**
@@ -49,7 +48,8 @@ import androidx.core.app.NotificationCompat
  *    and writes them to SharedPreferences. This service's prefChangeListener
  *    detects those writes and rebuilds FallAlgorithm on the fly — no restart needed.
  *
- * Uses SensorManager with TYPE_ACCELEROMETER at 50 Hz.
+ * Uses SensorManager with TYPE_ACCELEROMETER at 25 Hz and short hardware
+ * batching windows to reduce CPU wake-ups while keeping fall alerts prompt.
  * On fall detection: sends Data Layer event to the phone and enforces
  * a 5-second cooldown before the next detection can fire.
  */
@@ -70,11 +70,10 @@ class FallDetectionService : Service(), SensorEventListener {
     // low-acceleration phase or orientation change, then two seconds still.
     private lateinit var algorithm: FallAlgorithm
 
-    // A WakeLock prevents the watch CPU from entering deep sleep while the
-    // screen is off. Without it, Android would stop delivering sensor events
-    // once the screen turns off — meaning falls would go undetected at night
-    // or when the watch is idle. PARTIAL_WAKE_LOCK keeps only the CPU on,
-    // letting the screen turn off to save battery.
+    // The wake lock is deliberately *not* held while monitoring. A permanent
+    // partial wake lock prevents deep sleep and was the main source of battery
+    // drain. It is acquired only for the active, time-limited alert so the
+    // cancellation countdown remains reliable while the screen is off.
     private lateinit var wakeLock: PowerManager.WakeLock
 
     // SharedPreferences is Android's built-in key-value persistent storage —
@@ -122,6 +121,13 @@ class FallDetectionService : Service(), SensorEventListener {
         // unique within this app.
         const val NOTIF_ID = 1001
         const val ALERT_NOTIF_ID = 1002
+
+        // 25 Hz provides four samples for the default 160 ms free-fall window.
+        // A half-second batch cuts app CPU wake-ups without
+        // making the fall alert feel delayed.
+        const val ACCELEROMETER_SAMPLING_PERIOD_US = 40_000
+        const val ACCELEROMETER_BATCH_LATENCY_US = 500_000
+        const val ALERT_WAKE_LOCK_TIMEOUT_MS = 35_000L
     }
 
     // --- Step 1: Service startup ---
@@ -141,13 +147,13 @@ class FallDetectionService : Service(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-        // Acquire the CPU wake lock. "apply { acquire() }" runs acquire() on the
-        // newly created WakeLock object immediately. Released in onDestroy().
+        // Do not acquire this at startup: monitoring must allow the watch to
+        // enter deep sleep. It is used only for a confirmed alert below.
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "FallGuardian::FallDetection" // Tag shown in battery usage reports.
-        ).apply { acquire() } // released in onDestroy — no timeout to avoid detection gaps
+            "FallGuardian::ActiveFallAlert"
+        ).apply { setReferenceCounted(false) }
 
         // Begin listening for remote threshold changes from the phone.
         prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
@@ -211,10 +217,10 @@ class FallDetectionService : Service(), SensorEventListener {
     }
 
     /**
-     * Subscribes to the accelerometer at SENSOR_DELAY_GAME rate (~50 Hz / one
-     * sample every ~20 ms). SENSOR_DELAY_GAME is the fastest preset that still
-     * batches efficiently — fast enough to capture the brief freefall and impact
-     * phases of a fall, without the battery drain of SENSOR_DELAY_FASTEST.
+     * Subscribes to the accelerometer at 25 Hz. The sensor hardware can batch
+     * readings for up to 500 ms, so the CPU processes a small group at once
+     * instead of waking for every sample. SensorEvent timestamps still preserve
+     * the timing seen by FallAlgorithm.
      *
      * If the BODY_SENSORS permission was revoked after launch (the user went to
      * system settings and turned it off), we flag the error in WearDataSender
@@ -222,21 +228,27 @@ class FallDetectionService : Service(), SensorEventListener {
      */
     private fun registerSensors() {
         val sensor = accelerometer ?: return // No accelerometer hardware found — nothing to do.
-        sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME) // ~50 Hz
+        sensorManager.registerListener(
+            this,
+            sensor,
+            ACCELEROMETER_SAMPLING_PERIOD_US,
+            ACCELEROMETER_BATCH_LATENCY_US
+        )
     }
 
     // --- Step 3: Process each accelerometer reading ---
-    // Android calls this method on every sensor tick (~50 times per second).
+    // Android calls this method for each sensor tick (up to 25 times per second).
     // This is the hot path: avoid memory allocations here to prevent GC pauses.
     override fun onSensorChanged(event: SensorEvent) {
         // Safety guard: this listener could theoretically receive events from
         // other sensors if we register more in the future. Ignore non-accelerometer data.
         if (event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
 
-        // elapsedRealtime() is a monotonic clock (never jumps backward, keeps
-        // ticking during device sleep). It's the right clock for measuring time
-        // intervals inside the algorithm.
-        val nowElapsed = SystemClock.elapsedRealtime()
+        // Sensor timestamps share Android's monotonic boot-time time base. Use
+        // them rather than callback arrival time: a batch can contain several
+        // readings delivered together, but the algorithm must still see their
+        // original spacing to measure free-fall and post-impact stillness.
+        val nowElapsed = event.timestamp / 1_000_000L
 
         // currentTimeMillis() is wall-clock time (milliseconds since Unix epoch,
         // 1 January 1970). We use this as the shared fall timestamp so both the
@@ -351,6 +363,7 @@ class FallDetectionService : Service(), SensorEventListener {
      */
     private fun showUrgentFallAlert() {
         Log.i("FallDetectionService", "Starting urgent fall presentation")
+        if (!wakeLock.isHeld) wakeLock.acquire(ALERT_WAKE_LOCK_TIMEOUT_MS)
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_CLEAR_TOP or
@@ -426,6 +439,7 @@ class FallDetectionService : Service(), SensorEventListener {
             if (isPlaying) stop()
         }
         alarmRingtone = null
+        if (wakeLock.isHeld) wakeLock.release()
         getSystemService(NotificationManager::class.java).cancel(ALERT_NOTIF_ID)
         Log.i("FallDetectionService", "Urgent fall presentation stopped")
     }
