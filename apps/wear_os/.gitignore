@@ -2,4 +2,8 @@
 build/
 app/build/
 local.properties
+keystore.properties
+release-signing.password
+*.jks
+*.keystore
 .idea/
