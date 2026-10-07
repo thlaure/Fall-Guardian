@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Fall Guardian</string>
+    <string name="diagnostics_on">Diagnostic recording on\nTap to stop</string>
+    <string name="diagnostics_off">Diagnostic recording off\nTap to start</string>
     <string name="alert_cancel_button">I’m OK\nCancel alert</string>
     <string name="notifications_disabled">Notifications off\nTap to enable</string>
     <string name="full_screen_disabled">Heads-up alerts only\nTap to review</string>

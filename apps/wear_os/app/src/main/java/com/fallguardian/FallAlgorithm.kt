@@ -49,7 +49,20 @@ class FallAlgorithm(
     private val stillnessThresholdG = 0.25f
     private val nearGravityToleranceG = 0.25f
 
+    private var candidateExpired = false
+
+    /** Read-only diagnostic state; never participates in the detection decision. */
+    fun diagnosticSnapshot(nowMs: Long): FallDiagnosticSnapshot = FallDiagnosticSnapshot(
+        freeFallThresholdG, impactThresholdG, tiltThresholdDeg, freeFallMinMs,
+        impactDetected, freeFallQualifiedLatch, orientationChangedLatch,
+        orientationChangeDeg(),
+        if (stillnessActive) (nowMs - stillnessStartMs).coerceAtLeast(0) else 0,
+        if (impactDetected) (nowMs - impactTimeMs).coerceAtLeast(0) else 0,
+        candidateExpired
+    )
+
     fun reset() {
+        candidateExpired = false
         freeFallStartMs = 0L
         freeFallActive = false
         freeFallQualifiedLatch = false
@@ -69,6 +82,7 @@ class FallAlgorithm(
      * @param nowMs monotonic elapsed time in milliseconds.
      */
     fun processSample(ax: Float, ay: Float, az: Float, nowMs: Long): Boolean {
+        candidateExpired = false
         val normG = norm(ax, ay, az) / EARTH_GRAVITY
 
         if (!gravityInitialized && normG > 0.8f && normG < 1.2f) {
@@ -104,6 +118,7 @@ class FallAlgorithm(
 
         if (!impactDetected) return false
         if (nowMs - impactTimeMs > candidateWindowMs) {
+            candidateExpired = true
             clearCandidate()
             return false
         }

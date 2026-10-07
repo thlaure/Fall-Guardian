@@ -115,6 +115,44 @@ Wear Data Layer verifies package identity. Configure `keystore.properties` or
 the four `ANDROID_KEYSTORE_*` environment variables before
 `./gradlew assembleRelease`; the build fails explicitly when they are absent.
 
+## Detection diagnostics (Release and Debug)
+
+The idle watch screen can enable/disable local diagnostic recording. It is off
+by default. Recording does not change thresholds, sensor subscription, wake
+locks, or alert delivery. It records **every delivered accelerometer sample**,
+including rejected and sub-threshold events, so a missed fall does not need to
+trigger the existing detector to be investigated. No GPS, credentials or phone
+data are recorded or uploaded.
+
+Storage is private, compressed and bounded to 64 MiB and at most 72 hours;
+the byte cap can shorten the available history. Export promptly after a real
+event. Completed batches survive restart; the latest in-memory batch (up to
+100 samples) can be lost on abrupt process death. Disk/queue losses are exposed
+in status. Heartbeats run every 30 seconds **when the CPU runs**, without a
+monitoring wake lock. No samples/heartbeats during sleep is a diagnostic finding,
+not proof of continuous monitoring.
+
+ADB shell export works on a signed Release build; normal apps cannot access it:
+
+```sh
+adb -s <watch> shell content call --uri content://com.fallguardian.diagnostics --method enable
+adb -s <watch> shell content query --uri content://com.fallguardian.diagnostics/status
+adb -s <watch> exec-out content read --uri content://com.fallguardian.diagnostics/export > watch-diagnostics.zip
+adb -s <watch> shell content call --uri content://com.fallguardian.diagnostics --method disable
+```
+
+The ZIP contains `status.txt`, `events-*.csv` and `samples-*.csv.gz` (concatenated
+gzip members, readable with Python `gzip` or `gzip -dc`). Raw acceleration is in
+m/s². `sensor_elapsed_ms` is monotonic measurement time; `delivery_elapsed_ms`
+is callback time. Their difference reveals delayed delivery. `interactive`
+is sampled at most once per second to limit diagnostic overhead and
+indicates screen interactivity, **not** CPU sleep. Rows also contain effective
+thresholds, impact/low-acceleration/orientation qualification, stillness duration,
+candidate expiration, detector output, and whether the service dispatched it.
+Sample gaps, dropped samples and service restarts must be considered before
+classifying an event as an algorithmic false negative. Note the time and
+circumstances of spontaneous falls; never ask a vulnerable wearer to fall.
+
 ## Quality Checks
 
 Run the deterministic verification set:

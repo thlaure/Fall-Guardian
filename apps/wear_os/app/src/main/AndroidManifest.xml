@@ -23,6 +23,12 @@
             android:name="com.google.android.wearable.standalone"
             android:value="false"/>
 
+        <provider
+            android:name=".DiagnosticProvider"
+            android:authorities="com.fallguardian.diagnostics"
+            android:exported="true"
+            android:permission="android.permission.DUMP"/>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
