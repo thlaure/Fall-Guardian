@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        FallDiagnostics.initialize(this)
         refreshAlertPresentationAccess()
     }
 
@@ -335,6 +336,15 @@ private fun IdleScreen(context: Context) {
                     Modifier.clickable {
                         openAlertPresentationSettings(context, presentationIssue)
                     }
+                }
+            )
+            Text(
+                text = stringResource(if (FallDiagnostics.enabled) R.string.diagnostics_on else R.string.diagnostics_off),
+                fontSize = 10.sp,
+                color = Color(0xFFD1E0D7),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.clickable {
+                    FallDiagnostics.setEnabled(context, !FallDiagnostics.enabled)
                 }
             )
             // Debug-only fall simulation button — stripped from release builds at compile time.

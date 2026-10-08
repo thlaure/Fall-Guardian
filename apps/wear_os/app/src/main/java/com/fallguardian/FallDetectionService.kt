@@ -17,6 +17,9 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -96,6 +99,18 @@ class FallDetectionService : Service(), SensorEventListener {
     // rolls after hitting the ground and triggers the sensor again).
     private val cooldownMs: Long = 5_000L
 
+    private val diagnosticHandler = Handler(Looper.getMainLooper())
+    private val diagnosticHeartbeat = object : Runnable {
+        override fun run() {
+            if (FallDiagnostics.enabled) {
+                FallDiagnostics.flush()
+                FallDiagnostics.event("heartbeat", "interactive=${FallDiagnostics.interactive(this@FallDetectionService)};${FallDiagnostics.status().replace('\n', ';')}")
+            }
+            // This does not hold a wake lock: delayed heartbeats themselves expose sleep.
+            diagnosticHandler.postDelayed(this, 30_000L)
+        }
+    }
+
     // --- Step 4: Live threshold reload ---
     // This callback is registered on SharedPreferences below. Whenever
     // PhoneMessageListenerService saves new threshold values from the phone,
@@ -137,6 +152,8 @@ class FallDetectionService : Service(), SensorEventListener {
     override fun onCreate() {
         super.onCreate()
 
+        FallDiagnostics.initialize(this)
+
         // Load the four threshold values from local storage. If the phone has
         // never sent settings, the default values inside loadAlgorithmFromPrefs()
         // are used.
@@ -170,6 +187,7 @@ class FallDetectionService : Service(), SensorEventListener {
 
         // --- Step 2: Begin reading the accelerometer ---
         registerSensors()
+        diagnosticHandler.postDelayed(diagnosticHeartbeat, 30_000L)
     }
 
     /**
@@ -213,7 +231,7 @@ class FallDetectionService : Service(), SensorEventListener {
             impactThresholdG = prefs.getFloat("thresh_impact", 4.2f).coerceIn(1.5f, 5.0f),
             tiltThresholdDeg = prefs.getFloat("thresh_tilt", 80f).coerceIn(20f, 90f),
             freeFallMinMs = prefs.getInt("thresh_freefall_ms", 160).coerceIn(40, 200).toLong()
-        )
+        ).also { FallDiagnostics.configureThresholds(it.diagnosticSnapshot(SystemClock.elapsedRealtime())) }
     }
 
     /**
@@ -227,13 +245,17 @@ class FallDetectionService : Service(), SensorEventListener {
      * so MainActivity can show the PermissionDeniedScreen, then stop the service.
      */
     private fun registerSensors() {
-        val sensor = accelerometer ?: return // No accelerometer hardware found — nothing to do.
-        sensorManager.registerListener(
+        val sensor = accelerometer ?: run {
+            FallDiagnostics.event("sensor_registration", "available=false")
+            return
+        }
+        val registered = sensorManager.registerListener(
             this,
             sensor,
             ACCELEROMETER_SAMPLING_PERIOD_US,
             ACCELEROMETER_BATCH_LATENCY_US
         )
+        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};period_us=$ACCELEROMETER_SAMPLING_PERIOD_US;batch_us=$ACCELEROMETER_BATCH_LATENCY_US")
     }
 
     // --- Step 3: Process each accelerometer reading ---
@@ -266,9 +288,26 @@ class FallDetectionService : Service(), SensorEventListener {
         // relative to pre-impact posture, followed by two seconds of stillness.
         val detected = algorithm.processSample(ax, ay, az, nowElapsed)
 
+        val dispatched = detected && (nowElapsed - lastFallMs > cooldownMs)
+        if (FallDiagnostics.enabled) {
+            try {
+                val deliveredAt = SystemClock.elapsedRealtime()
+                // Wall time belongs to measurement, not to delivery of a delayed batch.
+                FallDiagnostics.sample(FallDiagnosticSample(
+                    nowWall - (deliveredAt - nowElapsed).coerceAtLeast(0),
+                    nowElapsed, deliveredAt, ax, ay, az,
+                    FallDiagnostics.interactive(this), detected, dispatched,
+                    algorithm.diagnosticSnapshot(nowElapsed)
+                ))
+            } catch (error: Exception) {
+                // Instrumentation failure must never prevent the existing alert path.
+                FallDiagnostics.failure(error)
+            }
+        }
+
         // Only act on a positive detection if enough time has passed since the
         // last alert — this is the cooldown check.
-        if (detected && (nowElapsed - lastFallMs > cooldownMs)) {
+        if (dispatched) {
             lastFallMs = nowElapsed  // Record when this fall fired.
             algorithm.reset()        // Clear the state machine for the next event.
 
@@ -298,6 +337,9 @@ class FallDetectionService : Service(), SensorEventListener {
     // Called when the service is finally shutting down (e.g. user force-quits).
     // Every resource acquired in onCreate() must be released here to avoid leaks.
     override fun onDestroy() {
+        diagnosticHandler.removeCallbacks(diagnosticHeartbeat)
+        FallDiagnostics.flush()
+        FallDiagnostics.event("service_stopped", "")
         WearDataSender.onAlertStateChanged = null
         dismissUrgentFallAlert()
         prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener) // Stop threshold watching.
