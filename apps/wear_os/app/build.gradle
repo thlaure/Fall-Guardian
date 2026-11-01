@@ -77,6 +77,15 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+
+    testOptions {
+        unitTests.all { testTask ->
+            def replayDir = System.getProperty("fall.replay.dir")
+            if (replayDir != null && !replayDir.isBlank()) {
+                testTask.systemProperty("fall.replay.dir", replayDir)
+            }
+        }
+    }
 }
 
 def explicitReleaseArtifactRequested = gradle.startParameter.taskNames.any {
