@@ -1,0 +1,8 @@
+id,label,file,expect_detected
+qualified_low_phase_25hz,fall,traces/qualified_low_phase_25hz.csv,true
+four_samples_low_phase_25hz,fall,traces/four_samples_low_phase_25hz.csv,false
+long_weightlessness_25hz,fall,traces/long_weightlessness_25hz.csv,false
+sideways_low_phase_25hz,fall,traces/sideways_low_phase_25hz.csv,false
+table_knock_25hz,adl,traces/table_knock_25hz.csv,false
+three_g_impact_25hz,adl,traces/three_g_impact_25hz.csv,false
+device_drop_25hz,adl,traces/device_drop_25hz.csv,true
