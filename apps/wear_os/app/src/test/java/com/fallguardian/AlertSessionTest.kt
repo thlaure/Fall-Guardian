@@ -91,15 +91,50 @@ class AlertSessionTest {
         val s = session()
         s.onFallDetected(fallWall, at(0))
         val other = PhoneCancel("22222222-2222-4222-8222-222222222222", null)
-        assertEquals(emptyList<AlertEffect>(), s.onPhoneCancel(other))
+        assertEquals(emptyList<AlertEffect>(), s.onPhoneCancel(other, at(1_000)))
         assertNotEquals(null, s.active)
 
         val mine = PhoneCancel("11111111-1111-4111-8111-111111111111", fallWall)
-        assertEquals(listOf("present DISMISS"), paths(s.onPhoneCancel(mine)))
+        assertEquals(listOf("present DISMISS"), paths(s.onPhoneCancel(mine, at(2_000))))
         assertNull(s.active)
         assertTrue(storage.values.isEmpty())
         // Legacy cancel with nothing active: ignored.
-        assertEquals(emptyList<AlertEffect>(), s.onPhoneCancel(PhoneCancel(null, null)))
+        assertEquals(emptyList<AlertEffect>(), s.onPhoneCancel(PhoneCancel(null, null), at(3_000)))
+    }
+
+    @Test fun `phone cancel in a fresh process clears the persisted matching incident`() {
+        session().onFallDetected(fallWall, at(0))
+        // Process died; the phone cancel starts a new process first.
+        val fresh = session()
+        val cancel = PhoneCancel("11111111-1111-4111-8111-111111111111", fallWall)
+        assertEquals(listOf("present DISMISS"), paths(fresh.onPhoneCancel(cancel, at(5_000))))
+        assertTrue(storage.values.isEmpty())
+        // The detection service starting later must not resurrect it.
+        assertEquals(emptyList<AlertEffect>(), session().restore(at(6_000)))
+    }
+
+    @Test fun `legacy phone cancel in a fresh process clears the persisted incident`() {
+        session().onFallDetected(fallWall, at(0))
+        assertEquals(
+            listOf("present DISMISS"),
+            paths(session().onPhoneCancel(PhoneCancel(null, null), at(5_000)))
+        )
+        assertEquals(emptyList<AlertEffect>(), session().restore(at(6_000)))
+    }
+
+    @Test fun `mismatching phone cancel in a fresh process keeps the persisted incident`() {
+        session().onFallDetected(fallWall, at(0))
+        val other = PhoneCancel("22222222-2222-4222-8222-222222222222", null)
+        assertEquals(emptyList<AlertEffect>(), session().onPhoneCancel(other, at(5_000)))
+        val restarted = session()
+        assertEquals("present SHOW", paths(restarted.restore(at(6_000))).last())
+        assertEquals("11111111-1111-4111-8111-111111111111", restarted.active!!.incidentId)
+    }
+
+    @Test fun `phone cancel in a fresh process ignores and clears an expired incident`() {
+        session().onFallDetected(fallWall, at(0))
+        assertEquals(emptyList<AlertEffect>(), session().onPhoneCancel(PhoneCancel(null, null), at(30_000)))
+        assertTrue(storage.values.isEmpty())
     }
 
     @Test fun `countdown ticks then expires and keeps the fall queued for the phone`() {

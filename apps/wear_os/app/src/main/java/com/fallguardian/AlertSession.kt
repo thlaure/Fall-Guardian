@@ -74,9 +74,20 @@ class AlertSession(
         )
     }
 
-    fun onPhoneCancel(cancel: PhoneCancel): List<AlertEffect> {
-        if (!AlertContract.shouldAcceptPhoneCancel(active, cancel)) return emptyList()
-        end()
+    /**
+     * The phone cancel can start this process on its own (via
+     * PhoneMessageListenerService) after the process died mid-countdown,
+     * before the service or Activity restored the alert. The persisted live
+     * incident is therefore evaluated too; otherwise a matching cancel would
+     * be rejected, the saved state kept, and a later restart would resurrect
+     * the cancelled alert (alarm, notification, re-sent fall).
+     */
+    fun onPhoneCancel(cancel: PhoneCancel, now: ClockReading): List<AlertEffect> {
+        // store.restore() also discards an expired or corrupt saved alert.
+        val candidate = active ?: store.restore(now)
+        if (!AlertContract.shouldAcceptPhoneCancel(candidate, cancel)) return emptyList()
+        active = null
+        store.clear()
         // No echo to the phone: it originated the cancel.
         return listOf(AlertEffect.Present(AlertPresentation.DISMISS))
     }

@@ -127,8 +127,8 @@ object WearDataSender {
      */
     fun cancelAlertFromPhone(context: Context, payload: ByteArray?) {
         val cancel = AlertContract.parsePhoneCancel(payload)
-        run(context, "phone cancel identified=${cancel.incidentId != null}") { session, _ ->
-            session.onPhoneCancel(cancel)
+        run(context, "phone cancel identified=${cancel.incidentId != null}") { session, now ->
+            session.onPhoneCancel(cancel, now)
         }
     }
 
