@@ -17,6 +17,7 @@ final readonly class NotificationRoundResult
         public int $transientFailures = 0,
         public int $invalidTokens = 0,
         public int $missingTokens = 0,
+        public int $permanentFailures = 0,
     ) {
     }
 
@@ -36,6 +37,7 @@ final readonly class NotificationRoundResult
             'transientFailures' => $this->transientFailures,
             'invalidTokens' => $this->invalidTokens,
             'missingTokens' => $this->missingTokens,
+            'permanentFailures' => $this->permanentFailures,
         ];
     }
 }

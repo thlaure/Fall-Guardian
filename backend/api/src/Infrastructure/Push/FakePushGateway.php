@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Push;
 
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Domain\Push\Port\PushGatewayInterface;
@@ -17,6 +18,9 @@ final readonly class FakePushGateway implements PushGatewayInterface
 
     /** Tokens with this prefix simulate a transient provider outage (e.g. FCM HTTP 503). */
     public const string UNAVAILABLE_TOKEN_PREFIX = 'fake-unavailable-';
+
+    /** Tokens with this prefix simulate a message the provider rejects permanently (token kept). */
+    public const string REJECTED_TOKEN_PREFIX = 'fake-rejected-';
 
     public function __construct(private FakePushStore $store)
     {
@@ -57,6 +61,10 @@ final readonly class FakePushGateway implements PushGatewayInterface
     {
         if (str_starts_with($fcmToken, self::INVALID_TOKEN_PREFIX)) {
             throw new InvalidPushTokenException('Fake push token is not registered.', 'UNREGISTERED');
+        }
+
+        if (str_starts_with($fcmToken, self::REJECTED_TOKEN_PREFIX)) {
+            throw new PermanentPushDeliveryException('Fake push provider rejected the message.', 'INVALID_ARGUMENT');
         }
 
         if (str_starts_with($fcmToken, self::UNAVAILABLE_TOKEN_PREFIX)) {

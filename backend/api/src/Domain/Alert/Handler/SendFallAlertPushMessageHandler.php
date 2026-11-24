@@ -115,13 +115,16 @@ final readonly class SendFallAlertPushMessageHandler
     private function outcome(NotificationRoundResult $result): array
     {
         if (0 === $result->delivered()) {
-            // Nobody reached: transient provider failure, dead tokens, or no
-            // linked caregiver/token yet. A caregiver may (re-)register within
-            // the retry window, so keep retrying until attempts run out.
-            return [FallAlertStatus::Failed, true];
+            // Nobody reached. Retry on transient provider failures, and when
+            // nobody was attempted or tokens were dead/missing: a caregiver may
+            // (re-)register within the retry window. A message the provider
+            // rejected permanently will not succeed on a retry.
+            $retryable = $result->transientFailures > 0 || 0 === $result->permanentFailures;
+
+            return [FallAlertStatus::Failed, $retryable];
         }
 
-        if (0 === $result->transientFailures && 0 === $result->invalidTokens) {
+        if (0 === $result->transientFailures && 0 === $result->invalidTokens && 0 === $result->permanentFailures) {
             return [FallAlertStatus::Sent, false];
         }
 

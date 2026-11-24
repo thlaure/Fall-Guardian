@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Infrastructure;
 
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\FakePushGateway;
@@ -96,5 +97,13 @@ final class FakePushGatewayTest extends TestCase
         $this->expectException(TransientPushDeliveryException::class);
 
         $this->gateway->sendLinkRevoked(FakePushGateway::UNAVAILABLE_TOKEN_PREFIX.'x');
+    }
+
+    #[Test]
+    public function itSimulatesARejectedMessage(): void
+    {
+        $this->expectException(PermanentPushDeliveryException::class);
+
+        $this->gateway->send(FakePushGateway::REJECTED_TOKEN_PREFIX.'x', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00Z', '2025-01-01T00:00:30Z'));
     }
 }

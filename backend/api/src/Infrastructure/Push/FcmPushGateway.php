@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Push;
 
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\PushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
@@ -29,12 +30,13 @@ final class FcmPushGateway implements PushGatewayInterface
     private const float HTTP_MAX_DURATION_SECONDS = 15.0;
 
     /**
-     * FCM v1 error codes meaning the registration token itself is dead and
-     * must be deleted rather than retried.
-     *
-     * @see https://firebase.google.com/docs/reference/fcm/rest/v1/ErrorCode
+     * HTTP statuses after which the same request may succeed later.
+     * 401 is included because an expired OAuth access token is refreshed.
      */
-    private const array PERMANENT_TOKEN_ERROR_CODES = ['UNREGISTERED', 'INVALID_ARGUMENT', 'SENDER_ID_MISMATCH'];
+    private const array TRANSIENT_HTTP_STATUSES = [401, 408, 429, 500, 502, 503, 504];
+
+    /** BadRequest field violation that singles out the registration token. */
+    private const string TOKEN_FIELD = 'message.token';
 
     private ?string $cachedAccessToken = null;
 
@@ -155,18 +157,61 @@ final class FcmPushGateway implements PushGatewayInterface
      * Maps an FCM error response to a typed exception. Only the HTTP status and
      * the FCM error code are kept: the provider message body is never exposed.
      *
+     * A token is only reported dead when FCM says so unambiguously: the
+     * UNREGISTERED error code, or INVALID_ARGUMENT whose field violation
+     * targets `message.token`. INVALID_ARGUMENT is also returned for malformed
+     * messages, and SENDER_ID_MISMATCH or a bare 404 can come from our own
+     * misconfiguration; treating those as dead tokens would wipe every
+     * caregiver's token, so they are permanent failures that keep the token.
+     *
+     * @see https://firebase.google.com/docs/reference/fcm/rest/v1/ErrorCode
+     *
      * @param array<string, mixed>|null $responseData
      */
     private function classifyFailure(int $statusCode, ?array $responseData): PushDeliveryException
     {
         $errorCode = self::extractFcmErrorCode($responseData);
+        $reason = $errorCode ?? sprintf('http_%d', $statusCode);
         $message = sprintf('FCM send failed (HTTP %d).', $statusCode);
 
-        if (404 === $statusCode || in_array($errorCode, self::PERMANENT_TOKEN_ERROR_CODES, true)) {
-            return new InvalidPushTokenException($message, $errorCode ?? sprintf('http_%d', $statusCode));
+        if ('UNREGISTERED' === $errorCode
+            || ('INVALID_ARGUMENT' === $errorCode && self::hasTokenFieldViolation($responseData))) {
+            return new InvalidPushTokenException($message, $reason);
         }
 
-        return new TransientPushDeliveryException($message, $errorCode ?? sprintf('http_%d', $statusCode));
+        if (in_array($statusCode, self::TRANSIENT_HTTP_STATUSES, true)
+            || in_array($errorCode, ['UNAVAILABLE', 'INTERNAL', 'QUOTA_EXCEEDED'], true)) {
+            return new TransientPushDeliveryException($message, $reason);
+        }
+
+        return new PermanentPushDeliveryException($message, $reason);
+    }
+
+    /** @param array<string, mixed>|null $responseData */
+    private static function hasTokenFieldViolation(?array $responseData): bool
+    {
+        $error = $responseData['error'] ?? null;
+        $details = is_array($error) ? ($error['details'] ?? null) : null;
+
+        if (!is_array($details)) {
+            return false;
+        }
+
+        foreach ($details as $detail) {
+            $violations = is_array($detail) ? ($detail['fieldViolations'] ?? null) : null;
+
+            if (!is_array($violations)) {
+                continue;
+            }
+
+            foreach ($violations as $violation) {
+                if (is_array($violation) && self::TOKEN_FIELD === ($violation['field'] ?? null)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /** @param array<string, mixed>|null $responseData */

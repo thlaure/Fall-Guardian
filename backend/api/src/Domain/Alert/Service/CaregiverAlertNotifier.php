@@ -8,6 +8,7 @@ use App\Domain\Alert\Port\PushAttemptRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface;
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\PushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Domain\Push\Port\PushGatewayInterface;
@@ -55,6 +56,7 @@ final readonly class CaregiverAlertNotifier
         $transientFailures = 0;
         $invalidTokens = 0;
         $missingTokens = 0;
+        $permanentFailures = 0;
 
         foreach ($links as $link) {
             $caregiverDevice = $link->getCaregiverDevice();
@@ -105,6 +107,15 @@ final readonly class CaregiverAlertNotifier
                     'reason' => $exception->getReason(),
                     'tokenRemoved' => $removed,
                 ]);
+            } catch (PermanentPushDeliveryException $exception) {
+                // The message was rejected, not the token: keep the token.
+                $attempt->markFailed($exception->getReason(), $exception->getMessage());
+                ++$permanentFailures;
+                $this->logger->error('push.delivery_rejected', [
+                    'alertId' => $alertId,
+                    'caregiverDeviceId' => $caregiverDevice->getPublicId(),
+                    'reason' => $exception->getReason(),
+                ]);
             } catch (Throwable $exception) {
                 $reason = $exception instanceof PushDeliveryException ? $exception->getReason() : 'unexpected';
                 $attempt->markFailed($reason, $exception instanceof PushDeliveryException ? $exception->getMessage() : 'Unexpected push delivery error.');
@@ -124,6 +135,6 @@ final readonly class CaregiverAlertNotifier
             }
         }
 
-        return new NotificationRoundResult(count($seen), $alreadySent, $sent, $transientFailures, $invalidTokens, $missingTokens);
+        return new NotificationRoundResult(count($seen), $alreadySent, $sent, $transientFailures, $invalidTokens, $missingTokens, $permanentFailures);
     }
 }

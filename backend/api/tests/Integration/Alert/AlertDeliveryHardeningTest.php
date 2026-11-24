@@ -8,6 +8,7 @@ use App\Domain\Alert\Handler\SendFallAlertPushMessageHandler;
 use App\Domain\Alert\Message\SendFallAlertPushMessage;
 use App\Domain\Alert\Service\CaregiverAlertNotifier;
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Domain\Push\Port\PushGatewayInterface;
@@ -144,6 +145,24 @@ final class AlertDeliveryHardeningTest extends KernelTestCase
 
         $this->entityManager->clear();
         self::assertNull($tokens->findByDeviceId($caregiver->getId()->toRfc4122()));
+    }
+
+    public function testARejectedMessageKeepsTheTokenAndIsNotRetried(): void
+    {
+        [$alert, $caregiver] = $this->dueAlertWithCaregiver('fcm-still-valid');
+        $tokens = self::getContainer()->get(DoctrineCaregiverPushTokenRepository::class);
+        self::assertInstanceOf(DoctrineCaregiverPushTokenRepository::class, $tokens);
+        $alertId = $alert->getId()->toRfc4122();
+
+        $this->handler(static fn (): array => throw new PermanentPushDeliveryException('FCM send failed (HTTP 400).', 'INVALID_ARGUMENT'))(
+            new SendFallAlertPushMessage($alertId),
+        );
+
+        $this->entityManager->clear();
+        self::assertInstanceOf(CaregiverPushToken::class, $tokens->findByDeviceId($caregiver->getId()->toRfc4122()));
+        $failed = $this->reload($alertId);
+        self::assertSame(FallAlertStatus::Failed, $failed->getStatus());
+        self::assertNull($failed->getNextDispatchRetryAt());
     }
 
     public function testATokenReRegisteredMeanwhileIsNotDeleted(): void

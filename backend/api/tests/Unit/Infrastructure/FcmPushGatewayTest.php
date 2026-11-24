@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Infrastructure;
 
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\FcmPushGateway;
@@ -201,10 +202,15 @@ final class FcmPushGatewayTest extends TestCase
     /** @return iterable<string, array{int, array<string, mixed>|null, class-string, string}> */
     public static function failureResponses(): iterable
     {
+        // Only an unambiguous "this token is dead" deletes the token.
         yield 'unregistered token' => [404, self::fcmError(404, 'NOT_FOUND', 'UNREGISTERED'), InvalidPushTokenException::class, 'UNREGISTERED'];
-        yield 'invalid token argument' => [400, self::fcmError(400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT'), InvalidPushTokenException::class, 'INVALID_ARGUMENT'];
-        yield 'sender id mismatch' => [403, self::fcmError(403, 'PERMISSION_DENIED', 'SENDER_ID_MISMATCH'), InvalidPushTokenException::class, 'SENDER_ID_MISMATCH'];
-        yield 'bare 404' => [404, null, InvalidPushTokenException::class, 'http_404'];
+        yield 'invalid argument on message.token' => [400, self::fcmError(400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'message.token'), InvalidPushTokenException::class, 'INVALID_ARGUMENT'];
+        // Rejected message (e.g. payload regression): permanent for this attempt, token kept.
+        yield 'invalid argument on the payload' => [400, self::fcmError(400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT', 'message.android.notification'), PermanentPushDeliveryException::class, 'INVALID_ARGUMENT'];
+        yield 'invalid argument without field violation' => [400, self::fcmError(400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT'), PermanentPushDeliveryException::class, 'INVALID_ARGUMENT'];
+        yield 'sender id mismatch (possible misconfiguration)' => [403, self::fcmError(403, 'PERMISSION_DENIED', 'SENDER_ID_MISMATCH'), PermanentPushDeliveryException::class, 'SENDER_ID_MISMATCH'];
+        yield 'bare 404 without body' => [404, null, PermanentPushDeliveryException::class, 'http_404'];
+        // Transient: retried later, token kept.
         yield 'quota exceeded' => [429, self::fcmError(429, 'RESOURCE_EXHAUSTED', 'QUOTA_EXCEEDED'), TransientPushDeliveryException::class, 'QUOTA_EXCEEDED'];
         yield 'fcm unavailable' => [503, self::fcmError(503, 'UNAVAILABLE', 'UNAVAILABLE'), TransientPushDeliveryException::class, 'UNAVAILABLE'];
         yield 'internal error without body' => [500, null, TransientPushDeliveryException::class, 'http_500'];
@@ -229,7 +235,7 @@ final class FcmPushGatewayTest extends TestCase
         try {
             $gateway->send('fcm-secret-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z'));
             self::fail('Expected a push delivery exception.');
-        } catch (InvalidPushTokenException|TransientPushDeliveryException $exception) {
+        } catch (InvalidPushTokenException|PermanentPushDeliveryException|TransientPushDeliveryException $exception) {
             self::assertInstanceOf($expectedClass, $exception);
             self::assertSame($expectedReason, $exception->getReason());
             self::assertSame(sprintf('FCM send failed (HTTP %d).', $status), $exception->getMessage());
@@ -291,13 +297,22 @@ final class FcmPushGatewayTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private static function fcmError(int $code, string $status, string $errorCode): array
+    private static function fcmError(int $code, string $status, string $errorCode, ?string $violatedField = null): array
     {
+        $details = [['@type' => 'type.googleapis.com/google.firebase.fcm.v1.FcmError', 'errorCode' => $errorCode]];
+
+        if (null !== $violatedField) {
+            $details[] = [
+                '@type' => 'type.googleapis.com/google.rpc.BadRequest',
+                'fieldViolations' => [['field' => $violatedField, 'description' => 'Invalid value']],
+            ];
+        }
+
         return ['error' => [
             'code' => $code,
-            'message' => 'Requested entity was not found.',
+            'message' => 'Request contains an invalid argument.',
             'status' => $status,
-            'details' => [['@type' => 'type.googleapis.com/google.firebase.fcm.v1.FcmError', 'errorCode' => $errorCode]],
+            'details' => $details,
         ]];
     }
 

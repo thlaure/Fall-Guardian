@@ -12,6 +12,7 @@ use App\Domain\Alert\Service\CaregiverAlertNotifier;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface;
 use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
 use App\Domain\Push\Port\PushGatewayInterface;
 use App\Entity\CaregiverLink;
@@ -156,6 +157,43 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
         $this->fallAlertRepository->expects($this->once())
             ->method('completeDispatch')
             ->with($this->alertId(), FallAlertStatus::Failed, $this->clock->now()->modify('+15 seconds'))
+            ->willReturn(true);
+
+        ($this->handler)(new SendFallAlertPushMessage($this->alertId()));
+    }
+
+    #[Test]
+    public function itKeepsTheTokenAndDoesNotRetryWhenTheProviderRejectsTheMessage(): void
+    {
+        $this->givenClaimedAlert();
+        $this->givenCaregivers(['first' => 'token-1', 'second' => 'token-2']);
+        // e.g. INVALID_ARGUMENT on the payload: every caregiver gets the same rejection.
+        $this->pushGateway->method('send')->willThrowException(new PermanentPushDeliveryException('FCM send failed (HTTP 400).', 'INVALID_ARGUMENT'));
+        $this->pushTokenRepository->expects($this->never())->method('deleteIfUnchanged');
+
+        $this->fallAlertRepository->expects($this->once())
+            ->method('completeDispatch')
+            ->with($this->alertId(), FallAlertStatus::Failed, null)
+            ->willReturn(true);
+
+        ($this->handler)(new SendFallAlertPushMessage($this->alertId()));
+    }
+
+    #[Test]
+    public function itFinalisesAsPartiallySentWhenTheOtherCaregiverMessageWasRejected(): void
+    {
+        $this->givenClaimedAlert();
+        $this->givenCaregivers(['first' => 'token-1', 'second' => 'token-2']);
+        $this->pushGateway->method('send')->willReturnCallback(
+            static fn (string $token): array => 'token-2' === $token
+                ? throw new PermanentPushDeliveryException('FCM send failed (HTTP 403).', 'SENDER_ID_MISMATCH')
+                : ['providerMessageId' => 'push-1', 'status' => 'sent'],
+        );
+        $this->pushTokenRepository->expects($this->never())->method('deleteIfUnchanged');
+
+        $this->fallAlertRepository->expects($this->once())
+            ->method('completeDispatch')
+            ->with($this->alertId(), FallAlertStatus::PartiallySent, null)
             ->willReturn(true);
 
         ($this->handler)(new SendFallAlertPushMessage($this->alertId()));
