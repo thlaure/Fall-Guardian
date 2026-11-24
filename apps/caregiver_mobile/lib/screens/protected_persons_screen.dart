@@ -51,7 +51,6 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
         _loading = false;
       });
     } catch (e) {
-      debugPrint('Protected persons load error: $e');
       developer.log(
         'Protected persons load error: $e',
         name: 'ProtectedPersonsScreen',
@@ -73,7 +72,8 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => LinkScreen(onLinked: _handleLinked),
+        builder: (_) =>
+            LinkScreen(onLinked: _handleLinked, backend: widget.backend),
       ),
     );
   }

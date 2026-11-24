@@ -29,6 +29,30 @@ void main() {
     expect(find.text('Marie'), findsOneWidget);
     expect(find.text('1 alert'), findsOneWidget);
   });
+
+  testWidgets('shows handling status per alert and keeps undated last', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: const [AppLocalizations.delegate],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: AlertHistoryScreen(backend: _StatusBackendService()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Handled by you'), findsOneWidget);
+    expect(find.text('Waiting for you to respond'), findsNWidgets(2));
+    expect(find.byIcon(Icons.location_on), findsOneWidget);
+    expect(find.text('3 alerts'), findsOneWidget);
+    final handledY = tester.getTopLeft(find.text('Handled by you')).dy;
+    final waitingY = tester
+        .getTopLeft(find.text('Waiting for you to respond').first)
+        .dy;
+    expect(handledY, lessThan(waitingY));
+  });
 }
 
 class _RetryBackendService extends CaregiverBackendService {
@@ -52,4 +76,36 @@ class _RetryBackendService extends CaregiverBackendService {
       },
     ];
   }
+}
+
+class _StatusBackendService extends CaregiverBackendService {
+  @override
+  Future<List<Map<String, dynamic>>> getCaregiverAlerts() async => [
+    {
+      'id': 'undated',
+      'protectedDeviceId': 'device-1',
+      'protectedDevicePlatform': 'ios',
+      'fallDetectedAt': 'not a date',
+      'status': 'sent',
+      'acknowledged': false,
+    },
+    {
+      'id': 'handled',
+      'protectedDeviceId': 'device-1',
+      'protectedDevicePlatform': 'ios',
+      'fallDetectedAt': '2026-07-24T17:00:00+00:00',
+      'status': 'sent',
+      'acknowledged': true,
+      'latitude': 48.85,
+      'longitude': 2.35,
+    },
+    {
+      'id': 'other-undated',
+      'protectedDeviceId': 'device-1',
+      'protectedDevicePlatform': 'ios',
+      'fallDetectedAt': null,
+      'status': 'sent',
+      'acknowledged': false,
+    },
+  ];
 }

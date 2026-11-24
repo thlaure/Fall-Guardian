@@ -47,7 +47,7 @@ coverage: ## Run Flutter tests with coverage output
 	flutter test --coverage
 
 coverage-check: coverage ## Require at least 90% line coverage
-	dart run tool/check_lcov.dart coverage/lcov.info 90 lib/l10n/ lib/screens/
+	dart run tool/check_lcov.dart coverage/lcov.info 90 lib/l10n/
 
 quality: format-check analyze coverage-check ## Run deterministic quality checks
 

@@ -54,13 +54,57 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get alertIdTitle => 'Alert ID';
   @override
-  String get acknowledge => 'Acknowledge';
+  String get imHandlingIt => "I'm handling it";
+  @override
+  String fallDetectedFor(String name) => '$name may have fallen';
+  @override
+  String get yourContact => 'Your contact';
+  @override
+  String detectedOn(String date, String time) => 'Detected on $date at $time';
+  @override
+  String get justNow => 'just now';
+  @override
+  String minutesAgo(int minutes) => '$minutes min ago';
+  @override
+  String hoursAgo(int hours) => '$hours h ago';
+  @override
+  String daysAgo(int days) => days == 1 ? '1 day ago' : '$days days ago';
+  @override
+  String get openInMaps => 'Open in Maps';
+  @override
+  String get mapsUnavailable => 'No maps app could open this location.';
+  @override
+  String callEmergencyServices(String number) =>
+      'Call emergency services ($number)';
+  @override
+  String get dialerUnavailable => 'Could not open the phone dialer.';
+  @override
+  String get alertDetailsTitle => 'Technical details';
+  @override
+  String coordinatesLabel(String latitude, String longitude) =>
+      'Coordinates: $latitude, $longitude';
+  @override
+  String get reminderBanner => 'Reminder — no one has responded yet';
+  @override
+  String get handlingByMe => 'You are handling this';
+  @override
+  String get handlingByOther => 'Another caregiver is handling this';
+  @override
+  String handlingByOtherSince(String time) =>
+      'Another caregiver is handling this since $time';
+  @override
+  String get closeAlert => 'Close';
+  @override
+  String moreAlertsWaiting(int count) =>
+      count == 1 ? '1 more alert waiting' : '$count more alerts waiting';
+  @override
+  String fallAlertSemantics(String name) => 'Fall alert for $name';
   @override
   String get activeAlertGuidanceWithLocation =>
-      'Acknowledge when you have seen this alert. If you cannot reach the protected person, use the location below and call emergency services.';
+      'Tap “I\'m handling it” once you are taking care of this alert. If you cannot reach your contact, open the location in Maps and call emergency services.';
   @override
   String get activeAlertGuidanceWithoutLocation =>
-      'Acknowledge when you have seen this alert. If you cannot reach the protected person, call emergency services and explain that no location was provided.';
+      'Tap “I\'m handling it” once you are taking care of this alert. If you cannot reach your contact, call emergency services and explain that no location was provided.';
   @override
   String get activeAlertEmergencyTitle => 'Emergency actions';
   @override
@@ -151,9 +195,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get statusStoppedByProtectedPerson => 'Cancelled by protected person';
   @override
-  String get statusAcknowledged => 'Acknowledged by caregiver';
+  String get statusAcknowledged => 'Handled by you';
   @override
-  String get statusUnacknowledged => 'Needs caregiver acknowledgement';
+  String get statusUnacknowledged => 'Waiting for you to respond';
   @override
   String get unknownDate => 'Unknown date';
 }

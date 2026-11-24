@@ -114,6 +114,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => ProtectedPersonsScreen(
+                      backend: widget.backend,
                       onLinked: _onLinked,
                       onLinksChanged: _onLinksChanged,
                     ),
@@ -130,7 +131,8 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   ? () => Navigator.push(
                       context,
                       MaterialPageRoute<void>(
-                        builder: (_) => const AlertHistoryScreen(),
+                        builder: (_) =>
+                            AlertHistoryScreen(backend: widget.backend),
                       ),
                     )
                   : null,
