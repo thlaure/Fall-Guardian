@@ -69,10 +69,15 @@ class _FakeBackendGateway implements AlertBackendGateway {
     this.cancelCompleter,
     this.receipt,
     this.repairRequired = false,
+    this.laterSubmitsCompleter,
     this.log,
   });
 
   final List<String>? log;
+
+  /// When set, every submission after the first waits for it (models a slow
+  /// fallback submission while the first registration already answered).
+  final Completer<void>? laterSubmitsCompleter;
 
   /// Returned by successful submissions (null = API without deadline data).
   FallAlertReceipt? receipt;
@@ -128,7 +133,11 @@ class _FakeBackendGateway implements AlertBackendGateway {
       throw Exception('backend unavailable');
     }
 
-    await submitCompleter?.future;
+    if (callCount > 1 && laterSubmitsCompleter != null) {
+      await laterSubmitsCompleter!.future;
+    } else {
+      await submitCompleter?.future;
+    }
     return receipt;
   }
 
@@ -1074,5 +1083,149 @@ void main() {
       expect(watch.lastFallTimestamp, timestamp);
       coordinator.dispose();
     });
+  });
+  group('cancel before fall and aliases', () {
+    test(
+      'a targeted watch cancel arriving before its fall cancels it',
+      () async {
+        final repo = _FakeFallEventsRepository();
+        final backend = _FakeBackendGateway();
+        final coordinator = _coordinator(
+          eventRecorder: repo,
+          backendGateway: backend,
+        );
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        const id = '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f';
+
+        await coordinator.cancelFromWatch(
+          incidentId: id,
+          fallTimestamp: timestamp,
+        );
+        await coordinator.startAlert(timestamp, clientAlertId: id);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+        expect(backend.cancelCount, 1);
+        coordinator.dispose();
+      },
+    );
+
+    test(
+      'a cancel tombstone expires and never cancels an unrelated fall',
+      () async {
+        final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+        final repo = _FakeFallEventsRepository();
+        final coordinator = _coordinator(clock: clock, eventRecorder: repo);
+        final timestamp = clock.now().millisecondsSinceEpoch;
+
+        await coordinator.cancelFromWatch(incidentId: 'incident-a');
+        await coordinator.startAlert(timestamp, clientAlertId: 'incident-b');
+        await Future<void>.delayed(Duration.zero);
+        expect(coordinator.currentState?.phase, AlertPhase.countdown);
+        await coordinator.cancelFromPhone();
+
+        // Expired: the cancel names the next fall's timestamp but is 3 min old.
+        final later = clock
+            .now()
+            .add(const Duration(minutes: 3))
+            .millisecondsSinceEpoch;
+        await coordinator.cancelFromWatch(fallTimestamp: later);
+        clock.setNow(clock.now().add(const Duration(minutes: 3)));
+        await coordinator.startAlert(later);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(coordinator.currentState?.phase, AlertPhase.countdown);
+        coordinator.dispose();
+      },
+    );
+
+    test(
+      'an untargeted cancel before any fall never cancels a later fall',
+      () async {
+        final coordinator = _coordinator();
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+        await coordinator.cancelFromWatch();
+        await coordinator.startAlert(timestamp);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(coordinator.currentState?.phase, AlertPhase.countdown);
+        coordinator.dispose();
+      },
+    );
+
+    test(
+      'a cancel naming the watch UUID alias cancels the legacy-id alert',
+      () async {
+        final repo = _FakeFallEventsRepository();
+        final coordinator = _coordinator(eventRecorder: repo);
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        const uuid = '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f';
+
+        await coordinator.startAlert(
+          timestamp,
+          clientAlertId: 'wear-os-$timestamp',
+        );
+        // Second transport of the same fall brings the watch UUID.
+        expect(
+          await coordinator.startAlert(
+            timestamp,
+            clientAlertId: 'wear-os-$timestamp',
+            incidentId: uuid,
+          ),
+          isFalse,
+        );
+        await Future<void>.delayed(Duration.zero);
+        await coordinator.cancelFromWatch(incidentId: uuid);
+
+        expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+        coordinator.dispose();
+      },
+    );
+  });
+
+  test('a delayed fall whose registration answers during the fallback gets the '
+      'cancel button back and the fallback stops', () async {
+    final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+    final submit = Completer<void>();
+    final fallbackSubmit = Completer<void>();
+    final repo = _FakeFallEventsRepository();
+    final phases = <AlertPhase>[];
+    final backend = _FakeBackendGateway(
+      submitCompleter: submit,
+      laterSubmitsCompleter: fallbackSubmit,
+      receipt: const FallAlertReceipt(remainingGrace: Duration(seconds: 20)),
+    );
+    final coordinator = _coordinator(
+      clock: clock,
+      backendGateway: backend,
+      eventRecorder: repo,
+    );
+    final sub = coordinator.stateStream.listen((s) => phases.add(s.phase));
+
+    // Delivered 60 s late: the local fallback deadline has already passed,
+    // so the fallback starts while the first registration is still pending.
+    await coordinator.startAlert(clock.now().millisecondsSinceEpoch - 60000);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(coordinator.currentState?.phase, AlertPhase.sendingAlert);
+
+    // The first registration answers with an open 20 s server window while
+    // the redundant fallback submission is still in flight.
+    submit.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(coordinator.currentState?.phase, AlertPhase.countdown);
+    expect(coordinator.remainingCountdownSeconds, 20);
+
+    // The superseded fallback finishing later must not override that state.
+    fallbackSubmit.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(coordinator.currentState?.phase, AlertPhase.countdown);
+    expect(repo.savedEvents, isEmpty, reason: 'no premature "sent" outcome');
+    expect(phases.last, AlertPhase.countdown);
+
+    await sub.cancel();
+    coordinator.dispose();
   });
 }

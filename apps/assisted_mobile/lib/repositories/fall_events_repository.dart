@@ -33,6 +33,15 @@ class FallEventsRepository implements FallEventRecorder {
     return events..sort((a, b) => b.timestamp.compareTo(a.timestamp));
   }
 
+  /// Current local outcome for the fall at [timestamp], if any.
+  Future<FallEventStatus?> statusAt(DateTime timestamp) async {
+    final events = await getAll();
+    for (final event in events) {
+      if (event.timestamp.isAtSameMomentAs(timestamp)) return event.status;
+    }
+    return null;
+  }
+
   int _outcomePriority(FallEventStatus status) => switch (status) {
     FallEventStatus.cancelled => 4,
     FallEventStatus.cancellationPending => 3,

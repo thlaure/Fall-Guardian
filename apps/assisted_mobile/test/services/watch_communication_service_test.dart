@@ -28,7 +28,7 @@ void main() {
       () async {
         final service = WatchCommunicationService();
         int? receivedTimestamp;
-        service.setFallDetectedCallback((timestamp, _) {
+        service.setFallDetectedCallback((timestamp, _, {incidentId}) {
           receivedTimestamp = timestamp;
         });
 
@@ -44,7 +44,7 @@ void main() {
     test('onFallDetected forwards the native idempotency key', () async {
       final service = WatchCommunicationService();
       String? receivedClientAlertId;
-      service.setFallDetectedCallback((_, clientAlertId) {
+      service.setFallDetectedCallback((_, clientAlertId, {incidentId}) {
         receivedClientAlertId = clientAlertId;
       });
 
@@ -62,7 +62,7 @@ void main() {
       () async {
         final service = WatchCommunicationService();
         int? receivedTimestamp;
-        service.setFallDetectedCallback((timestamp, _) {
+        service.setFallDetectedCallback((timestamp, _, {incidentId}) {
           receivedTimestamp = timestamp;
         });
 
@@ -104,7 +104,9 @@ void main() {
     test('dispose clears the channel handler', () async {
       final service = WatchCommunicationService();
       var fallDetected = false;
-      service.setFallDetectedCallback((_, _) => fallDetected = true);
+      service.setFallDetectedCallback(
+        (_, _, {incidentId}) => fallDetected = true,
+      );
 
       service.dispose();
 
@@ -319,5 +321,90 @@ void main() {
 
       expect(await WatchCommunicationService.takeRelayOutcomes(), isEmpty);
     });
+  });
+  group('review fixes', () {
+    test('onFallDetected forwards the watch incident alias', () async {
+      final service = WatchCommunicationService();
+      String? alias;
+      service.setFallDetectedCallback(
+        (_, _, {incidentId}) => alias = incidentId,
+      );
+
+      await simulateNativeCall('onFallDetected', {
+        'timestamp': 1,
+        'clientAlertId': 'wear-os-1',
+        'incidentId': '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f',
+      });
+
+      expect(alias, '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f');
+      service.dispose();
+    });
+
+    test('acknowledgeRelayOutcomes sends keys and skips empty lists', () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
+
+      await WatchCommunicationService.acknowledgeRelayOutcomes(const []);
+      await WatchCommunicationService.acknowledgeRelayOutcomes(const ['k1']);
+
+      expect(calls.single.method, 'acknowledgeRelayOutcomes');
+      expect(calls.single.arguments, {
+        'keys': ['k1'],
+      });
+    });
+
+    test('takeRelayOutcomes keeps the native acknowledgement key', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (call) async => [
+              {
+                'clientAlertId': 'a',
+                'timestamp': 1,
+                'outcome': 'dropped',
+                'key': 'k',
+              },
+            ],
+          );
+
+      final outcomes = await WatchCommunicationService.takeRelayOutcomes();
+
+      expect(outcomes.single.key, 'k');
+    });
+
+    test(
+      'discardQueuedAlertsForRepair calls native and tolerates no relay',
+      () async {
+        MethodCall? captured;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              captured = call;
+              return 2;
+            });
+        await WatchCommunicationService.discardQueuedAlertsForRepair();
+        expect(captured?.method, 'discardQueuedAlertsForRepair');
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        await WatchCommunicationService.discardQueuedAlertsForRepair();
+      },
+    );
+  });
+
+  test('requestPendingWatchEvents asks native and swallows errors', () async {
+    MethodCall? captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          captured = call;
+          throw PlatformException(code: 'ERR');
+        });
+
+    await WatchCommunicationService.requestPendingWatchEvents();
+
+    expect(captured?.method, 'deliverPendingWatchEvents');
   });
 }

@@ -215,4 +215,19 @@ void main() {
       },
     );
   });
+
+  test('statusAt returns the stored outcome for a fall timestamp', () async {
+    final repository = FallEventsRepository(store: _FakeStore());
+    final timestamp = DateTime.utc(2026, 1, 1, 12);
+    await repository.add(
+      FallEvent(
+        id: 'e1',
+        timestamp: timestamp,
+        status: FallEventStatus.alertFailed,
+      ),
+    );
+
+    expect(await repository.statusAt(timestamp), FallEventStatus.alertFailed);
+    expect(await repository.statusAt(DateTime.utc(2026)), isNull);
+  });
 }

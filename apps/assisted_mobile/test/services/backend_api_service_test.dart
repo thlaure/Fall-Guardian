@@ -844,7 +844,7 @@ void main() {
       store.data['backend_device_token'] = 'token-1';
     });
 
-    for (final status in [401, 403]) {
+    for (final status in [401]) {
       test(
         'ensureReady on $status flags re-pairing and never registers',
         () async {
@@ -999,6 +999,7 @@ void main() {
         pairing.repairRequired.value = true;
         final requests = <String>[];
         final service = BackendApiService(
+          discardQueuedAlertsForRepair: () async {},
           store: store,
           pairingState: pairing,
           client: MockClient((request) async {
@@ -1026,6 +1027,7 @@ void main() {
     test('a failed repairDevice keeps the re-pair state', () async {
       store.data[BackendApiService.reauthRequiredKey] = 'true';
       final service = BackendApiService(
+        discardQueuedAlertsForRepair: () async {},
         store: store,
         pairingState: pairing,
         client: MockClient((request) async => http.Response('down', 503)),
@@ -1273,6 +1275,7 @@ void main() {
       store.data[BackendApiService.reauthRequiredKey] = 'true';
       final pairing = DevicePairingState()..repairRequired.value = true;
       final service = BackendApiService(
+        discardQueuedAlertsForRepair: () async {},
         store: store,
         pairingState: pairing,
         client: MockClient(
@@ -1303,6 +1306,97 @@ void main() {
         service.syncContacts(const []),
         throwsA(isA<DeviceRepairRequiredException>()),
       );
+    });
+  });
+  group('review fixes', () {
+    test('403 is a retryable error, never a re-pair trigger', () async {
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+      final pairing = DevicePairingState();
+      var calls = 0;
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        submitRetryDelays: const [Duration.zero],
+        client: MockClient((request) async {
+          calls++;
+          return calls == 1
+              ? http.Response('edge policy', 403)
+              : http.Response('{}', 201);
+        }),
+      );
+
+      await service.submitFallAlert(
+        clientAlertId: 'alert-1',
+        fallTimestamp: 0,
+        locale: 'en',
+        latitude: null,
+        longitude: null,
+      );
+
+      expect(calls, 2);
+      expect(pairing.repairRequired.value, isFalse);
+      expect(
+        store.data.containsKey(BackendApiService.reauthRequiredKey),
+        isFalse,
+      );
+    });
+
+    test(
+      'ensureReady on 403 reports a plain failure and keeps credentials',
+      () async {
+        store.data['backend_device_id'] = 'device-1';
+        store.data['backend_device_token'] = 'token-1';
+        final pairing = DevicePairingState();
+        final service = BackendApiService(
+          store: store,
+          pairingState: pairing,
+          client: MockClient((request) async => http.Response('nope', 403)),
+        );
+
+        await expectLater(
+          service.ensureReady(),
+          throwsA(
+            isA<BackendApiException>()
+                .having(
+                  (e) => e is DeviceRepairRequiredException,
+                  'repair',
+                  false,
+                )
+                .having((e) => e.statusCode, 'statusCode', 403),
+          ),
+        );
+        expect(pairing.repairRequired.value, isFalse);
+      },
+    );
+
+    test('repairDevice reports queued incidents before registering the new '
+        'device', () async {
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      final order = <String>[];
+      final service = BackendApiService(
+        store: store,
+        pairingState: DevicePairingState(),
+        discardQueuedAlertsForRepair: () async {
+          order.add('discard');
+          expect(
+            store.data.containsKey('backend_device_token'),
+            isFalse,
+            reason: 'old token gone so the relay cannot send meanwhile',
+          );
+        },
+        client: MockClient((request) async {
+          order.add('register');
+          return http.Response(
+            jsonEncode({'deviceId': 'device-2', 'deviceToken': 'token-2'}),
+            201,
+          );
+        }),
+      );
+
+      await service.repairDevice();
+
+      expect(order, ['discard', 'register']);
     });
   });
 }

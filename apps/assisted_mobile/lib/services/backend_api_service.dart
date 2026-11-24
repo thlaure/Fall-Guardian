@@ -11,6 +11,7 @@ import 'alert_ports.dart';
 import 'device_pairing_state.dart';
 import 'device_registration_marker.dart';
 import 'secure_store.dart';
+import 'watch_communication_service.dart';
 
 class BackendApiService implements AlertBackendGateway {
   BackendApiService({
@@ -24,7 +25,11 @@ class BackendApiService implements AlertBackendGateway {
     List<Duration>? cancellationRetryDelays,
     DevicePairingState? pairingState,
     DeviceRegistrationMarker? registrationMarker,
+    Future<void> Function()? discardQueuedAlertsForRepair,
   }) : _store = store ?? SecureKeyValueStore(),
+       _discardQueuedAlertsForRepair =
+           discardQueuedAlertsForRepair ??
+           WatchCommunicationService.discardQueuedAlertsForRepair,
        _registrationMarker =
            registrationMarker ?? const SharedPreferencesRegistrationMarker(),
        _pairingState = pairingState ?? DevicePairingState.shared,
@@ -51,6 +56,7 @@ class BackendApiService implements AlertBackendGateway {
   final KeyValueStore _store;
   final DevicePairingState _pairingState;
   final DeviceRegistrationMarker _registrationMarker;
+  final Future<void> Function() _discardQueuedAlertsForRepair;
   final http.Client _client;
   final String? _baseUrlOverride;
   final bool _releaseMode;
@@ -169,6 +175,7 @@ class BackendApiService implements AlertBackendGateway {
     if (error is! BackendApiException) return true;
     final statusCode = error.statusCode;
     return statusCode == null ||
+        statusCode == HttpStatus.forbidden ||
         statusCode == HttpStatus.requestTimeout ||
         statusCode == HttpStatus.tooManyRequests ||
         statusCode >= 500;
@@ -507,15 +514,21 @@ class BackendApiService implements AlertBackendGateway {
   Future<void> repairDevice() async {
     await _store.delete(_deviceIdKey);
     await _store.delete(_deviceTokenKey);
+    // Queued incidents belong to the old registration. The new device has no
+    // caregiver links, so they must not be sent silently under it: the native
+    // relay reports them in history (caregivers may not have been reached).
+    // Done after deleting the old token (the relay cannot send meanwhile)
+    // and before registering (the new token must never pick them up).
+    await _discardQueuedAlertsForRepair();
     await _register();
     await _clearRepairRequired();
   }
 
   Future<void> _throwIfCredentialsRejected(http.Response response) async {
-    if (response.statusCode != HttpStatus.unauthorized &&
-        response.statusCode != HttpStatus.forbidden) {
-      return;
-    }
+    // Only 401 means the backend no longer knows this token. 403 can be
+    // transient (edge/WAF policy) and is retried like other server-side
+    // refusals instead of forcing the user to re-pair.
+    if (response.statusCode != HttpStatus.unauthorized) return;
     await _store.write(reauthRequiredKey, 'true');
     _pairingState.repairRequired.value = true;
     throw DeviceRepairRequiredException(statusCode: response.statusCode);

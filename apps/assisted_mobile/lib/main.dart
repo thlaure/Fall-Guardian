@@ -107,8 +107,10 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _watchService.setFallDetectedCallback(_onFallDetected);
+    _watchService.setFallDetectedCallback(_onWatchFallDetected);
     _watchService.setCancelAlertCallback(_onAlertCancelled);
+    // Handlers are set: pull watch events native code kept for us.
+    unawaited(WatchCommunicationService.requestPendingWatchEvents());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrapBackend());
     });
@@ -151,9 +153,11 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   /// running: terminal outcomes for history, and the re-pairing flag.
   Future<void> _syncNativeRelayState() async {
     try {
+      final history = FallEventsRepository();
       await RelayOutcomeImporter(
-        recorder: FallEventsRepository(),
+        recorder: history,
         idGenerator: const UuidGenerator(),
+        existingStatus: history.statusAt,
       ).importOutcomes();
       await _backendApi.isRepairRequired();
     } catch (error, stackTrace) {
@@ -182,7 +186,19 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   // Called by WatchCommunicationService when the watch detects a fall.
   // [timestamp] is the Unix epoch in milliseconds of the moment the fall
   // was detected — it is the shared "origin" that keeps both countdowns in sync.
-  Future<void> _onFallDetected(int timestamp, [String? clientAlertId]) async {
+  void _onWatchFallDetected(
+    int timestamp,
+    String? clientAlertId, {
+    String? incidentId,
+  }) {
+    unawaited(_onFallDetected(timestamp, clientAlertId, incidentId));
+  }
+
+  Future<void> _onFallDetected(
+    int timestamp, [
+    String? clientAlertId,
+    String? incidentId,
+  ]) async {
     // Retrieve the current localization bundle so we can build translated
     // notification strings. We use the navigator's context rather than the
     // widget's own context because this method can be called at any time,
@@ -190,6 +206,7 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     final started = await _alertCoordinator.startAlert(
       timestamp,
       clientAlertId: clientAlertId,
+      incidentId: incidentId,
     );
     if (!started) return;
 

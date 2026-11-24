@@ -103,6 +103,18 @@ class AlertCoordinator {
   // gates caregiver dispatch.
   Duration? _deadline;
 
+  // Bumped whenever a running fallback escalation must stop (late
+  // registration reopened the countdown, or the alert was cancelled).
+  int _escalationGeneration = 0;
+
+  // Other ids the active incident is known by (watch UUID vs legacy id).
+  final Set<String> _activeAliases = {};
+
+  // Targeted watch cancels that arrived before their fall (see
+  // [cancelFromWatch]); consumed by [startAlert] within [_tombstoneTtl].
+  static const _tombstoneTtl = Duration(minutes: 2);
+  final List<_CancelTombstone> _cancelTombstones = [];
+
   // Set when the backend rejected this phone's credentials: caregivers can
   // NOT be notified until the user re-pairs. Never hidden behind "sent".
   bool _repairRequired = false;
@@ -121,11 +133,21 @@ class AlertCoordinator {
   Stream<void> get dismissStream => _dismissController.stream;
   AlertUiState? get currentState => _currentState;
 
-  Future<bool> startAlert(int timestamp, {String? clientAlertId}) async {
+  /// [incidentId] is the watch-generated UUID when it differs from
+  /// [clientAlertId] (the incident was first known under a legacy id); it is
+  /// remembered as an alias so cancels naming it still match.
+  Future<bool> startAlert(
+    int timestamp, {
+    String? clientAlertId,
+    String? incidentId,
+  }) async {
     // One unresolved incident owns one fixed grace-window deadline. Sensor
     // re-triggers and duplicate watch transports must not replace it, restart
     // its timer, or create another backend alert.
-    if (_activeTimestamp != null) return false;
+    if (_activeTimestamp != null) {
+      if (timestamp == _activeTimestamp) _addAlias(incidentId);
+      return false;
+    }
 
     _cancelTimers();
     _activeTimestamp = timestamp;
@@ -133,6 +155,8 @@ class AlertCoordinator {
       final value? when value.isNotEmpty => value,
       _ => _idGenerator.newId(),
     };
+    _activeAliases.clear();
+    _addAlias(incidentId);
     _registeredWithBackend = false;
     _repairRequired = false;
     _lastKnownPosition = null;
@@ -143,6 +167,37 @@ class AlertCoordinator {
     _setDeadline(timestamp, _clock.elapsed() + _fallbackRemaining(timestamp));
 
     unawaited(_persistThenRegister(timestamp, _activeClientAlertId!));
+
+    // The watch cancel for this incident may have arrived before the fall
+    // (transports are not ordered): honour it now instead of escalating.
+    if (_takeMatchingTombstone()) {
+      developer.log(
+        'Fall matched an earlier watch cancel; cancelling',
+        name: 'AlertCoordinator',
+      );
+      unawaited(_cancel(notifyWatch: false));
+    }
+    return true;
+  }
+
+  void _addAlias(String? incidentId) {
+    final alias = incidentId?.trim().toLowerCase();
+    if (alias == null || alias.isEmpty) return;
+    if (alias == _activeClientAlertId?.toLowerCase()) return;
+    _activeAliases.add(alias);
+  }
+
+  bool _takeMatchingTombstone() {
+    final now = _clock.elapsed();
+    _cancelTombstones.removeWhere(
+      (tombstone) => now - tombstone.createdAt > _tombstoneTtl,
+    );
+    final index = _cancelTombstones.indexWhere(
+      (tombstone) =>
+          _matchesActive(tombstone.incidentId, tombstone.fallTimestamp),
+    );
+    if (index < 0) return false;
+    _cancelTombstones.removeAt(index);
     return true;
   }
 
@@ -216,7 +271,28 @@ class AlertCoordinator {
     if (!_isCurrentAlert(timestamp)) return;
     _registeredWithBackend = true;
     _applyReceipt(timestamp, receipt);
+    _reopenCountdownIfServerWindowOpen(timestamp, receipt);
     unawaited(_attachLocationWhenAvailable(timestamp, clientAlertId));
+  }
+
+  /// A delayed watch event can hit the local fallback deadline before the
+  /// immediate registration answers, so the fallback already shows
+  /// "getting location / sending". If the server then reports its cancel
+  /// window is still open, give the user the cancel button back and stop the
+  /// now-redundant fallback from overriding that state.
+  void _reopenCountdownIfServerWindowOpen(
+    int timestamp,
+    FallAlertReceipt? receipt,
+  ) {
+    final remaining = receipt?.remainingGrace;
+    if (remaining == null || remaining <= Duration.zero) return;
+    final phase = _currentState?.phase;
+    if (phase != AlertPhase.gettingLocation &&
+        phase != AlertPhase.sendingAlert) {
+      return;
+    }
+    _escalationGeneration++;
+    _transition(timestamp, AlertPhase.countdown);
   }
 
   /// Keeps the countdown (the user may still cancel) but tells them right
@@ -278,13 +354,26 @@ class AlertCoordinator {
     final targeted =
         (incidentId?.trim().isNotEmpty ?? false) || fallTimestamp != null;
     if (targeted &&
-        _activeTimestamp != null &&
-        !_matchesActive(incidentId, fallTimestamp)) {
-      developer.log(
-        'Ignoring watch cancel for a different incident',
-        name: 'AlertCoordinator',
+        !(_activeTimestamp != null &&
+            _matchesActive(incidentId, fallTimestamp))) {
+      // Not (yet) the active incident: keep a short-lived tombstone in case
+      // its fall arrives after the cancel. Never for untargeted cancels,
+      // which could otherwise cancel an unrelated genuine fall.
+      _cancelTombstones.add(
+        _CancelTombstone(
+          incidentId: incidentId?.trim().toLowerCase(),
+          fallTimestamp: fallTimestamp,
+          createdAt: _clock.elapsed(),
+        ),
       );
-      return Future<void>.value();
+      if (_cancelTombstones.length > 20) _cancelTombstones.removeAt(0);
+      if (_activeTimestamp != null) {
+        developer.log(
+          'Ignoring watch cancel for a different incident',
+          name: 'AlertCoordinator',
+        );
+        return Future<void>.value();
+      }
     }
     return _cancel(notifyWatch: false);
   }
@@ -292,13 +381,18 @@ class AlertCoordinator {
   bool _matchesActive(String? incidentId, int? fallTimestamp) {
     final id = incidentId?.trim().toLowerCase();
     final activeId = _activeClientAlertId?.toLowerCase();
-    if (id != null && id.isNotEmpty && id == activeId) return true;
+    if (id != null &&
+        id.isNotEmpty &&
+        (id == activeId || _activeAliases.contains(id))) {
+      return true;
+    }
     return fallTimestamp != null && fallTimestamp == _activeTimestamp;
   }
 
   Future<void> _cancel({required bool notifyWatch}) async {
     final timestamp = _activeTimestamp;
     _cancelTimers();
+    _escalationGeneration++;
 
     if (timestamp == null) {
       await _notificationGateway.cancelAll();
@@ -440,6 +534,10 @@ class AlertCoordinator {
     // Fallback: the immediate registration never landed (e.g. no network at
     // all when the fall was detected). Do exactly what the fully
     // client-owned flow used to do — fetch location and try one last time.
+    // The generation lets a late registration (or a cancel) supersede it.
+    final generation = ++_escalationGeneration;
+    bool superseded() =>
+        !_isCurrentAlert(timestamp) || generation != _escalationGeneration;
     final l10n = _localeResolver.resolve();
     final clientAlertId = _activeClientAlertId;
     _transition(
@@ -449,7 +547,7 @@ class AlertCoordinator {
     );
 
     final Position? position = await _locationProvider.getCurrentPosition();
-    if (!_isCurrentAlert(timestamp)) return;
+    if (superseded()) return;
 
     _transition(
       timestamp,
@@ -466,7 +564,7 @@ class AlertCoordinator {
       alertSubmittedMessage: l10n.alertSubmitted,
       repairRequiredMessage: l10n.alertRepairRequired,
     );
-    if (outcome == null || !_isCurrentAlert(timestamp)) return;
+    if (outcome == null || superseded()) return;
 
     final remaining = outcome.serverRemainingGrace;
     if (remaining != null && remaining > Duration.zero) {
@@ -521,6 +619,7 @@ class AlertCoordinator {
     _activeTimestamp = null;
     _deadline = null;
     _activeClientAlertId = null;
+    _activeAliases.clear();
     _registeredWithBackend = false;
     _repairRequired = false;
     _lastKnownPosition = null;
@@ -658,6 +757,18 @@ class _AlertOutcome {
   final String message;
   final Duration dismissDelay;
   final Duration? serverRemainingGrace;
+}
+
+class _CancelTombstone {
+  const _CancelTombstone({
+    required this.incidentId,
+    required this.fallTimestamp,
+    required this.createdAt,
+  });
+
+  final String? incidentId;
+  final int? fallTimestamp;
+  final Duration createdAt;
 }
 
 class _NoDurableAlertQueue implements DurableAlertQueue {
