@@ -16,7 +16,9 @@ use Override;
  *  - only additive changes (nullable columns or constant defaults, which are
  *    metadata-only in PostgreSQL 11+), plus dropping NOT NULL on a column;
  *  - no table rewrite and no backfill UPDATE;
- *  - indexes are built CONCURRENTLY, so writes are never blocked;
+ *  - indexes are built CONCURRENTLY, so writes are never blocked; each is
+ *    dropped first, because a CONCURRENTLY build interrupted by lock_timeout
+ *    leaves an INVALID index that `IF NOT EXISTS` would silently keep;
  *  - a short lock_timeout makes the brief ACCESS EXCLUSIVE locks of ALTER
  *    TABLE fail fast instead of queueing behind long transactions;
  *  - every statement is idempotent so a failed run can simply be re-run.
@@ -49,14 +51,18 @@ final class Version20261121120000 extends AbstractMigration
         $this->addSql('ALTER TABLE fall_alerts ADD COLUMN IF NOT EXISTS next_dispatch_retry_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL');
         $this->addSql('ALTER TABLE fall_alerts ADD COLUMN IF NOT EXISTS reminder_count INT DEFAULT 0 NOT NULL');
         $this->addSql('ALTER TABLE fall_alerts ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL');
+        $this->addSql('DROP INDEX CONCURRENTLY IF EXISTS idx_fall_alerts_retry_due');
         $this->addSql('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fall_alerts_retry_due ON fall_alerts (status, next_dispatch_retry_at)');
+        $this->addSql('DROP INDEX CONCURRENTLY IF EXISTS idx_fall_alerts_ack_due');
         $this->addSql('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fall_alerts_ack_due ON fall_alerts (status, acknowledgement_deadline_at)');
 
         $this->addSql('ALTER TABLE push_attempts ADD COLUMN IF NOT EXISTS reminder_number INT DEFAULT 0 NOT NULL');
+        $this->addSql('DROP INDEX CONCURRENTLY IF EXISTS idx_push_attempts_alert_round');
         $this->addSql('CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_push_attempts_alert_round ON push_attempts (fall_alert_id, reminder_number, status)');
 
         $this->addSql('ALTER TABLE caregiver_invites ADD COLUMN IF NOT EXISTS code_hash VARCHAR(64) DEFAULT NULL');
         $this->addSql('ALTER TABLE caregiver_invites ALTER code DROP NOT NULL');
+        $this->addSql('DROP INDEX CONCURRENTLY IF EXISTS uniq_caregiver_invites_code_hash');
         $this->addSql('CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uniq_caregiver_invites_code_hash ON caregiver_invites (code_hash)');
 
         $this->addSql('CREATE TABLE IF NOT EXISTS service_heartbeats (name VARCHAR(64) NOT NULL, beat_at TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, PRIMARY KEY(name))');
