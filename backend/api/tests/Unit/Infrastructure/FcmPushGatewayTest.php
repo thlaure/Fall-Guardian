@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Infrastructure;
 
+use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\TransientPushDeliveryException;
+use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\FcmPushGateway;
 
 use const OPENSSL_KEYTYPE_RSA;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
@@ -59,8 +64,8 @@ final class FcmPushGatewayTest extends TestCase
             ]) ?: '{}',
         );
 
-        $gateway->send('fcm-token', 'alert-id', '2026-01-01T00:00:00+00:00', null, null);
-        $gateway->send('fcm-token-2', 'alert-id-2', '2026-01-01T00:00:00+00:00', null, null);
+        $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:30+00:00', null, null));
+        $gateway->send('fcm-token-2', new FallAlertPushPayload('alert-id-2', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:30+00:00', null, null));
 
         self::assertIsString($assertion);
         self::assertSame(1, $oauthCalls);
@@ -111,7 +116,7 @@ final class FcmPushGatewayTest extends TestCase
 
         $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
 
-        $first = $gateway->send('fcm-token', 'alert-id', '2026-01-01T00:00:00+00:00', 48.8, 2.3);
+        $first = $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:30+00:00', 48.8, 2.3));
         $second = $gateway->sendLinkRevoked('fcm-token');
 
         self::assertSame('projects/project-id/messages/message-id', $first['providerMessageId'] ?? null);
@@ -131,7 +136,7 @@ final class FcmPushGatewayTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Invalid FCM service account JSON.');
 
-        $gateway->send('fcm-token', 'alert-id', '2026-01-01T00:00:00+00:00', null, null);
+        $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:30+00:00', null, null));
     }
 
     #[Test]
@@ -150,7 +155,150 @@ final class FcmPushGatewayTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('FCM send failed (HTTP 500).');
 
-        $gateway->send('fcm-token', 'alert-id', '2026-01-01T00:00:00+00:00', null, null);
+        $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:30+00:00', null, null));
+    }
+
+    #[Test]
+    public function itKeepsExistingDataKeysAndAddsTheCaregiverContractKeys(): void
+    {
+        $fcmPayload = null;
+        $client = $this->clientCapturingSend($fcmPayload, new MockResponse(json_encode(['name' => 'message-id']) ?: '{}'));
+        $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
+
+        $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z', 48.8, 2.3, 'Mamie', false));
+
+        self::assertIsArray($fcmPayload);
+        self::assertSame([
+            'type' => 'fall_alert',
+            'alertId' => 'alert-id',
+            'fallTimestamp' => '2026-01-01T00:00:00Z',
+            'cancelDeadlineAt' => '2026-01-01T00:00:30Z',
+            'reminder' => '0',
+            'latitude' => '48.8',
+            'longitude' => '2.3',
+            'protectedPersonName' => 'Mamie',
+        ], $fcmPayload['message']['data'] ?? null);
+        self::assertSame(15.0, $this->lastOptions['max_duration'] ?? null);
+    }
+
+    #[Test]
+    public function itMarksRemindersAndOmitsMissingOptionalKeys(): void
+    {
+        $fcmPayload = null;
+        $client = $this->clientCapturingSend($fcmPayload, new MockResponse(json_encode(['name' => 'message-id']) ?: '{}'));
+        $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
+
+        $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z', reminder: true));
+
+        self::assertIsArray($fcmPayload);
+        $data = $fcmPayload['message']['data'] ?? [];
+        self::assertSame('1', $data['reminder'] ?? null);
+        self::assertArrayNotHasKey('protectedPersonName', $data);
+        self::assertArrayNotHasKey('latitude', $data);
+        self::assertSame('Fall alert still unacknowledged', $fcmPayload['message']['notification']['title'] ?? null);
+    }
+
+    /** @return iterable<string, array{int, array<string, mixed>|null, class-string, string}> */
+    public static function failureResponses(): iterable
+    {
+        yield 'unregistered token' => [404, self::fcmError(404, 'NOT_FOUND', 'UNREGISTERED'), InvalidPushTokenException::class, 'UNREGISTERED'];
+        yield 'invalid token argument' => [400, self::fcmError(400, 'INVALID_ARGUMENT', 'INVALID_ARGUMENT'), InvalidPushTokenException::class, 'INVALID_ARGUMENT'];
+        yield 'sender id mismatch' => [403, self::fcmError(403, 'PERMISSION_DENIED', 'SENDER_ID_MISMATCH'), InvalidPushTokenException::class, 'SENDER_ID_MISMATCH'];
+        yield 'bare 404' => [404, null, InvalidPushTokenException::class, 'http_404'];
+        yield 'quota exceeded' => [429, self::fcmError(429, 'RESOURCE_EXHAUSTED', 'QUOTA_EXCEEDED'), TransientPushDeliveryException::class, 'QUOTA_EXCEEDED'];
+        yield 'fcm unavailable' => [503, self::fcmError(503, 'UNAVAILABLE', 'UNAVAILABLE'), TransientPushDeliveryException::class, 'UNAVAILABLE'];
+        yield 'internal error without body' => [500, null, TransientPushDeliveryException::class, 'http_500'];
+        yield 'expired access token' => [401, ['error' => ['status' => 'UNAUTHENTICATED']], TransientPushDeliveryException::class, 'UNAUTHENTICATED'];
+    }
+
+    /**
+     * @param array<string, mixed>|null $body
+     * @param class-string              $expectedClass
+     */
+    #[Test]
+    #[DataProvider('failureResponses')]
+    public function itClassifiesProviderFailuresAsPermanentTokenOrTransient(int $status, ?array $body, string $expectedClass, string $expectedReason): void
+    {
+        $fcmPayload = null;
+        $client = $this->clientCapturingSend(
+            $fcmPayload,
+            new MockResponse(null === $body ? 'token fcm-secret-token rejected' : (json_encode($body) ?: '{}'), ['http_code' => $status]),
+        );
+        $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
+
+        try {
+            $gateway->send('fcm-secret-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z'));
+            self::fail('Expected a push delivery exception.');
+        } catch (InvalidPushTokenException|TransientPushDeliveryException $exception) {
+            self::assertInstanceOf($expectedClass, $exception);
+            self::assertSame($expectedReason, $exception->getReason());
+            self::assertSame(sprintf('FCM send failed (HTTP %d).', $status), $exception->getMessage());
+            self::assertStringNotContainsString('fcm-secret-token', $exception->getMessage());
+        }
+    }
+
+    #[Test]
+    public function itTreatsTransportErrorsAsTransient(): void
+    {
+        $client = new MockHttpClient(static function (string $method, string $url): MockResponse {
+            if ('https://oauth2.googleapis.com/token' === $url) {
+                return new MockResponse(json_encode(['access_token' => 'access-token', 'expires_in' => 3600]) ?: '{}');
+            }
+
+            throw new TransportException('Connection timed out');
+        });
+        $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
+
+        try {
+            $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z'));
+            self::fail('Expected a transient exception.');
+        } catch (TransientPushDeliveryException $exception) {
+            self::assertSame('transport', $exception->getReason());
+        }
+    }
+
+    #[Test]
+    public function itTreatsAccessTokenFetchFailureAsTransient(): void
+    {
+        $client = new MockHttpClient(new MockResponse('{"error":"backend"}', ['http_code' => 503]));
+        $gateway = new FcmPushGateway($client, 'project-id', $this->serviceAccountJson());
+
+        try {
+            $gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2026-01-01T00:00:00Z', '2026-01-01T00:00:30Z'));
+            self::fail('Expected a transient exception.');
+        } catch (TransientPushDeliveryException $exception) {
+            self::assertSame('oauth', $exception->getReason());
+        }
+    }
+
+    /** @var array<string, mixed> */
+    private array $lastOptions = [];
+
+    /** @param-out array<string, mixed>|null $fcmPayload */
+    private function clientCapturingSend(?array &$fcmPayload, MockResponse $sendResponse): MockHttpClient
+    {
+        return new MockHttpClient(function (string $method, string $url, array $options) use (&$fcmPayload, $sendResponse): MockResponse {
+            if ('https://oauth2.googleapis.com/token' === $url) {
+                return new MockResponse(json_encode(['access_token' => 'access-token', 'expires_in' => 3600]) ?: '{}');
+            }
+
+            $this->lastOptions = $options;
+            $decoded = json_decode((string) $options['body'], true);
+            $fcmPayload = is_array($decoded) ? $decoded : null;
+
+            return $sendResponse;
+        });
+    }
+
+    /** @return array<string, mixed> */
+    private static function fcmError(int $code, string $status, string $errorCode): array
+    {
+        return ['error' => [
+            'code' => $code,
+            'message' => 'Requested entity was not found.',
+            'status' => $status,
+            'details' => [['@type' => 'type.googleapis.com/google.firebase.fcm.v1.FcmError', 'errorCode' => $errorCode]],
+        ]];
     }
 
     private function serviceAccountJson(): string
