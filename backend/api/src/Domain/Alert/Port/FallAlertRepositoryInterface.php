@@ -52,6 +52,18 @@ interface FallAlertRepositoryInterface
      */
     public function claimReminder(string $id, int $expectedReminderCount, DateTimeImmutable $now): bool;
 
+    /** Confirms that reminder number `$reminderNumber` was handed to the message queue. */
+    public function markReminderEnqueued(string $id, int $reminderNumber): void;
+
+    /**
+     * Reminders reserved before `$reservedBefore` but never confirmed as
+     * enqueued (queue unavailable, reconciler stopped in between). They are
+     * enqueued again with the same number; delivery is idempotent per number.
+     *
+     * @return list<array{id: string, reminderNumber: int}>
+     */
+    public function findPendingReminders(DateTimeImmutable $reservedBefore, int $limit = 100): array;
+
     /**
      * Gives back reminder number `$reminderNumber` (only if it is still the
      * latest reserved one) so the reconciler can reserve it again later, e.g.

@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -82,7 +83,43 @@ final class OverdueAlertReconcilerTest extends TestCase
             static fn (string $id, int $expected): bool => 'alert-1' === $id && 0 === $expected,
         );
 
+        $this->repository->expects(self::once())->method('markReminderEnqueued')->with('alert-1', 1);
+
         self::assertSame(1, $this->reconciler->reconcile());
         self::assertEquals([new SendFallAlertReminderMessage('alert-1', 1)], $this->dispatched);
+    }
+
+    #[Test]
+    public function aReminderWhoseEnqueueFailsStaysPendingWithoutStoppingTheRun(): void
+    {
+        $repository = $this->createMock(FallAlertRepositoryInterface::class);
+        $repository->method('findDispatchCandidateIds')->willReturn([]);
+        $repository->method('findReminderCandidates')->willReturn([['id' => 'alert-1', 'reminderCount' => 0]]);
+        $repository->method('claimReminder')->willReturn(true);
+        // Not confirmed: the next run finds it through findPendingReminders().
+        $repository->expects(self::never())->method('markReminderEnqueued');
+        $this->heartbeats->expects(self::once())->method('beat');
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->method('dispatch')->willThrowException(new RuntimeException('Redis connection refused'));
+
+        $reconciler = new OverdueAlertReconciler($repository, $bus, $this->clock, $this->heartbeats, new NullLogger());
+
+        self::assertSame(0, $reconciler->reconcile());
+    }
+
+    #[Test]
+    public function aPendingReminderIsEnqueuedAgainWithTheSameNumber(): void
+    {
+        $this->repository->method('findDispatchCandidateIds')->willReturn([]);
+        $this->repository->method('findReminderCandidates')->willReturn([]);
+        $this->repository->expects(self::once())
+            ->method('findPendingReminders')
+            ->with($this->clock->now()->modify(sprintf('-%d seconds', FallAlert::REMINDER_ENQUEUE_RETRY_SECONDS)), 100)
+            ->willReturn([['id' => 'alert-7', 'reminderNumber' => 2]]);
+        $this->repository->expects(self::never())->method('claimReminder');
+        $this->repository->expects(self::once())->method('markReminderEnqueued')->with('alert-7', 2);
+
+        self::assertSame(1, $this->reconciler->reconcile());
+        self::assertEquals([new SendFallAlertReminderMessage('alert-7', 2)], $this->dispatched);
     }
 }

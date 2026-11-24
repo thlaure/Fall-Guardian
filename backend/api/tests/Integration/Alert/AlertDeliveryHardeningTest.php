@@ -220,6 +220,33 @@ final class AlertDeliveryHardeningTest extends KernelTestCase
         self::assertNotContains($alertId, array_column($this->alerts->findReminderCandidates($now->modify('+5 minutes'), $now->modify('+3 minutes'), 3, 1000), 'id'));
     }
 
+    public function testAReservedReminderWhoseEnqueueFailedIsRecoveredWithTheSameNumber(): void
+    {
+        [$alert] = $this->dueAlertWithCaregiver('fcm-ok');
+        $alertId = $alert->getId()->toRfc4122();
+        $this->handler(static fn (): array => ['providerMessageId' => 'msg', 'status' => 'sent'])(new SendFallAlertPushMessage($alertId));
+        $this->entityManager->getConnection()->executeStatement("UPDATE fall_alerts SET acknowledgement_deadline_at = NOW() - INTERVAL '1 second' WHERE id = ?", [$alertId]);
+        $now = $this->now();
+
+        // Reserved, then the queue was unavailable: never confirmed.
+        self::assertTrue($this->alerts->claimReminder($alertId, 0, $now));
+        self::assertNotContains($alertId, array_column($this->alerts->findPendingReminders($now->modify('-10 seconds'), 1000), 'id'), 'Too fresh: the reserving run may still be enqueueing.');
+        self::assertContains(['id' => $alertId, 'reminderNumber' => 1], $this->alerts->findPendingReminders($now->modify('+10 seconds'), 1000));
+        // The next number is never reserved while number 1 is pending, even after the spacing.
+        self::assertNotContains($alertId, array_column($this->alerts->findReminderCandidates($now->modify('+5 minutes'), $now->modify('+3 minutes'), 3, 1000), 'id'));
+
+        $this->alerts->markReminderEnqueued($alertId, 1);
+        self::assertNotContains($alertId, array_column($this->alerts->findPendingReminders($now->modify('+10 seconds'), 1000), 'id'));
+        self::assertContains(['id' => $alertId, 'reminderCount' => 1], $this->alerts->findReminderCandidates($now->modify('+5 minutes'), $now->modify('+3 minutes'), 3, 1000));
+        self::assertSame(1, $this->reload($alertId)->getReminderEnqueuedCount());
+
+        // A deferred (released) reminder is no longer pending either.
+        self::assertTrue($this->alerts->releaseReminder($alertId, 1));
+        self::assertSame(0, $this->reload($alertId)->getReminderEnqueuedCount());
+        self::assertNotContains($alertId, array_column($this->alerts->findPendingReminders($now->modify('+10 seconds'), 1000), 'id'));
+        $this->alerts->markReminderEnqueued('not-a-uuid', 1);
+    }
+
     public function testAlertsDeliveredLongAgoAreNeverReminded(): void
     {
         [$alert] = $this->dueAlertWithCaregiver('fcm-ok');

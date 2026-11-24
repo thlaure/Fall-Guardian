@@ -13,6 +13,7 @@ use App\Entity\FallAlert;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Throwable;
 
 /**
  * Database-driven safety net for alert escalation. Every run:
@@ -60,22 +61,57 @@ final readonly class OverdueAlertReconciler
         );
         $queued = 0;
 
+        // Outbox recovery first: reserved numbers whose enqueue never succeeded.
+        foreach ($this->fallAlertRepository->findPendingReminders(
+            $now->modify(sprintf('-%d seconds', FallAlert::REMINDER_ENQUEUE_RETRY_SECONDS)),
+            $limit,
+        ) as $pending) {
+            if ($this->enqueueReminder($pending['id'], $pending['reminderNumber'], true)) {
+                ++$queued;
+            }
+        }
+
         foreach ($candidates as $candidate) {
             // The conditional reservation makes reminders idempotent across
-            // concurrent or restarted reconcilers: each number is queued once.
+            // concurrent or restarted reconcilers: each number is reserved once.
             if (!$this->fallAlertRepository->claimReminder($candidate['id'], $candidate['reminderCount'], $now)) {
                 continue;
             }
 
-            $reminderNumber = $candidate['reminderCount'] + 1;
-            $this->messageBus->dispatch(new SendFallAlertReminderMessage($candidate['id'], $reminderNumber));
-            $this->logger->info('alert.reminder_queued', [
-                'alertId' => $candidate['id'],
-                'reminder' => $reminderNumber,
-            ]);
-            ++$queued;
+            if ($this->enqueueReminder($candidate['id'], $candidate['reminderCount'] + 1, false)) {
+                ++$queued;
+            }
         }
 
         return $queued;
+    }
+
+    /**
+     * Hands a reserved reminder to the queue and confirms it. If the queue is
+     * unavailable the reservation stays pending and the same number is
+     * enqueued again by a later run; escalation of other alerts continues.
+     */
+    private function enqueueReminder(string $alertId, int $reminderNumber, bool $recovered): bool
+    {
+        try {
+            $this->messageBus->dispatch(new SendFallAlertReminderMessage($alertId, $reminderNumber));
+        } catch (Throwable $exception) {
+            $this->logger->error('alert.reminder_enqueue_failed', [
+                'alertId' => $alertId,
+                'reminder' => $reminderNumber,
+                'exceptionClass' => $exception::class,
+            ]);
+
+            return false;
+        }
+
+        $this->fallAlertRepository->markReminderEnqueued($alertId, $reminderNumber);
+        $this->logger->info('alert.reminder_queued', [
+            'alertId' => $alertId,
+            'reminder' => $reminderNumber,
+            'recovered' => $recovered,
+        ]);
+
+        return true;
     }
 }

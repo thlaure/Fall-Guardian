@@ -41,6 +41,9 @@ class FallAlert
 
     public const int REMINDER_SPACING_SECONDS = 120;
 
+    /** A reserved reminder still not enqueued after this long is enqueued again. */
+    public const int REMINDER_ENQUEUE_RETRY_SECONDS = 10;
+
     /**
      * Reminders are only sent while the acknowledgement deadline is recent.
      * This also guarantees that alerts delivered long ago (e.g. before
@@ -96,6 +99,15 @@ class FallAlert
 
     #[ORM\Column(name: 'reminder_count', options: ['default' => 0])]
     private int $reminderCount = 0;
+
+    /**
+     * Highest reminder number confirmed handed to the message queue. A
+     * reservation (reminder_count) above this value is pending: it was
+     * reserved but enqueueing failed or the reconciler stopped, and the same
+     * number is enqueued again (outbox pattern).
+     */
+    #[ORM\Column(name: 'reminder_enqueued_count', options: ['default' => 0])]
+    private int $reminderEnqueuedCount = 0;
 
     #[ORM\Column(name: 'last_reminder_at', nullable: true)]
     private ?DateTimeImmutable $lastReminderAt = null;
@@ -217,6 +229,11 @@ class FallAlert
     public function getReminderCount(): int
     {
         return $this->reminderCount;
+    }
+
+    public function getReminderEnqueuedCount(): int
+    {
+        return $this->reminderEnqueuedCount;
     }
 
     public function getLastReminderAt(): ?DateTimeImmutable

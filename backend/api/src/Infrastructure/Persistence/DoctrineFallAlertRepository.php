@@ -188,6 +188,8 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
             ->andWhere('alert.acknowledgementDeadlineAt <= :now')
             ->andWhere('alert.acknowledgementDeadlineAt > :windowStart')
             ->andWhere('alert.reminderCount < :maxReminders')
+            // Never reserve the next number while the previous one is still pending.
+            ->andWhere('alert.reminderEnqueuedCount = alert.reminderCount')
             ->andWhere('alert.lastReminderAt IS NULL OR alert.lastReminderAt <= :lastReminderBefore')
             ->setParameter('remindable', [FallAlertStatus::Sent->value, FallAlertStatus::PartiallySent->value])
             ->setParameter('now', $now, Types::DATETIME_IMMUTABLE)
@@ -227,6 +229,44 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
         return 1 === $affected;
     }
 
+    public function markReminderEnqueued(string $id, int $reminderNumber): void
+    {
+        $uuid = self::parseUuid($id);
+
+        if (!$uuid instanceof Uuid) {
+            return;
+        }
+
+        $this->getEntityManager()->createQuery(
+            'UPDATE '.FallAlert::class.' alert SET alert.reminderEnqueuedCount = :reminderNumber'
+            .' WHERE alert.id = :id AND alert.reminderCount = :reminderNumber AND alert.reminderEnqueuedCount < :reminderNumber',
+        )
+            ->setParameter('id', $uuid, 'uuid')
+            ->setParameter('reminderNumber', $reminderNumber)
+            ->execute();
+    }
+
+    public function findPendingReminders(DateTimeImmutable $reservedBefore, int $limit = 100): array
+    {
+        /** @var list<array{id: Uuid|string, reminderCount: int}> $rows */
+        $rows = $this->createQueryBuilder('alert')
+            ->select('alert.id AS id', 'alert.reminderCount AS reminderCount')
+            ->andWhere('alert.reminderEnqueuedCount < alert.reminderCount')
+            ->andWhere('alert.status IN (:remindable)')
+            ->andWhere('alert.lastReminderAt <= :reservedBefore')
+            ->setParameter('remindable', [FallAlertStatus::Sent->value, FallAlertStatus::PartiallySent->value])
+            ->setParameter('reservedBefore', $reservedBefore, Types::DATETIME_IMMUTABLE)
+            ->orderBy('alert.lastReminderAt', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getArrayResult();
+
+        return array_map(
+            static fn (array $row): array => ['id' => (string) $row['id'], 'reminderNumber' => (int) $row['reminderCount']],
+            $rows,
+        );
+    }
+
     public function releaseReminder(string $id, int $reminderNumber): bool
     {
         $uuid = self::parseUuid($id);
@@ -236,7 +276,8 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
         }
 
         $affected = $this->getEntityManager()->createQuery(
-            'UPDATE '.FallAlert::class.' alert SET alert.reminderCount = alert.reminderCount - 1'
+            'UPDATE '.FallAlert::class.' alert'
+            .' SET alert.reminderCount = alert.reminderCount - 1, alert.reminderEnqueuedCount = alert.reminderCount - 1'
             .' WHERE alert.id = :id AND alert.reminderCount = :reminderNumber',
         )
             ->setParameter('id', $uuid, 'uuid')
