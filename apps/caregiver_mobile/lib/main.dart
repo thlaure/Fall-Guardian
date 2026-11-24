@@ -204,11 +204,17 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     _recoveringActiveAlert = true;
     try {
       await _secureStorageMigration.ensure();
+      final alerts = await _backend.getPresentableAlertsData();
       // Oldest first so alerts are presented in the order they happened.
-      final alerts = (await _backend.getActiveAlertsData()).reversed.toList();
-      if (alerts.isNotEmpty) {
-        alerts.forEach(_handleAlert);
-      } else if (mounted && _activeAlertPresentation.clearActive()) {
+      alerts.active.reversed.forEach(_handleAlert);
+      // Another caregiver responded: update the open/queued screen so it
+      // shows "Another caregiver is handling this" instead of dropping it.
+      alerts.handledByOthers.forEach(_activeAlertPresentation.update);
+      final knownAlertIds = {
+        for (final alert in [...alerts.active, ...alerts.handledByOthers])
+          ?ActiveAlertPresentationState.alertId(alert),
+      };
+      if (_activeAlertPresentation.retainOnly(knownAlertIds) && mounted) {
         setState(() {});
       }
     } catch (e) {

@@ -134,4 +134,37 @@ void main() {
 
     expect(counts, [1, 2, 1, 0]);
   });
+
+  test('update only merges into queued alerts', () {
+    final state = ActiveAlertPresentationState();
+    state.show({'alertId': 'alert-1'});
+    final live = state.activeAlertListenable!;
+
+    expect(
+      state.update({'alertId': 'unknown', 'status': 'acknowledged'}),
+      isFalse,
+    );
+    expect(
+      state.update({'alertId': 'alert-1', 'status': 'acknowledged'}),
+      isTrue,
+    );
+
+    expect(live.value['status'], 'acknowledged');
+    expect(state.waitingCount, 0);
+    expect(state.update({'status': 'acknowledged'}), isFalse);
+  });
+
+  test('retainOnly drops alerts the backend no longer reports', () {
+    final state = ActiveAlertPresentationState();
+    state.show({'alertId': 'alert-1'});
+    state.show({'alertId': 'alert-2'});
+    state.show({'alertId': 'alert-3'});
+
+    expect(state.retainOnly({'alert-1', 'alert-3'}), isTrue);
+    expect(state.waitingCountListenable.value, 1);
+    expect(state.retainOnly({'alert-1', 'alert-3'}), isFalse);
+
+    state.dismissActive();
+    expect(state.activeAlert?['alertId'], 'alert-3');
+  });
 }

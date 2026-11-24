@@ -57,6 +57,26 @@ class ActiveAlertPresentationState {
     return true;
   }
 
+  /// Merges newer data into an alert that is already queued or shown,
+  /// without queueing it if absent. Returns true when an alert was updated.
+  bool update(Map<String, dynamic> data) {
+    final existing = _alerts[alertId(data) ?? ''];
+    if (existing == null) return false;
+    existing.value = {...existing.value, ...data};
+    return true;
+  }
+
+  /// Drops queued alerts the backend no longer reports (cancelled, handled
+  /// by this caregiver elsewhere...). Returns true if anything was removed.
+  bool retainOnly(Set<String> alertIds) {
+    final before = _queue.length;
+    _queue.removeWhere((id) => !alertIds.contains(id));
+    _alerts.removeWhere((id, _) => !alertIds.contains(id));
+    if (_queue.length == before) return false;
+    _publishWaitingCount();
+    return true;
+  }
+
   /// Removes the active alert and prevents it from being reopened.
   void dismissActive() {
     if (_queue.isEmpty) return;

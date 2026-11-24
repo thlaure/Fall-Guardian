@@ -322,14 +322,30 @@ class CaregiverBackendService {
 
   /// All alerts still waiting for this caregiver, newest first, in the same
   /// string-valued shape as FCM `data` so push and recovery share one parser.
-  Future<List<Map<String, dynamic>>> getActiveAlertsData() async {
-    final activeAlerts =
-        (await getCaregiverAlerts())
-            .where(_isActiveUnacknowledgedAlert)
-            .toList()
-          ..sort(_newestAlertFirst);
+  Future<List<Map<String, dynamic>>> getActiveAlertsData() async =>
+      (await getPresentableAlertsData()).active;
 
-    return activeAlerts.map(toPushAlertData).toList();
+  /// Alerts the emergency screen cares about, from one API call:
+  /// - `active`: still waiting for this caregiver (presented if new);
+  /// - `handledByOthers`: another caregiver already acknowledged them (the
+  ///   backend status becomes `acknowledged`). They are not presented anew,
+  ///   but an open or queued screen must learn that someone is handling it.
+  Future<
+    ({
+      List<Map<String, dynamic>> active,
+      List<Map<String, dynamic>> handledByOthers,
+    })
+  >
+  getPresentableAlertsData() async {
+    final alerts = await getCaregiverAlerts();
+    final active = alerts.where(_isActiveUnacknowledgedAlert).toList()
+      ..sort(_newestAlertFirst);
+    final handledByOthers = alerts.where(_isHandledByAnotherCaregiver);
+
+    return (
+      active: active.map(toPushAlertData).toList(),
+      handledByOthers: handledByOthers.map(toPushAlertData).toList(),
+    );
   }
 
   Future<void> registerPushToken(String fcmToken) async {
@@ -470,13 +486,18 @@ class CaregiverBackendService {
     }
   }
 
+  /// `acknowledged` means "acknowledged by this caregiver" on the current
+  /// API; newer APIs also expose the explicit `acknowledgedByMe`.
+  static bool _isAcknowledgedByMe(Map<String, dynamic> alert) =>
+      alert['acknowledgedByMe'] is bool
+      ? alert['acknowledgedByMe'] as bool
+      : alert['acknowledged'] == true;
+
+  bool _isHandledByAnotherCaregiver(Map<String, dynamic> alert) =>
+      !_isAcknowledgedByMe(alert) && alert['status'] == 'acknowledged';
+
   bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
-    // `acknowledged` means "acknowledged by this caregiver" on the current
-    // API; newer APIs also expose the explicit `acknowledgedByMe`.
-    final acknowledgedByMe = alert['acknowledgedByMe'] is bool
-        ? alert['acknowledgedByMe'] as bool
-        : alert['acknowledged'] == true;
-    if (acknowledgedByMe) {
+    if (_isAcknowledgedByMe(alert)) {
       return false;
     }
 
@@ -497,8 +518,11 @@ class CaregiverBackendService {
 
   /// Converts a `GET /api/v1/caregiver/alerts` item to push-data shape.
   ///
-  /// `protectedPersonName`, `cancelDeadlineAt`, `acknowledgedAt`,
-  /// `acknowledgedByMe` and `acknowledgementCount` are optional: older API
+  /// `status` lets the screen tell that another caregiver acknowledged the
+  /// alert on the current API (legacy `acknowledged` maps to
+  /// `acknowledgedByMe`). `protectedPersonName`, `cancelDeadlineAt`,
+  /// `acknowledgedAt`, `acknowledgedByMe` and `acknowledgementCount` are
+  /// optional: older API
   /// versions omit some of them, and absent keys are simply not copied.
   @visibleForTesting
   static Map<String, dynamic> toPushAlertData(Map<String, dynamic> alert) {
@@ -512,12 +536,16 @@ class CaregiverBackendService {
     final protectedPersonName = optional('protectedPersonName');
     final cancelDeadlineAt = optional('cancelDeadlineAt');
     final acknowledgedAt = optional('acknowledgedAt');
-    final acknowledgedByMe = alert['acknowledgedByMe'];
+    final status = optional('status');
+    final acknowledgedByMe = alert['acknowledgedByMe'] is bool
+        ? alert['acknowledgedByMe']
+        : alert['acknowledged'];
     final acknowledgementCount = alert['acknowledgementCount'];
 
     return {
       'type': 'fall_alert',
       'alertId': '${alert['id']}',
+      'status': ?status,
       'fallTimestamp': '${alert['fallDetectedAt']}',
       if (alert['latitude'] != null) 'latitude': '${alert['latitude']}',
       if (alert['longitude'] != null) 'longitude': '${alert['longitude']}',

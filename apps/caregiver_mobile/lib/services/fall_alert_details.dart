@@ -31,6 +31,7 @@ class FallAlertDetails {
     this.acknowledgedAt,
     this.acknowledgedByMe,
     this.acknowledgementCount,
+    this.status,
   });
 
   factory FallAlertDetails.fromData(Map<String, dynamic> data) {
@@ -55,6 +56,7 @@ class FallAlertDetails {
       acknowledgedAt: parseApiDateTime(_string(data['acknowledgedAt'])),
       acknowledgedByMe: _bool(data['acknowledgedByMe']),
       acknowledgementCount: _int(data['acknowledgementCount']),
+      status: _string(data['status']),
     );
   }
 
@@ -70,12 +72,19 @@ class FallAlertDetails {
   final bool? acknowledgedByMe;
   final int? acknowledgementCount;
 
+  /// Backend alert status when known (absent in FCM pushes).
+  final String? status;
+
   bool get hasLocation => latitude != null && longitude != null;
 
   AlertHandlingState get handlingState {
     if (acknowledgedByMe == true) return AlertHandlingState.handledByMe;
     final count = acknowledgementCount ?? 0;
-    if (count > 0 || (acknowledgedByMe == false && acknowledgedAt != null)) {
+    // On the current API the only signal that another caregiver responded is
+    // the alert status switching to `acknowledged`.
+    if (count > 0 ||
+        status == 'acknowledged' ||
+        (acknowledgedByMe == false && acknowledgedAt != null)) {
       return AlertHandlingState.handledByOther;
     }
     return AlertHandlingState.none;

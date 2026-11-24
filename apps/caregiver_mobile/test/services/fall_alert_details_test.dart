@@ -113,4 +113,28 @@ void main() {
     expect(alert.alertId, '');
     expect(alert.hasLocation, isFalse);
   });
+
+  test('backend status acknowledged means another caregiver responded', () {
+    expect(
+      FallAlertDetails.fromData(const {
+        'alertId': 'a',
+        'status': 'acknowledged',
+        'acknowledgedByMe': 'false',
+      }).handlingState,
+      AlertHandlingState.handledByOther,
+    );
+    expect(
+      FallAlertDetails.fromData(const {
+        'alertId': 'a',
+        'status': 'acknowledged',
+        'acknowledgedByMe': 'true',
+      }).handlingState,
+      AlertHandlingState.handledByMe,
+    );
+    expect(
+      FallAlertDetails.fromData(const {'alertId': 'a', 'status': 'sent'})
+          .handlingState,
+      AlertHandlingState.none,
+    );
+  });
 }

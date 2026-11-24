@@ -1112,7 +1112,7 @@ void main() {
       );
     }
 
-    test('current API shape maps to push data without new keys', () {
+    test('current API shape maps to push data with status and legacy ack', () {
       final data = CaregiverBackendService.toPushAlertData({
         'id': 'alert-1',
         'status': 'sent',
@@ -1126,7 +1126,10 @@ void main() {
       expect(data, {
         'type': 'fall_alert',
         'alertId': 'alert-1',
+        'status': 'sent',
         'fallTimestamp': '2026-05-16T09:00:00+00:00',
+        // Legacy `acknowledged` means "by this caregiver".
+        'acknowledgedByMe': 'false',
       });
     });
 
@@ -1217,5 +1220,55 @@ void main() {
         expect(alerts.single['alertId'], 'still-waiting');
       },
     );
+  });
+
+  test('getPresentableAlertsData separates waiting alerts from alerts another caregiver acknowledged', () async {
+    FlutterSecureStorage.setMockInitialValues({
+      'caregiver_device_id': 'device-1',
+      'caregiver_device_token': 'token-1',
+    });
+    final service = CaregiverBackendService(
+      baseUrl: baseUrl,
+      client: MockClient(
+        (request) async => http.Response(
+          jsonEncode([
+            {
+              'id': 'waiting',
+              'status': 'sent',
+              'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+              'acknowledged': false,
+            },
+            {
+              'id': 'handled-by-other',
+              'status': 'acknowledged',
+              'fallDetectedAt': '2026-05-16T08:00:00+00:00',
+              'acknowledged': false,
+            },
+            {
+              'id': 'handled-by-me',
+              'status': 'acknowledged',
+              'fallDetectedAt': '2026-05-16T07:00:00+00:00',
+              'acknowledged': true,
+            },
+            {
+              'id': 'cancelled',
+              'status': 'cancelled',
+              'fallDetectedAt': '2026-05-16T06:00:00+00:00',
+              'acknowledged': false,
+            },
+          ]),
+          200,
+        ),
+      ),
+    );
+
+    final alerts = await service.getPresentableAlertsData();
+
+    expect(alerts.active.map((a) => a['alertId']), ['waiting']);
+    expect(alerts.handledByOthers.map((a) => a['alertId']), [
+      'handled-by-other',
+    ]);
+    expect(alerts.handledByOthers.single['status'], 'acknowledged');
+    expect(alerts.handledByOthers.single['acknowledgedByMe'], 'false');
   });
 }
