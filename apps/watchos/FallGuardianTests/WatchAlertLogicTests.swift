@@ -258,6 +258,23 @@ final class WatchAlertStateTests: XCTestCase {
         XCTAssertTrue(state.start(incident, presentedAt: 11_000, now: 11_000), "can start again")
     }
 
+    func testCancelOutcomeWithinWindowIsBeforeDeadline() {
+        var state = WatchAlertState()
+        XCTAssertNil(state.cancelOutcome(now: 10_000), "no alert, nothing to cancel")
+        _ = state.start(incident, presentedAt: 10_000, now: 10_000)
+        XCTAssertEqual(state.cancelOutcome(now: 10_000), .beforeDeadline)
+        XCTAssertEqual(state.cancelOutcome(now: 39_999), .beforeDeadline)
+    }
+
+    func testCancelOutcomeWhileNotifyingIsAfterDeadline() {
+        var state = WatchAlertState()
+        // Late Apple delivery: the alert opens directly in the notifying phase.
+        _ = state.start(incident, presentedAt: 55_000, now: 55_000)
+        XCTAssertEqual(state.phase(now: 60_000), .notifyingCaregivers)
+        XCTAssertEqual(state.cancelOutcome(now: 60_000), .afterDeadline)
+        XCTAssertEqual(state.cancelOutcome(now: 40_000), .afterDeadline, "exact deadline counts as late")
+    }
+
     func testHapticCues() {
         XCTAssertNil(WatchAlertState.hapticCue(from: nil, to: nil))
         XCTAssertNil(WatchAlertState.hapticCue(from: .countdown(seconds: 20), to: .countdown(seconds: 20)))

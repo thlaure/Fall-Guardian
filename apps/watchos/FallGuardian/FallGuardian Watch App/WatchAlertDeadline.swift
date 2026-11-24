@@ -209,6 +209,15 @@ enum WatchAlertPhase: Equatable {
     case notifyingCaregivers
 }
 
+/// How a wearer's cancel relates to the grace window.
+enum WatchCancelOutcome: Equatable {
+    /// Cancelled within the window: the API should not escalate.
+    case beforeDeadline
+    /// Cancelled after the window: the cancel is still relayed, but
+    /// caregivers may already have been notified. The UI must say so.
+    case afterDeadline
+}
+
 enum WatchAlertHapticCue: Equatable {
     case tick
     case urgent
@@ -250,6 +259,14 @@ struct WatchAlertState: Equatable {
         guard remainingMs > 0 else { return .notifyingCaregivers }
         // Round up so the screen never shows 0 while time remains.
         return .countdown(seconds: Int((remainingMs + 999) / 1000))
+    }
+
+    /// Whether cancelling now beats the grace deadline; nil without an alert.
+    func cancelOutcome(now: Int64) -> WatchCancelOutcome? {
+        guard let incident else { return nil }
+        return WatchAlertDeadline.isActive(timestamp: incident.timestamp, now: now)
+            ? .beforeDeadline
+            : .afterDeadline
     }
 
     /// Ends the alert and returns the incident that was active, if any.

@@ -65,6 +65,22 @@
         }
       }
     },
+    "Caregivers may already have been notified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caregivers may already have been notified"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos proches ont peut-être déjà été prévenus"
+          }
+        }
+      }
+    },
     "Checking permission…": {
       "localizations": {
         "en": {
@@ -157,6 +173,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vos aidants sont en cours de notification…"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
           }
         }
       }

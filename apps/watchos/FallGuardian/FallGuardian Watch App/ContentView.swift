@@ -54,6 +54,8 @@ struct ContentView: View {
         Group {
             if let phase = viewModel.alertPhase {
                 alertView(phase: phase)  // Fall in progress.
+            } else if viewModel.isShowingLateCancelNotice {
+                lateCancelNoticeView     // Cancel sent after the deadline.
             } else {
                 idleView                 // Shield icon — monitoring quietly.
             }
@@ -136,6 +138,33 @@ struct ContentView: View {
         return true
     }
 
+    // MARK: - Late cancel notice
+
+    /// Shown after the wearer cancels once the grace window is over. The cancel
+    /// is still sent to the phone, but the API may already have alerted
+    /// caregivers, and it does not tell them the person is OK — so the screen
+    /// must not look like a successful, silent cancel.
+    private var lateCancelNoticeView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title2)
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            Text("Caregivers may already have been notified")
+                .font(.headline)
+                .minimumScaleFactor(0.6)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white)
+
+            Button("OK") {
+                viewModel.dismissLateCancelNotice()
+            }
+        }
+        .padding(.horizontal, 4)
+        .containerBackground(.orange.opacity(0.15), for: .navigation)
+    }
+
     // MARK: - Idle view (no active alert, monitoring silently)
 
     /// Compact status view shown when no fall is in progress.
@@ -190,6 +219,9 @@ class ContentViewModel {
     var alertPhase: WatchAlertPhase?
 
     var isAlertActive: Bool { alertState.isActive }
+
+    /// True after a cancel that came too late to stop escalation.
+    var isShowingLateCancelNotice = false
 
     /// Makes the important difference between system background monitoring and
     /// an inactive watch visible to the wearer.
@@ -296,12 +328,27 @@ class ContentViewModel {
     /// - Parameter notifyPhone: `false` when the cancel originated from the phone
     ///   (avoids a cancel ping-pong loop).
     func cancelAlert(notifyPhone: Bool = true) {
+        let outcome = alertState.cancelOutcome(now: WatchAlertNotificationService.nowMilliseconds())
         let cancelled = finishAlert()
-        if notifyPhone {
+        guard notifyPhone else { return }
+
+        // Always relay the cancel, naming the incident, even when late.
+        WatchSessionManager.shared.sendCancelAlert(for: cancelled)
+
+        if outcome == .afterDeadline {
+            // Honest feedback: escalation may already have happened.
+            WKInterfaceDevice.current().play(.failure)
+            isShowingLateCancelNotice = true
+            AccessibilityNotification.Announcement(
+                String(localized: "Caregivers may already have been notified")
+            ).post()
+        } else {
             WKInterfaceDevice.current().play(.success)
-            // Tell the phone to dismiss its alert, naming the incident.
-            WatchSessionManager.shared.sendCancelAlert(for: cancelled)
         }
+    }
+
+    func dismissLateCancelNotice() {
+        isShowingLateCancelNotice = false
     }
 
     // MARK: - Private alert logic
@@ -316,6 +363,7 @@ class ContentViewModel {
     private func alertDidFire(_ incident: WatchIncident, presentedAt: Int64) {
         let now = WatchAlertNotificationService.nowMilliseconds()
         guard alertState.start(incident, presentedAt: presentedAt, now: now) else { return }
+        isShowingLateCancelNotice = false
 
         // Watch for a phone-side cancellation of this exact incident.
         WatchSessionManager.shared.startPollingForCancel(incident: incident)
