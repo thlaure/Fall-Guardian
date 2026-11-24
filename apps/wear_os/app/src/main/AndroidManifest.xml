@@ -79,9 +79,5 @@
             android:enabled="${debugAutomationEnabled}"
             android:exported="${debugAutomationEnabled}"/>
 
-        <receiver
-            android:name=".AlertActionReceiver"
-            android:exported="false"/>
-
     </application>
 </manifest>

@@ -21,6 +21,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
 /**
@@ -94,6 +96,10 @@ class FallDetectionService : Service(), SensorEventListener {
     // is locked and can be stopped by watch-, phone-, or timeout cancellation.
     private var alarmRingtone: Ringtone? = null
 
+    // Per-second alert haptics, owned here (not by the Activity) so the wearer
+    // feels the countdown even with the screen off or only the notification.
+    private var vibrator: Vibrator? = null
+
     // Minimum gap between two successive fall alerts. 5 seconds prevents a
     // single tumble from firing the alarm multiple times (e.g. if the user
     // rolls after hitting the ground and triggers the sensor again).
@@ -163,6 +169,7 @@ class FallDetectionService : Service(), SensorEventListener {
         // Ask the OS for the SensorManager, then request the accelerometer sensor.
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        vibrator = getSystemService(Vibrator::class.java)
 
         // Do not acquire this at startup: monitoring must allow the watch to
         // enter deep sleep. It is used only for a confirmed alert below.
@@ -404,7 +411,9 @@ class FallDetectionService : Service(), SensorEventListener {
      * Posts the highest-priority Wear OS alert surface and asks SystemUI to open
      * MainActivity over the lock screen. Android 14 can deny full-screen intent
      * access; in that case the same notification remains as a persistent,
-     * expanded heads-up alert with a direct "I'm OK" cancellation action.
+     * expanded heads-up alert whose action opens the alert screen. The
+     * notification deliberately has no one-tap cancel: cancelling always goes
+     * through the 1.5-second hold on AlertScreen.
      */
     private fun showUrgentFallAlert() {
         Log.i("FallDetectionService", "Starting urgent fall presentation")
@@ -422,16 +431,6 @@ class FallDetectionService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val cancelIntent = Intent(this, AlertActionReceiver::class.java).apply {
-            action = AlertActionReceiver.ACTION_CANCEL_FALL_ALERT
-        }
-        val cancelPendingIntent = PendingIntent.getBroadcast(
-            this,
-            1,
-            cancelIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(getString(R.string.fall_detected_title))
@@ -444,9 +443,9 @@ class FallDetectionService : Service(), SensorEventListener {
             .setContentIntent(launchPendingIntent)
             .setFullScreenIntent(launchPendingIntent, true)
             .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
+                android.R.drawable.ic_menu_view,
                 getString(R.string.fall_cancel_action),
-                cancelPendingIntent
+                launchPendingIntent
             )
             .build()
 
@@ -461,6 +460,21 @@ class FallDetectionService : Service(), SensorEventListener {
         }
         manager.notify(ALERT_NOTIF_ID, notification)
         playAlarmSound()
+        startAlertHaptics()
+    }
+
+    private fun startAlertHaptics() {
+        val pattern = AlertUiPolicy.alertVibrationPattern(WearDataSender.remainingSeconds)
+        if (pattern.isEmpty) return
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        // -1: play once (the pattern already spans the remaining countdown).
+        vibrator?.vibrate(
+            VibrationEffect.createWaveform(pattern.timingsMs, pattern.amplitudes, -1),
+            attributes
+        )
     }
 
     private fun playAlarmSound() {
@@ -484,6 +498,7 @@ class FallDetectionService : Service(), SensorEventListener {
             if (isPlaying) stop()
         }
         alarmRingtone = null
+        vibrator?.cancel()
         if (wakeLock.isHeld) wakeLock.release()
         getSystemService(NotificationManager::class.java).cancel(ALERT_NOTIF_ID)
         Log.i("FallDetectionService", "Urgent fall presentation stopped")
