@@ -17,6 +17,9 @@ use Doctrine\DBAL\Types\Types;
  */
 final readonly class DoctrineRetentionRepository implements RetentionRepositoryInterface
 {
+    /** Hard cap for one retention statement, so housekeeping never holds locks for long. */
+    private const string STATEMENT_TIMEOUT = "SET LOCAL statement_timeout = '5s'";
+
     public function __construct(private Connection $connection)
     {
     }
@@ -24,6 +27,8 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
     public function deleteClosedAlertsBefore(DateTimeImmutable $cutoff, int $batchSize): int
     {
         return $this->connection->transactional(static function (Connection $connection) use ($cutoff, $batchSize): int {
+            $connection->executeStatement(self::STATEMENT_TIMEOUT);
+
             /** @var list<string> $ids */
             $ids = $connection->fetchFirstColumn(
                 sprintf('SELECT id FROM fall_alerts WHERE (%s) AND received_at < :cutoff ORDER BY received_at LIMIT %d FOR UPDATE SKIP LOCKED', self::closedCondition(), $batchSize),
@@ -46,7 +51,7 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
 
     public function eraseLocationOfClosedAlertsBefore(DateTimeImmutable $cutoff, int $batchSize): int
     {
-        return (int) $this->connection->executeStatement(
+        return $this->bounded(
             sprintf(
                 'UPDATE fall_alerts SET latitude = NULL, longitude = NULL WHERE id IN ('
                 .'SELECT id FROM fall_alerts WHERE (%s) AND received_at < :cutoff'
@@ -61,7 +66,7 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
 
     public function deleteFinishedInvitesBefore(DateTimeImmutable $cutoff, int $batchSize): int
     {
-        return (int) $this->connection->executeStatement(
+        return $this->bounded(
             sprintf('DELETE FROM caregiver_invites WHERE id IN (SELECT id FROM caregiver_invites WHERE used_at < :cutoff OR expires_at < :cutoff LIMIT %d)', $batchSize),
             ['cutoff' => $cutoff],
             ['cutoff' => Types::DATETIME_IMMUTABLE],
@@ -70,7 +75,7 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
 
     public function deleteFinishedCompanionEnrollmentsBefore(DateTimeImmutable $cutoff, int $batchSize): int
     {
-        return (int) $this->connection->executeStatement(
+        return $this->bounded(
             sprintf('DELETE FROM companion_enrollments WHERE id IN (SELECT id FROM companion_enrollments WHERE claimed_at < :cutoff OR expires_at < :cutoff LIMIT %d)', $batchSize),
             ['cutoff' => $cutoff],
             ['cutoff' => Types::DATETIME_IMMUTABLE],
@@ -79,11 +84,24 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
 
     public function deleteRateLimitBucketsBefore(DateTimeImmutable $cutoff, int $batchSize): int
     {
-        return (int) $this->connection->executeStatement(
+        return $this->bounded(
             sprintf('DELETE FROM rate_limit_buckets WHERE id IN (SELECT id FROM rate_limit_buckets WHERE window_start_at < :cutoff LIMIT %d)', $batchSize),
             ['cutoff' => $cutoff],
             ['cutoff' => Types::DATETIME_IMMUTABLE],
         );
+    }
+
+    /**
+     * @param array<string, mixed>  $parameters
+     * @param array<string, string> $types
+     */
+    private function bounded(string $sql, array $parameters, array $types): int
+    {
+        return $this->connection->transactional(static function (Connection $connection) use ($sql, $parameters, $types): int {
+            $connection->executeStatement(self::STATEMENT_TIMEOUT);
+
+            return (int) $connection->executeStatement($sql, $parameters, $types);
+        });
     }
 
     /**

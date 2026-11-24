@@ -21,6 +21,7 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Index(name: 'idx_fall_alerts_dispatch_due', columns: ['status', 'cancel_deadline_at', 'dispatch_claimed_at'])]
 #[ORM\Index(name: 'idx_fall_alerts_retry_due', columns: ['status', 'next_dispatch_retry_at'])]
 #[ORM\Index(name: 'idx_fall_alerts_ack_due', columns: ['status', 'acknowledgement_deadline_at'])]
+#[ORM\Index(name: 'idx_fall_alerts_received_at', columns: ['received_at'])]
 class FallAlert
 {
     public const int GRACE_PERIOD_SECONDS = 30;

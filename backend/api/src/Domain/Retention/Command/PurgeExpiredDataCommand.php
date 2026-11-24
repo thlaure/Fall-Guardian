@@ -26,7 +26,7 @@ final class PurgeExpiredDataCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         foreach ($this->retentionService->purge() as $metric => $count) {
-            $output->writeln(sprintf('%s: %d', $metric, $count));
+            $output->writeln(sprintf('%s: %d', $metric, (int) $count));
         }
 
         return Command::SUCCESS;

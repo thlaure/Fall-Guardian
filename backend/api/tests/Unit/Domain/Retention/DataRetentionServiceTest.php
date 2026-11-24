@@ -35,11 +35,12 @@ final class DataRetentionServiceTest extends TestCase
         $result = new DataRetentionService($repository, $clock, new NullLogger(), 365, 30)->purge();
 
         self::assertSame([
-            'deletedAlerts' => 3,
-            'erasedLocations' => 4,
+            'completed' => true,
+            'deletedRateLimitBuckets' => 7,
             'deletedInvites' => 5,
             'deletedEnrollments' => 6,
-            'deletedRateLimitBuckets' => 7,
+            'erasedLocations' => 4,
+            'deletedAlerts' => 3,
         ], $result);
     }
 
@@ -52,6 +53,51 @@ final class DataRetentionServiceTest extends TestCase
         $result = new DataRetentionService($repository, new MockClock(), new NullLogger(), 365, 30)->purge();
 
         self::assertSame(1012, $result['deletedAlerts']);
+    }
+
+    #[Test]
+    public function itStopsStartingBatchesOnceItsTimeBudgetIsSpentAndReportsUnfinishedWork(): void
+    {
+        $elapsed = 0.0;
+        $repository = $this->createMock(RetentionRepositoryInterface::class);
+        // Cheap categories run first and finish; each alert batch "takes" 0.8 s.
+        $repository->method('deleteRateLimitBucketsBefore')->willReturn(0);
+        $repository->method('deleteFinishedInvitesBefore')->willReturn(0);
+        $repository->method('deleteFinishedCompanionEnrollmentsBefore')->willReturn(0);
+        $repository->method('eraseLocationOfClosedAlertsBefore')->willReturn(0);
+        $repository->expects($this->exactly(3))->method('deleteClosedAlertsBefore')->willReturnCallback(
+            static function () use (&$elapsed): int {
+                $elapsed += 0.8;
+
+                return 500;
+            },
+        );
+
+        $service = new DataRetentionService($repository, new MockClock(), new NullLogger(), 365, 30, static function () use (&$elapsed): float {
+            return $elapsed;
+        });
+        $result = $service->purge(2.0);
+
+        self::assertFalse($result['completed']);
+        self::assertSame(1500, $result['deletedAlerts']);
+    }
+
+    #[Test]
+    public function aLargeAlertBacklogNeverStarvesTheCheapCategories(): void
+    {
+        $repository = $this->createMock(RetentionRepositoryInterface::class);
+        $repository->expects($this->once())->method('deleteRateLimitBucketsBefore')->willReturn(3);
+        $repository->expects($this->never())->method('deleteClosedAlertsBefore');
+        $clockCalls = 0;
+        // The budget is exhausted right after the first category.
+        $service = new DataRetentionService($repository, new MockClock(), new NullLogger(), 365, 30, static function () use (&$clockCalls): float {
+            return ++$clockCalls > 2 ? 10.0 : 0.0;
+        });
+
+        $result = $service->purge(1.0);
+
+        self::assertSame(3, $result['deletedRateLimitBuckets']);
+        self::assertFalse($result['completed']);
     }
 
     #[Test]

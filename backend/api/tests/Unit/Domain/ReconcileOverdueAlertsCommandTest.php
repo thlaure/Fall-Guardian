@@ -64,8 +64,31 @@ final class ReconcileOverdueAlertsCommandTest extends TestCase
             $logger,
         );
 
-        new ReflectionMethod($command, 'runRetention')->invoke($command);
-
+        self::assertTrue(new ReflectionMethod($command, 'runRetention')->invoke($command));
         self::assertSame(['error:retention.failed'], $logger->messages);
+    }
+
+    #[Test]
+    public function aRetentionRunInsideTheLoopIsTimeBoxed(): void
+    {
+        $elapsed = 0.0;
+        $retention = $this->createMock(RetentionRepositoryInterface::class);
+        $retention->method('deleteRateLimitBucketsBefore')->willReturnCallback(static function () use (&$elapsed): int {
+            $elapsed += 1.5;
+
+            return 500;
+        });
+        $command = new ReconcileOverdueAlertsCommand(
+            new OverdueAlertReconciler($this->createMock(FallAlertRepositoryInterface::class), $this->createMock(MessageBusInterface::class), new MockClock(), $this->createMock(HeartbeatRepositoryInterface::class), new NullLogger()),
+            new DataRetentionService($retention, new MockClock(), new NullLogger(), 365, 30, static function () use (&$elapsed): float {
+                return $elapsed;
+            }),
+            new NullLogger(),
+        );
+
+        // Budget is 2 s: two 1.5 s batches run, then the run yields back to escalation.
+        self::assertFalse(new ReflectionMethod($command, 'runRetention')->invoke($command));
+        self::assertEqualsWithDelta(3.0, $elapsed, 0.001);
+        self::assertSame(2.0, ReconcileOverdueAlertsCommand::RETENTION_TIME_BUDGET_SECONDS);
     }
 }

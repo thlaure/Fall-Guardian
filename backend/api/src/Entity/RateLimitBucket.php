@@ -9,6 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'rate_limit_buckets')]
+#[ORM\Index(name: 'idx_rate_limit_buckets_window_start', columns: ['window_start_at'])]
 class RateLimitBucket
 {
     public function __construct(

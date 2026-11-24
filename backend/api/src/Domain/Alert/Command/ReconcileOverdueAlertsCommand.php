@@ -23,6 +23,15 @@ final class ReconcileOverdueAlertsCommand extends Command
 {
     private const int DEFAULT_RETENTION_INTERVAL_SECONDS = 3600;
 
+    /** Retention never runs right at start-up, when escalation catch-up matters most. */
+    private const int DEFAULT_RETENTION_FIRST_DELAY_SECONDS = 600;
+
+    /** Upper bound of one retention run inside the loop; unfinished work resumes later. */
+    public const float RETENTION_TIME_BUDGET_SECONDS = 2.0;
+
+    /** When a run hit its time budget, continue after this delay instead of the full interval. */
+    private const int RETENTION_CATCH_UP_DELAY_SECONDS = 60;
+
     public function __construct(
         private readonly OverdueAlertReconciler $reconciler,
         private readonly DataRetentionService $retentionService,
@@ -42,6 +51,13 @@ final class ReconcileOverdueAlertsCommand extends Command
                 InputOption::VALUE_REQUIRED,
                 'In watch mode, run the data-retention purge every N seconds (0 disables it).',
                 (string) self::DEFAULT_RETENTION_INTERVAL_SECONDS,
+            )
+            ->addOption(
+                'retention-first-delay',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'In watch mode, wait N seconds after start-up before the first retention run.',
+                (string) self::DEFAULT_RETENTION_FIRST_DELAY_SECONDS,
             );
     }
 
@@ -51,7 +67,9 @@ final class ReconcileOverdueAlertsCommand extends Command
         $watch = true === $input->getOption('watch');
         $rawInterval = $input->getOption('retention-interval');
         $retentionInterval = is_numeric($rawInterval) ? max(0, (int) $rawInterval) : self::DEFAULT_RETENTION_INTERVAL_SECONDS;
-        $lastRetentionRunAt = 0;
+        $rawFirstDelay = $input->getOption('retention-first-delay');
+        $firstDelay = is_numeric($rawFirstDelay) ? max(0, (int) $rawFirstDelay) : self::DEFAULT_RETENTION_FIRST_DELAY_SECONDS;
+        $nextRetentionAt = time() + $firstDelay;
 
         do {
             $reconciled = $this->reconciler->reconcile();
@@ -60,9 +78,9 @@ final class ReconcileOverdueAlertsCommand extends Command
                 $output->writeln(sprintf('Queued %d overdue alert dispatch(es) or reminder(s).', $reconciled));
             }
 
-            if ($watch && $retentionInterval > 0 && time() - $lastRetentionRunAt >= $retentionInterval) {
-                $lastRetentionRunAt = time();
-                $this->runRetention();
+            if ($watch && $retentionInterval > 0 && time() >= $nextRetentionAt) {
+                $completed = $this->runRetention();
+                $nextRetentionAt = time() + ($completed ? $retentionInterval : min($retentionInterval, self::RETENTION_CATCH_UP_DELAY_SECONDS));
             }
 
             if ($watch) {
@@ -73,13 +91,21 @@ final class ReconcileOverdueAlertsCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function runRetention(): void
+    /**
+     * Runs one time-boxed retention pass between two reconcile iterations, so
+     * escalation is delayed by at most the time budget plus one batch.
+     *
+     * @return bool whether all retention work was done
+     */
+    private function runRetention(): bool
     {
         try {
-            $this->retentionService->purge();
+            return $this->retentionService->purge(self::RETENTION_TIME_BUDGET_SECONDS)['completed'];
         } catch (Throwable $exception) {
             // Retention is housekeeping: it must never stop alert escalation.
             $this->logger->error('retention.failed', ['exceptionClass' => $exception::class]);
+
+            return true;
         }
     }
 }
