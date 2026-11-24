@@ -7,6 +7,7 @@ namespace App\Infrastructure\RateLimit;
 use App\Entity\RateLimitBucket;
 use DateTimeImmutable;
 use Doctrine\DBAL\LockMode;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
@@ -26,6 +27,14 @@ final readonly class FixedWindowEndpointRateLimiter implements EndpointRateLimit
         $bucketId = hash('sha256', $bucketName.'|'.$subject);
 
         $this->entityManager->wrapInTransaction(function () use ($bucketId, $now, $limit, $windowSeconds): void {
+            // Create the bucket race-free: concurrent first requests for the
+            // same subject must not fail on the primary key.
+            $this->entityManager->getConnection()->executeStatement(
+                'INSERT INTO rate_limit_buckets (id, window_start_at, hits) VALUES (:id, :windowStartAt, 0) ON CONFLICT (id) DO NOTHING',
+                ['id' => $bucketId, 'windowStartAt' => $now],
+                ['windowStartAt' => Types::DATETIME_IMMUTABLE],
+            );
+
             $bucket = $this->entityManager->find(RateLimitBucket::class, $bucketId, LockMode::PESSIMISTIC_WRITE);
 
             if (!$bucket instanceof RateLimitBucket) {

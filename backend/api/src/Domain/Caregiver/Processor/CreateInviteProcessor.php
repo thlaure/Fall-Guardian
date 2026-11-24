@@ -32,11 +32,11 @@ final readonly class CreateInviteProcessor implements ProcessorInterface
         $this->rateLimiter->consume('invite_create', 10, 300, $device->getPublicId());
 
         try {
-            $invite = $this->inviteService->createInvite($device);
+            $issued = $this->inviteService->createInvite($device);
         } catch (DomainException $e) {
             throw new UnprocessableEntityHttpException($e->getMessage(), $e);
         }
 
-        return CreateInviteOutputDTO::fromInviteData($invite->getCode(), $invite->getExpiresAt());
+        return CreateInviteOutputDTO::fromInviteData($issued->code, $issued->invite->getExpiresAt());
     }
 }

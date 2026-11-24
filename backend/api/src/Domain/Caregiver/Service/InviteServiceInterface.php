@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Caregiver\Service;
 
-use App\Entity\CaregiverInvite;
+use App\Domain\Caregiver\Model\IssuedInvite;
 use App\Entity\CaregiverLink;
 use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 
 interface InviteServiceInterface
 {
-    public function createInvite(Device $protectedDevice): CaregiverInvite;
+    public function createInvite(Device $protectedDevice): IssuedInvite;
 
     public function acceptInvite(
         string $code,

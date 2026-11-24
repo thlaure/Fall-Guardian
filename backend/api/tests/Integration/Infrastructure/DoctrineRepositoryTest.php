@@ -80,7 +80,7 @@ final class DoctrineRepositoryTest extends KernelTestCase
         $invite = new CaregiverInvite($protectedDevice, $code, new DateTimeImmutable('+1 hour'));
         $inviteRepository->save($invite);
 
-        self::assertSame($invite, $inviteRepository->findActiveByCode($code));
+        self::assertSame($invite, $inviteRepository->findActiveLegacyByPlainCode($code));
 
         $link = new CaregiverLink($protectedDevice, $caregiverDevice);
         $linkRepository->save($link);

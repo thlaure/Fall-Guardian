@@ -16,6 +16,9 @@ interface AlertIngestionServiceInterface
 
     public function createCancelledAlert(Device $device, string $clientAlertId, DateTimeImmutable $fallTimestamp, string $locale, ?float $latitude, ?float $longitude, int $revision = 1, FallDetectionSource $detectionSource = FallDetectionSource::AssistedPhone, FallResolution $resolution = FallResolution::Unknown): FallAlert;
 
+    /** True when this device's protected person already reported `$clientAlertId` (idempotent replay). */
+    public function isKnownAlert(Device $device, string $clientAlertId): bool;
+
     public function cancelAlert(Device $device, string $clientAlertId): ?FallAlert;
 
     public function getAlertForDevice(Device $device, string $alertId): ?FallAlert;

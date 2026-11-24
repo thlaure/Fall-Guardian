@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Http\Security;
 
 use App\Domain\Device\Port\DeviceRepositoryInterface;
+use App\Entity\Device;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,6 +21,7 @@ final class DeviceTokenAuthenticator extends AbstractAuthenticator
     public function __construct(
         private readonly DeviceRepositoryInterface $deviceRepository,
         private readonly DeviceTokenHasher $tokenHasher,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -49,22 +52,26 @@ final class DeviceTokenAuthenticator extends AbstractAuthenticator
             $device = $this->deviceRepository->findActiveByTokenHash($userIdentifier);
             $authenticatedWithLegacyHash = false;
 
-            if (!$device instanceof \App\Entity\Device) {
+            if (!$device instanceof Device) {
                 $device = $this->deviceRepository->findActiveByTokenHash($legacyHash);
-                $authenticatedWithLegacyHash = $device instanceof \App\Entity\Device;
+                $authenticatedWithLegacyHash = $device instanceof Device;
             }
 
-            if (!$device instanceof \App\Entity\Device) {
+            if (!$device instanceof Device) {
                 throw new AuthenticationException('Invalid device token.');
             }
 
-            $device->touchSeenAt();
+            $changed = $device->touchSeenAt();
 
             if ($authenticatedWithLegacyHash) {
                 $device->rotateTokenHash($userIdentifier);
+                $changed = true;
+                $this->logger->warning('auth.legacy_token_hash_used', ['deviceId' => $device->getPublicId()]);
             }
 
-            $this->deviceRepository->save($device);
+            if ($changed) {
+                $this->deviceRepository->save($device);
+            }
 
             return new DeviceApiUser($device);
         }));

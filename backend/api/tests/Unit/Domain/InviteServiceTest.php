@@ -12,6 +12,7 @@ use App\Entity\CaregiverInvite;
 use App\Entity\CaregiverLink;
 use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
+use App\Infrastructure\Http\Security\DeviceTokenHasher;
 use DomainException;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -37,6 +38,7 @@ final class InviteServiceTest extends TestCase
             $this->inviteRepository,
             $this->linkRepository,
             $this->pushTokenRepository,
+            new DeviceTokenHasher('test-secret'),
         );
     }
 
@@ -47,11 +49,48 @@ final class InviteServiceTest extends TestCase
         $device->method('isCaregiver')->willReturn(false);
         $this->inviteRepository->expects($this->once())->method('save');
 
-        $invite = $this->service->createInvite($device);
+        $issued = $this->service->createInvite($device);
 
-        self::assertInstanceOf(CaregiverInvite::class, $invite);
-        self::assertSame(32, strlen($invite->getCode()));
-        self::assertMatchesRegularExpression('/^[A-F0-9]{32}$/', $invite->getCode());
+        self::assertSame(32, strlen($issued->code));
+        self::assertMatchesRegularExpression('/^[A-F0-9]{32}$/', $issued->code);
+        // Only the HMAC is stored; the plaintext code is returned once.
+        self::assertNull($issued->invite->getCode());
+        self::assertSame(new DeviceTokenHasher('test-secret')->hash($issued->code), $issued->invite->getCodeHash());
+    }
+
+    #[Test]
+    public function itFindsAHashedInviteByItsCodeInAnyCase(): void
+    {
+        $caregiverDevice = $this->createMock(Device::class);
+        $caregiverDevice->method('isCaregiver')->willReturn(true);
+        $invite = $this->createMock(CaregiverInvite::class);
+        $invite->method('getDevice')->willReturn($this->createMock(Device::class));
+
+        $this->inviteRepository->expects($this->once())
+            ->method('findActiveByCodeHash')
+            ->with(new DeviceTokenHasher('test-secret')->hash('ABCDEF12'))
+            ->willReturn($invite);
+        $this->inviteRepository->expects($this->never())->method('findActiveLegacyByPlainCode');
+
+        $this->service->acceptInvite(' abcdef12 ', $caregiverDevice);
+    }
+
+    #[Test]
+    public function itFallsBackToLegacyPlaintextInvitesIssuedBeforeHashing(): void
+    {
+        $caregiverDevice = $this->createMock(Device::class);
+        $caregiverDevice->method('isCaregiver')->willReturn(true);
+        $invite = $this->createMock(CaregiverInvite::class);
+        $invite->method('getDevice')->willReturn($this->createMock(Device::class));
+
+        $this->inviteRepository->method('findActiveByCodeHash')->willReturn(null);
+        $this->inviteRepository->expects($this->once())
+            ->method('findActiveLegacyByPlainCode')
+            ->with('LEGACY01')
+            ->willReturn($invite);
+        $this->linkRepository->expects($this->once())->method('save');
+
+        $this->service->acceptInvite('LEGACY01', $caregiverDevice);
     }
 
     #[Test]
@@ -75,7 +114,7 @@ final class InviteServiceTest extends TestCase
         $invite->method('getDevice')->willReturn($protectedDevice);
         $invite->expects($this->once())->method('markUsed');
 
-        $this->inviteRepository->method('findActiveByCode')->with('ABCD1234')->willReturn($invite);
+        $this->inviteRepository->method('findActiveByCodeHash')->with(new DeviceTokenHasher('test-secret')->hash('ABCD1234'))->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn(null);
         $this->inviteRepository->expects($this->once())->method('save');
         $this->linkRepository->expects($this->once())->method('save');
@@ -102,7 +141,8 @@ final class InviteServiceTest extends TestCase
     {
         $caregiverDevice = $this->createMock(Device::class);
         $caregiverDevice->method('isCaregiver')->willReturn(true);
-        $this->inviteRepository->method('findActiveByCode')->willReturn(null);
+        $this->inviteRepository->method('findActiveByCodeHash')->willReturn(null);
+        $this->inviteRepository->method('findActiveLegacyByPlainCode')->willReturn(null);
 
         $this->expectException(RuntimeException::class);
         $this->service->acceptInvite('BADCODE', $caregiverDevice);
@@ -168,7 +208,7 @@ final class InviteServiceTest extends TestCase
         $existing->expects($this->once())->method('renameProtectedPerson')->with('Marie');
         $existing->expects($this->once())->method('renameCaregiver')->with('Thomas');
 
-        $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
+        $this->inviteRepository->method('findActiveByCodeHash')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
         $this->inviteRepository->expects($this->once())->method('save')->with($invite);
         $this->linkRepository->expects($this->once())->method('save')->with($existing);
@@ -194,7 +234,7 @@ final class InviteServiceTest extends TestCase
         $existing->expects($this->once())->method('renameProtectedPerson')->with('Marie');
         $existing->expects($this->once())->method('renameCaregiver')->with('Thomas');
 
-        $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
+        $this->inviteRepository->method('findActiveByCodeHash')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
         $this->inviteRepository->expects($this->once())->method('save');
         $this->linkRepository->expects($this->once())->method('save')->with($existing);
@@ -220,7 +260,7 @@ final class InviteServiceTest extends TestCase
         $existing->expects($this->never())->method('renameProtectedPerson');
         $existing->expects($this->never())->method('renameCaregiver');
 
-        $this->inviteRepository->method('findActiveByCode')->willReturn($invite);
+        $this->inviteRepository->method('findActiveByCodeHash')->willReturn($invite);
         $this->linkRepository->method('findExistingPair')->willReturn($existing);
         $this->inviteRepository->expects($this->once())->method('save');
         $this->linkRepository->expects($this->once())->method('save')->with($existing);

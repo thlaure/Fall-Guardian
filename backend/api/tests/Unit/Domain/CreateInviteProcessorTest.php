@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Domain;
 
 use ApiPlatform\Metadata\Operation;
+use App\Domain\Caregiver\Model\IssuedInvite;
 use App\Domain\Caregiver\Processor\CreateInviteProcessor;
 use App\Domain\Caregiver\Service\InviteServiceInterface;
 use App\Entity\CaregiverInvite;
@@ -42,12 +43,12 @@ final class CreateInviteProcessorTest extends TestCase
         $device = $this->createMock(Device::class);
         $device->method('getPublicId')->willReturn('device-1');
         $invite = $this->createMock(CaregiverInvite::class);
-        $invite->method('getCode')->willReturn('ABCD1234');
+        $invite->method('getCode')->willReturn(null);
         $invite->method('getExpiresAt')->willReturn(new DateTimeImmutable('+30 minutes'));
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
         $this->rateLimiter->expects($this->once())->method('consume')->with('invite_create', 10, 300, 'device-1');
-        $this->inviteService->method('createInvite')->willReturn($invite);
+        $this->inviteService->method('createInvite')->willReturn(new IssuedInvite($invite, 'ABCD1234'));
 
         $result = $this->processor->process(null, $this->createMock(Operation::class));
 
