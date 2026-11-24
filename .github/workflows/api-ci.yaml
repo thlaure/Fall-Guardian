@@ -12,6 +12,7 @@ on:
       - packages/api_contract/**
       - tools/e2e/**
       - scripts/deploy-api-remote.sh
+      - Makefile
       - .github/workflows/api-ci.yaml
       - .github/workflows/api-deploy.yaml
   pull_request:
@@ -51,6 +52,7 @@ jobs:
             packages/api_contract \
             tools/e2e \
             scripts/deploy-api-remote.sh \
+            Makefile \
             .github/workflows/api-ci.yaml \
             .github/workflows/api-deploy.yaml; then
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -160,18 +162,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
-        with:
-          php-version: '8.5'
-          coverage: none
-
-      - name: Install Composer dependencies
-        working-directory: backend/api
-        run: composer install --no-interaction --no-progress --prefer-dist
-        env:
-          COMPOSER_MEMORY_LIMIT: -1
-
+      # Composer dependencies are installed inside the test image by
+      # `make e2e-up`, so no host PHP toolchain is needed here.
       - name: Set up Dart
         uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
