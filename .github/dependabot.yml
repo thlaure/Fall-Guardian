@@ -44,22 +44,11 @@ updates:
       composer-minor-patch:
         update-types: [minor, patch]
 
-  - package-ecosystem: docker
-    directory: /backend/api/.docker/api
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 2
-    cooldown:
-      default-days: 7
-    commit-message:
-      prefix: chore(api)
-    ignore:
-      - dependency-name: '*'
-        update-types: ['version-update:semver-major']
-    groups:
-      docker-minor-patch:
-        update-types: [minor, patch]
+  # No `docker` entry: backend/api/.docker/api/Dockerfile's only external base
+  # is `FROM ${REGISTRY}dunglas/frankenphp:<tag>`, which Dependabot cannot
+  # parse because of the ARG prefix (REGISTRY is an optional mirror, empty by
+  # default). FrankenPHP bumps are manual; Trivy in API CI flags a base image
+  # that needs one.
 
   - package-ecosystem: pub
     directory: /apps/assisted_mobile
