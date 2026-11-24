@@ -23,6 +23,9 @@ final readonly class ReadinessChecker
     /** The reconciler beats every second in watch mode. */
     public const int MAX_RECONCILER_HEARTBEAT_AGE_SECONDS = 60;
 
+    /** Messenger workers beat at most every 15 s; at least one must be fresh. */
+    public const int MAX_MESSENGER_HEARTBEAT_AGE_SECONDS = 120;
+
     public function __construct(
         private FallAlertRepositoryInterface $fallAlertRepository,
         private HeartbeatRepositoryInterface $heartbeatRepository,
@@ -32,7 +35,7 @@ final readonly class ReadinessChecker
     }
 
     /**
-     * @return array{ready: bool, checks: array{database: string, escalationBacklog: string, oldestOverdueEscalationAgeSeconds: int|null, reconciler: string, reconcilerHeartbeatAgeSeconds: int|null}}
+     * @return array{ready: bool, checks: array{database: string, escalationBacklog: string, oldestOverdueEscalationAgeSeconds: int|null, reconciler: string, reconcilerHeartbeatAgeSeconds: int|null, messenger: string, messengerHeartbeatAgeSeconds: int|null}}
      */
     public function check(): array
     {
@@ -40,6 +43,7 @@ final readonly class ReadinessChecker
             $now = $this->clock->now();
             $oldestDueAt = $this->fallAlertRepository->findOldestPendingEscalationDueAt($now);
             $lastBeatAt = $this->heartbeatRepository->lastBeatAt(HeartbeatRepositoryInterface::RECONCILER);
+            $lastWorkerBeatAt = $this->heartbeatRepository->lastBeatAtAmong(HeartbeatRepositoryInterface::MESSENGER);
         } catch (Throwable $exception) {
             $this->logger->error('health.database_unavailable', ['exceptionClass' => $exception::class]);
 
@@ -51,6 +55,8 @@ final readonly class ReadinessChecker
                     'oldestOverdueEscalationAgeSeconds' => null,
                     'reconciler' => 'unknown',
                     'reconcilerHeartbeatAgeSeconds' => null,
+                    'messenger' => 'unknown',
+                    'messengerHeartbeatAgeSeconds' => null,
                 ],
             ];
         }
@@ -59,22 +65,28 @@ final readonly class ReadinessChecker
         $heartbeatAge = self::ageSeconds($now, $lastBeatAt);
         $backlogOk = null === $backlogAge || $backlogAge <= self::MAX_ESCALATION_BACKLOG_SECONDS;
         $reconcilerOk = null !== $heartbeatAge && $heartbeatAge <= self::MAX_RECONCILER_HEARTBEAT_AGE_SECONDS;
+        // Pushes are sent by messenger workers: at least one must be alive.
+        $workerAge = self::ageSeconds($now, $lastWorkerBeatAt);
+        $messengerOk = null !== $workerAge && $workerAge <= self::MAX_MESSENGER_HEARTBEAT_AGE_SECONDS;
 
-        if (!$backlogOk || !$reconcilerOk) {
+        if (!$backlogOk || !$reconcilerOk || !$messengerOk) {
             $this->logger->error('health.escalation_stalled', [
                 'oldestOverdueEscalationAgeSeconds' => $backlogAge,
                 'reconcilerHeartbeatAgeSeconds' => $heartbeatAge,
+                'messengerHeartbeatAgeSeconds' => $workerAge,
             ]);
         }
 
         return [
-            'ready' => $backlogOk && $reconcilerOk,
+            'ready' => $backlogOk && $reconcilerOk && $messengerOk,
             'checks' => [
                 'database' => 'ok',
                 'escalationBacklog' => $backlogOk ? 'ok' : 'fail',
                 'oldestOverdueEscalationAgeSeconds' => $backlogAge,
                 'reconciler' => $reconcilerOk ? 'ok' : 'fail',
                 'reconcilerHeartbeatAgeSeconds' => $heartbeatAge,
+                'messenger' => $messengerOk ? 'ok' : 'fail',
+                'messengerHeartbeatAgeSeconds' => $workerAge,
             ],
         ];
     }

@@ -82,6 +82,17 @@ final class OperationalHardeningTest extends KernelTestCase
 
         self::assertEquals(new DateTimeImmutable('2026-01-01T00:00:05+00:00'), $heartbeats->lastBeatAt('integration-test'));
         self::assertNull($heartbeats->lastBeatAt('never-beat'));
+
+        $prefix = 'worker-'.bin2hex(random_bytes(4));
+        self::assertNull($heartbeats->lastBeatAtAmong($prefix));
+        $heartbeats->beat($prefix.':host-a', new DateTimeImmutable('2026-01-01T00:00:00+00:00'));
+        $heartbeats->beat($prefix.':host-b', new DateTimeImmutable('2026-01-01T00:01:00+00:00'));
+        $heartbeats->beat($prefix.'x:other', new DateTimeImmutable('2026-01-01T00:09:00+00:00'));
+        self::assertEquals(new DateTimeImmutable('2026-01-01T00:01:00+00:00'), $heartbeats->lastBeatAtAmong($prefix));
+
+        $retention = new DoctrineRetentionRepository($this->connection);
+        self::assertGreaterThanOrEqual(3, $retention->deleteHeartbeatsBefore(new DateTimeImmutable('2026-02-01T00:00:00+00:00'), 500));
+        self::assertNull($heartbeats->lastBeatAtAmong($prefix));
     }
 
     public function testRetentionDeletesOnlyClosedDataPastItsPeriod(): void

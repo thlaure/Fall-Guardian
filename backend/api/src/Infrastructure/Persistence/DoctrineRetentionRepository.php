@@ -91,6 +91,15 @@ final readonly class DoctrineRetentionRepository implements RetentionRepositoryI
         );
     }
 
+    public function deleteHeartbeatsBefore(DateTimeImmutable $cutoff, int $batchSize): int
+    {
+        return $this->bounded(
+            sprintf('DELETE FROM service_heartbeats WHERE name IN (SELECT name FROM service_heartbeats WHERE beat_at < :cutoff LIMIT %d)', $batchSize),
+            ['cutoff' => $cutoff],
+            ['cutoff' => Types::DATETIME_IMMUTABLE],
+        );
+    }
+
     /**
      * @param array<string, mixed>  $parameters
      * @param array<string, string> $types

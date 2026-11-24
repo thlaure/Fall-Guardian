@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Api;
 
 use App\Domain\Healthcheck\Port\HeartbeatRepositoryInterface;
+use App\Domain\Healthcheck\Service\WorkerHeartbeatName;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -38,6 +39,10 @@ final class HealthControllerTest extends WebTestCase
             $connection->executeStatement(
                 "INSERT INTO service_heartbeats (name, beat_at) VALUES (?, timezone('UTC', NOW())) ON CONFLICT (name) DO UPDATE SET beat_at = EXCLUDED.beat_at",
                 [HeartbeatRepositoryInterface::RECONCILER],
+            );
+            $connection->executeStatement(
+                "INSERT INTO service_heartbeats (name, beat_at) VALUES (?, timezone('UTC', NOW())) ON CONFLICT (name) DO UPDATE SET beat_at = EXCLUDED.beat_at",
+                [WorkerHeartbeatName::forHost('integration-worker')],
             );
 
             $client->request(Request::METHOD_GET, '/health/ready');

@@ -8,6 +8,7 @@ use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Domain\Healthcheck\Command\HeartbeatCheckCommand;
 use App\Domain\Healthcheck\Port\HeartbeatRepositoryInterface;
 use App\Domain\Healthcheck\Service\ReadinessChecker;
+use App\Domain\Healthcheck\Service\WorkerHeartbeatName;
 use App\Infrastructure\Messenger\WorkerHeartbeatSubscriber;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
@@ -66,6 +67,20 @@ final class ReadinessCheckerTest extends TestCase
     }
 
     #[Test]
+    public function itRequiresAtLeastOneLiveMessengerWorker(): void
+    {
+        $noWorker = $this->checker(null, $this->clock->now(), null)->check();
+        self::assertFalse($noWorker['ready']);
+        self::assertSame('fail', $noWorker['checks']['messenger']);
+
+        $staleWorkers = $this->checker(null, $this->clock->now(), $this->clock->now()->modify('-121 seconds'))->check();
+        self::assertFalse($staleWorkers['ready']);
+        self::assertSame(121, $staleWorkers['checks']['messengerHeartbeatAgeSeconds']);
+
+        self::assertSame('ok', $this->checker(null, $this->clock->now())->check()['checks']['messenger']);
+    }
+
+    #[Test]
     public function itIsNotReadyWhenTheDatabaseIsUnavailable(): void
     {
         $alerts = $this->createMock(FallAlertRepositoryInterface::class);
@@ -83,7 +98,9 @@ final class ReadinessCheckerTest extends TestCase
         $heartbeats = $this->createMock(HeartbeatRepositoryInterface::class);
         $heartbeats->method('lastBeatAt')->willReturnMap([
             [HeartbeatRepositoryInterface::RECONCILER, $this->clock->now()->modify('-5 seconds')],
-            [HeartbeatRepositoryInterface::MESSENGER, null],
+            // Another worker container is alive, but this container's worker never beat.
+            [WorkerHeartbeatName::forHost('other-container'), $this->clock->now()],
+            [WorkerHeartbeatName::forThisHost(), null],
         ]);
         $tester = new CommandTester(new HeartbeatCheckCommand($heartbeats, $this->clock));
 
@@ -108,7 +125,7 @@ final class ReadinessCheckerTest extends TestCase
         $heartbeats = $this->createMock(HeartbeatRepositoryInterface::class);
         $heartbeats->expects($this->once())
             ->method('beat')
-            ->with(HeartbeatRepositoryInterface::MESSENGER, $this->clock->now())
+            ->with(WorkerHeartbeatName::forThisHost(), $this->clock->now())
             ->willThrowException(new RuntimeException('database down'));
         $subscriber = new WorkerHeartbeatSubscriber($heartbeats, $this->clock, new NullLogger());
         $event = new WorkerRunningEvent($this->createMock(Worker::class), true);
@@ -119,13 +136,22 @@ final class ReadinessCheckerTest extends TestCase
         self::assertArrayHasKey(WorkerRunningEvent::class, WorkerHeartbeatSubscriber::getSubscribedEvents());
     }
 
-    private function checker(?DateTimeImmutable $oldestDueAt, ?DateTimeImmutable $lastBeatAt): ReadinessChecker
+    private function checker(?DateTimeImmutable $oldestDueAt, ?DateTimeImmutable $lastBeatAt, ?DateTimeImmutable $lastWorkerBeatAt = new DateTimeImmutable('2026-11-21T11:59:50+00:00')): ReadinessChecker
     {
         $alerts = $this->createMock(FallAlertRepositoryInterface::class);
         $alerts->method('findOldestPendingEscalationDueAt')->willReturn($oldestDueAt);
         $heartbeats = $this->createMock(HeartbeatRepositoryInterface::class);
         $heartbeats->method('lastBeatAt')->willReturn($lastBeatAt);
+        $heartbeats->method('lastBeatAtAmong')->with(HeartbeatRepositoryInterface::MESSENGER)->willReturn($lastWorkerBeatAt);
 
         return new ReadinessChecker($alerts, $heartbeats, $this->clock, new NullLogger());
+    }
+
+    #[Test]
+    public function workerHeartbeatsAreNamedPerHost(): void
+    {
+        self::assertSame('messenger:abc123', WorkerHeartbeatName::forHost('abc123'));
+        self::assertSame('messenger:unknown', WorkerHeartbeatName::forHost(''));
+        self::assertStringStartsWith('messenger:', WorkerHeartbeatName::forThisHost());
     }
 }

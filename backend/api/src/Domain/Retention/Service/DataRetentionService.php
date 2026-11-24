@@ -15,7 +15,8 @@ use Psr\Log\LoggerInterface;
  *    after `alertRetentionDays`;
  *  - coordinates of closed alerts are erased after `locationRetentionDays`;
  *  - used/expired invites and companion enrollments are deleted after 7 days;
- *  - rate-limit buckets are deleted one day after their window started.
+ *  - rate-limit buckets are deleted one day after their window started;
+ *  - heartbeats of workers silent for a day (replaced containers) are deleted.
  */
 final readonly class DataRetentionService
 {
@@ -47,7 +48,7 @@ final readonly class DataRetentionService
      * @param float|null $timeBudgetSeconds stop starting new batches once this much time has been spent;
      *                                      the remaining work is picked up by the next run
      *
-     * @return array{deletedRateLimitBuckets: int, deletedInvites: int, deletedEnrollments: int, erasedLocations: int, deletedAlerts: int, completed: bool}
+     * @return array{deletedRateLimitBuckets: int, deletedHeartbeats: int, deletedInvites: int, deletedEnrollments: int, erasedLocations: int, deletedAlerts: int, completed: bool}
      */
     public function purge(?float $timeBudgetSeconds = null): array
     {
@@ -61,6 +62,7 @@ final readonly class DataRetentionService
         // Cheap categories first, so a large alert backlog never starves them.
         $steps = [
             'deletedRateLimitBuckets' => fn (int $batch): int => $this->retentionRepository->deleteRateLimitBucketsBefore($rateLimitCutoff, $batch),
+            'deletedHeartbeats' => fn (int $batch): int => $this->retentionRepository->deleteHeartbeatsBefore($rateLimitCutoff, $batch),
             'deletedInvites' => fn (int $batch): int => $this->retentionRepository->deleteFinishedInvitesBefore($shortLivedCutoff, $batch),
             'deletedEnrollments' => fn (int $batch): int => $this->retentionRepository->deleteFinishedCompanionEnrollmentsBefore($shortLivedCutoff, $batch),
             'erasedLocations' => fn (int $batch): int => $this->retentionRepository->eraseLocationOfClosedAlertsBefore($locationCutoff, $batch),
@@ -74,7 +76,7 @@ final readonly class DataRetentionService
             $result['completed'] = $result['completed'] && $drained;
         }
 
-        /* @var array{deletedRateLimitBuckets: int, deletedInvites: int, deletedEnrollments: int, erasedLocations: int, deletedAlerts: int, completed: bool} $result */
+        /* @var array{deletedRateLimitBuckets: int, deletedHeartbeats: int, deletedInvites: int, deletedEnrollments: int, erasedLocations: int, deletedAlerts: int, completed: bool} $result */
         $this->logger->info('retention.purged', $result);
 
         return $result;

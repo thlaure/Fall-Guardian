@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Healthcheck\Command;
 
 use App\Domain\Healthcheck\Port\HeartbeatRepositoryInterface;
+use App\Domain\Healthcheck\Service\WorkerHeartbeatName;
 use Override;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -55,7 +56,10 @@ final class HeartbeatCheckCommand extends Command
         }
 
         try {
-            $lastBeatAt = $this->heartbeatRepository->lastBeatAt($component);
+            // A messenger container checks its own worker, not any worker.
+            $lastBeatAt = $this->heartbeatRepository->lastBeatAt(
+                HeartbeatRepositoryInterface::MESSENGER === $component ? WorkerHeartbeatName::forThisHost() : $component,
+            );
             $now = $this->clock->now();
         } catch (Throwable) {
             $output->writeln('Database unavailable.');

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Messenger;
 
 use App\Domain\Healthcheck\Port\HeartbeatRepositoryInterface;
+use App\Domain\Healthcheck\Service\WorkerHeartbeatName;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -45,7 +46,7 @@ final class WorkerHeartbeatSubscriber implements EventSubscriberInterface
         $this->lastBeatAt = $now;
 
         try {
-            $this->heartbeatRepository->beat(HeartbeatRepositoryInterface::MESSENGER, $this->clock->now());
+            $this->heartbeatRepository->beat(WorkerHeartbeatName::forThisHost(), $this->clock->now());
         } catch (Throwable $exception) {
             // A heartbeat failure must never stop alert delivery.
             $this->logger->warning('worker.heartbeat_failed', ['exceptionClass' => $exception::class]);

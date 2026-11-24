@@ -32,4 +32,14 @@ final readonly class DoctrineHeartbeatRepository implements HeartbeatRepositoryI
 
         return is_string($value) ? new DateTimeImmutable($value, new DateTimeZone('UTC')) : null;
     }
+
+    public function lastBeatAtAmong(string $prefix): ?DateTimeImmutable
+    {
+        $value = $this->connection->fetchOne(
+            'SELECT MAX(beat_at) FROM service_heartbeats WHERE name LIKE :pattern',
+            ['pattern' => addcslashes($prefix.':', '%_\\').'%'],
+        );
+
+        return is_string($value) ? new DateTimeImmutable($value, new DateTimeZone('UTC')) : null;
+    }
 }

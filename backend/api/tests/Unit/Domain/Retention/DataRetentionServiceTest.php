@@ -37,6 +37,7 @@ final class DataRetentionServiceTest extends TestCase
         self::assertSame([
             'completed' => true,
             'deletedRateLimitBuckets' => 7,
+            'deletedHeartbeats' => 0,
             'deletedInvites' => 5,
             'deletedEnrollments' => 6,
             'erasedLocations' => 4,

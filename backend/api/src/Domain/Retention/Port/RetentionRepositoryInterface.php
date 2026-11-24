@@ -27,4 +27,7 @@ interface RetentionRepositoryInterface
 
     /** @return int number of rate-limit buckets whose window started before the cutoff */
     public function deleteRateLimitBucketsBefore(DateTimeImmutable $cutoff, int $batchSize): int;
+
+    /** @return int number of heartbeats of workers gone for good (e.g. replaced containers) */
+    public function deleteHeartbeatsBefore(DateTimeImmutable $cutoff, int $batchSize): int;
 }
