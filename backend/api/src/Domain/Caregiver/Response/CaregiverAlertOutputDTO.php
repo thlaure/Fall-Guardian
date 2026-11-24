@@ -10,6 +10,7 @@ use ApiPlatform\OpenApi\Model\Operation;
 use App\Domain\Caregiver\Provider\CaregiverAlertsProvider;
 use App\Entity\FallAlert;
 use App\Shared\DateTime\ApiDateTimeFormatter;
+use DateTimeImmutable;
 
 #[ApiResource(operations: [
     new GetCollection(
@@ -18,7 +19,11 @@ use App\Shared\DateTime\ApiDateTimeFormatter;
         openapi: new Operation(
             tags: ['Caregiver alerts'],
             summary: 'List caregiver fall alerts',
-            description: 'Returns alerts from protected persons linked to the authenticated caregiver device, including acknowledgement state.',
+            description: 'Returns alerts from protected persons linked to the authenticated caregiver device, including acknowledgement state. '
+                .'`acknowledged` and `acknowledgedByMe` are true when the authenticated caregiver acknowledged the alert; '
+                .'`acknowledgedAt` is the first acknowledgement time by any linked caregiver (ISO-8601 UTC; omitted, like other null fields, while nobody acknowledged); '
+                .'`acknowledgementCount` is the number of caregivers who acknowledged it. '
+                .'Status may move from `failed` or `partially_sent` back to `dispatching` while the server retries delivery.',
             security: [['deviceBearer' => []]],
         ),
         provider: CaregiverAlertsProvider::class,
@@ -42,6 +47,9 @@ final readonly class CaregiverAlertOutputDTO
         public ?string $deliveryReceiptDeadlineAt,
         public ?string $firstDeliveryReceiptAt,
         public ?string $acknowledgementDeadlineAt,
+        public ?string $acknowledgedAt = null,
+        public bool $acknowledgedByMe = false,
+        public int $acknowledgementCount = 0,
     ) {
     }
 
@@ -49,6 +57,8 @@ final readonly class CaregiverAlertOutputDTO
         FallAlert $alert,
         bool $acknowledged = false,
         ?string $protectedPersonName = null,
+        ?DateTimeImmutable $firstAcknowledgedAt = null,
+        int $acknowledgementCount = 0,
     ): self {
         return new self(
             $alert->getId()->toRfc4122(),
@@ -66,6 +76,9 @@ final readonly class CaregiverAlertOutputDTO
             null === $alert->getDeliveryReceiptDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getDeliveryReceiptDeadlineAt()),
             null === $alert->getFirstDeliveryReceiptAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getFirstDeliveryReceiptAt()),
             null === $alert->getAcknowledgementDeadlineAt() ? null : ApiDateTimeFormatter::formatUtc($alert->getAcknowledgementDeadlineAt()),
+            null === $firstAcknowledgedAt ? null : ApiDateTimeFormatter::formatUtc($firstAcknowledgedAt),
+            $acknowledged,
+            $acknowledgementCount,
         );
     }
 }

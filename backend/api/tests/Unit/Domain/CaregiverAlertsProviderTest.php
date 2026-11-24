@@ -70,7 +70,6 @@ final class CaregiverAlertsProviderTest extends TestCase
         $protectedDevice = $this->createMock(Device::class);
 
         $alert = $this->createMock(FallAlert::class);
-        $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getLatitude')->willReturn(null);
@@ -85,7 +84,12 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($caregiverDevice);
         $this->caregiverLinkRepository->method('findByCaregiverDevice')->willReturn([$link]);
+        $alertId = Uuid::v7();
+        $alert->method('getId')->willReturn($alertId);
         $this->fallAlertRepository->method('findByDevice')->willReturn([$alert]);
+        $this->acknowledgementRepository->method('summarizeByAlerts')->with([$alert])->willReturn([
+            $alertId->toRfc4122() => ['count' => 2, 'firstAcknowledgedAt' => new DateTimeImmutable('2026-07-23T08:01:05+00:00')],
+        ]);
         $this->acknowledgementRepository->method('findByCaregiverAndAlert')->willReturn(
             $this->createMock(AlertAcknowledgement::class),
         );
@@ -94,6 +98,9 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertTrue($result[0]->acknowledged);
+        $this->assertTrue($result[0]->acknowledgedByMe);
+        $this->assertSame(2, $result[0]->acknowledgementCount);
+        $this->assertSame('2026-07-23T08:01:05+00:00', $result[0]->acknowledgedAt);
         $this->assertSame('device-abc', $result[0]->protectedDeviceId);
         $this->assertSame('ios', $result[0]->protectedDevicePlatform);
         $this->assertSame('Alice', $result[0]->protectedPersonName);
@@ -127,9 +134,47 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertFalse($result[0]->acknowledged);
+        $this->assertFalse($result[0]->acknowledgedByMe);
+        $this->assertSame(0, $result[0]->acknowledgementCount);
+        $this->assertNull($result[0]->acknowledgedAt);
         $this->assertSame('device-xyz', $result[0]->protectedDeviceId);
         $this->assertSame('android', $result[0]->protectedDevicePlatform);
         $this->assertNull($result[0]->protectedPersonName);
+    }
+
+    #[Test]
+    public function itReportsAnAcknowledgementByAnotherCaregiverWithoutMarkingItMine(): void
+    {
+        $caregiverDevice = $this->createMock(Device::class);
+        $protectedDevice = $this->createMock(Device::class);
+        $protectedDevice->method('getPublicId')->willReturn('device-other');
+        $protectedDevice->method('getPlatform')->willReturn('ios');
+        $alertId = Uuid::v7();
+
+        $alert = $this->createMock(FallAlert::class);
+        $alert->method('getId')->willReturn($alertId);
+        $alert->method('getStatus')->willReturn(FallAlertStatus::Acknowledged);
+        $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
+        $alert->method('getDevice')->willReturn($protectedDevice);
+
+        $link = $this->createMock(CaregiverLink::class);
+        $link->method('getProtectedDevice')->willReturn($protectedDevice);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($caregiverDevice);
+        $this->caregiverLinkRepository->method('findByCaregiverDevice')->willReturn([$link]);
+        $this->fallAlertRepository->method('findByDevice')->willReturn([$alert]);
+        $this->acknowledgementRepository->method('summarizeByAlerts')->willReturn([
+            $alertId->toRfc4122() => ['count' => 1, 'firstAcknowledgedAt' => new DateTimeImmutable('2026-07-23T08:02:00+00:00')],
+        ]);
+        $this->acknowledgementRepository->method('findByCaregiverAndAlert')->willReturn(null);
+
+        $result = $this->provider->provide($this->createMock(Operation::class));
+
+        $this->assertFalse($result[0]->acknowledged);
+        $this->assertFalse($result[0]->acknowledgedByMe);
+        $this->assertSame(1, $result[0]->acknowledgementCount);
+        $this->assertSame('2026-07-23T08:02:00+00:00', $result[0]->acknowledgedAt);
+        $this->assertSame('acknowledged', $result[0]->status);
     }
 
     #[Test]

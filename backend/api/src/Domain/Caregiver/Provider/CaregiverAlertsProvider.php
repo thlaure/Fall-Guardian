@@ -10,6 +10,7 @@ use App\Domain\Alert\Port\AlertAcknowledgementRepositoryInterface;
 use App\Domain\Alert\Port\FallAlertRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
 use App\Domain\Caregiver\Response\CaregiverAlertOutputDTO;
+use App\Entity\AlertAcknowledgement;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 
 /**
@@ -40,13 +41,18 @@ final readonly class CaregiverAlertsProvider implements ProviderInterface
 
         foreach ($links as $link) {
             $alerts = $this->fallAlertRepository->findByDevice($link->getProtectedDevice());
+            $summaries = $this->acknowledgementRepository->summarizeByAlerts($alerts);
 
             foreach ($alerts as $alert) {
-                $ack = $this->acknowledgementRepository->findByCaregiverAndAlert($alert, $caregiverDevice);
+                $summary = $summaries[$alert->getId()->toRfc4122()] ?? null;
+                $acknowledgedByMe = null !== $summary
+                    && $this->acknowledgementRepository->findByCaregiverAndAlert($alert, $caregiverDevice) instanceof AlertAcknowledgement;
                 $result[] = CaregiverAlertOutputDTO::fromEntity(
                     $alert,
-                    $ack instanceof \App\Entity\AlertAcknowledgement,
+                    $acknowledgedByMe,
                     $link->getProtectedPersonName(),
+                    $summary['firstAcknowledgedAt'] ?? null,
+                    $summary['count'] ?? 0,
                 );
             }
         }

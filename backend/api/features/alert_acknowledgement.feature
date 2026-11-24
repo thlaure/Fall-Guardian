@@ -79,7 +79,7 @@ Feature: Alert acknowledgement and caregiver alert history
     When I send a POST request to "/api/v1/fall-alerts/{id}/receipt"
     Then the response status code is 204
 
-  Scenario: Unlinked caregiver cannot acknowledge an alert
+  Scenario: Unlinked caregiver cannot acknowledge an alert and cannot learn it exists
     Given I register a protected person device
     And I register a caregiver device
     And I am authenticated as the protected person
@@ -95,7 +95,7 @@ Feature: Alert acknowledgement and caregiver alert history
     And I store the response JSON field "id" as "id"
     And I am authenticated as the caregiver
     When I send a POST request to "/api/v1/fall-alerts/{id}/acknowledge"
-    Then the response status code is 403
+    Then the response status code is 404
 
   Scenario: Caregiver can list alerts for linked protected persons
     Given I register a protected person device
@@ -128,3 +128,46 @@ Feature: Alert acknowledgement and caregiver alert history
     When I send a GET request to "/api/v1/caregiver/alerts"
     Then the response status code is 200
     And the response is an empty collection
+
+  Scenario: Caregiver alert list exposes who acknowledged and when
+    Given I register a protected person device
+    And I register a caregiver device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/invites"
+    Then the response status code is 201
+    And I store the response JSON field "code" as "inviteCode"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/invites/{inviteCode}/accept"
+    Then the response status code is 204
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "ack-behat-summary",
+        "fallTimestamp": "2025-01-01T12:00:00+00:00",
+        "locale": "en"
+      }
+      """
+    Then the response status code is 201
+    And I store the response JSON field "id" as "id"
+    And I am authenticated as the caregiver
+    When I send a GET request to "/api/v1/caregiver/alerts"
+    Then the response status code is 200
+    And the first response collection item field "acknowledged" equals "false"
+    And the first response collection item field "acknowledgedByMe" equals "false"
+    And the first response collection item field "acknowledgementCount" equals "0"
+    When I send a POST request to "/api/v1/fall-alerts/{id}/acknowledge"
+    Then the response status code is 204
+    When I send a GET request to "/api/v1/caregiver/alerts"
+    Then the response status code is 200
+    And the first response collection item field "acknowledged" equals "true"
+    And the first response collection item field "acknowledgedByMe" equals "true"
+    And the first response collection item field "acknowledgementCount" equals "1"
+    And the first response collection item field "status" equals "acknowledged"
+    And I store the first response collection field "acknowledgedAt" as "acknowledgedAt"
+
+  Scenario: Acknowledging a malformed alert identifier returns 404
+    Given I register a caregiver device
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/fall-alerts/not-a-uuid/acknowledge"
+    Then the response status code is 404
