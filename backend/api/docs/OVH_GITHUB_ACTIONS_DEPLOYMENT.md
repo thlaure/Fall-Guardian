@@ -5,15 +5,40 @@ It does not make the product medically certified or ready for public launch.
 
 ## How deployment works
 
-A change under `backend/api/` merged into `main` starts
-`.github/workflows/api-deploy.yaml`.
+A change under `backend/api/` merged into `main` first runs **API CI**
+(`.github/workflows/api-ci.yaml`). Only when API CI succeeds for that push does
+**Deploy API** (`.github/workflows/api-deploy.yaml`) start, through a
+`workflow_run` trigger, and it deploys exactly the commit CI validated.
 
-1. GitHub builds a production image and pushes it to GHCR.
-2. After `production` environment approval, GitHub logs into the VPS.
-3. The VPS pulls that exact commit image, runs migrations, and starts the API,
-   Messenger worker, and alert reconciler.
-4. It retries the API `/health` endpoint for up to 180 seconds. Workers do not
-   need individual health checks to make the deployment succeed.
+1. GitHub builds a production image tagged with the immutable commit SHA
+   (`ghcr.io/<owner>/fall-guardian-api:<sha>`) and pushes it to GHCR.
+2. After `production` environment approval, GitHub uploads `compose.prod.yaml`
+   and runs `scripts/deploy-api-remote.sh` on the VPS over SSH.
+3. The script remembers the image currently running, pulls the new image, runs
+   Doctrine migrations with the **new** image in a one-off container, then
+   starts the API, Messenger worker, and alert reconciler.
+4. It retries the API `/health` endpoint for up to 180 seconds. If the probe
+   fails, it restarts the containers on the previous image and the workflow
+   fails. Workers do not need individual health checks.
+
+### Migrations must be backward compatible
+
+The automatic rollback only restores containers; **the database schema is never
+rolled back**. Every migration must therefore keep working with the previously
+deployed code (expand/contract):
+
+- expand: add tables, nullable columns, or columns with defaults; ship code that
+  writes both old and new shapes if needed;
+- contract: drop or rename old columns/tables only in a later release, once no
+  deployed image reads them.
+
+### Roll back to a previous release
+
+GitHub → **Actions** → **Deploy API** → **Run workflow** → set `image_sha` to
+the full 40-character SHA of a previously deployed commit. The build is skipped,
+the workflow checks the image exists in GHCR, uploads that commit's
+`compose.prod.yaml`, and deploys it with the same migrate/probe/rollback flow
+(migrations already applied are kept; older code must tolerate them, see above).
 
 PostgreSQL, Redis, and all application secrets remain on the VPS.
 
@@ -253,13 +278,14 @@ PostgreSQL or Redis: production Compose exposes neither.
 
 ## 8. First and later deployments
 
-Merge a green PR into `main`. The **Deploy API** workflow starts automatically
-(or may be run from GitHub **Actions**). If protected, after the build completes
-click **Review deployments** → select `production` → **Approve and deploy**.
+Merge a green PR into `main`. Once **API CI** passes on `main`, the
+**Deploy API** workflow starts automatically (it may also be run from GitHub
+**Actions**). If protected, after the build completes click **Review
+deployments** → select `production` → **Approve and deploy**.
 
-The job pulls the image, migrates, starts services, then retries the API health
-endpoint for up to 180 seconds. Then
-verify:
+The job pulls the image, migrates with the new image, starts services, then
+retries the API health endpoint for up to 180 seconds, rolling containers back
+to the previous image if it never becomes healthy. Then verify:
 
 ```text
 https://api.example.fr/health
@@ -281,6 +307,8 @@ so a mutable `latest` image is never deployed.
 | Image pull denied | GHCR login as `deploy`, token has `read:packages` |
 | Certificate fails | `SERVER_NAME` DNS resolves to VPS; ports 80/443 open |
 | Workflow waits | Approve the `production` environment |
+| Deploy did not start | **API CI** must succeed on the `main` push first |
+| Deploy rolled back | Read the `app` logs printed by the job; fix forward or redeploy a known-good `image_sha` |
 | Alerts fail | Same Firebase project on app/server; service-account JSON |
 
 On the VPS, show state and API logs without printing secrets:

@@ -1,12 +1,29 @@
 name: Deploy API
 
+# Production deploys only run after "API CI" succeeded for a push to main, and
+# always deploy the exact commit that CI validated (workflow_run.head_sha).
+#
+# Images are tagged with the immutable commit SHA. To roll back, run this
+# workflow manually with `image_sha` set to a previously deployed commit SHA:
+# the build is skipped and the existing image is redeployed. Database
+# migrations are never rolled back, so they must be backward compatible
+# (expand/contract). See backend/api/docs/OVH_GITHUB_ACTIONS_DEPLOYMENT.md.
+
 on:
-  push:
+  workflow_run:
+    workflows: [API CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - backend/api/**
-      - .github/workflows/api-deploy.yaml
-  workflow_dispatch: ~
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: >-
+          Rollback: full 40-character commit SHA of an already published image
+          to redeploy (skips the build). Leave empty to build and deploy the
+          selected branch head.
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: api-production-deploy
@@ -14,39 +31,122 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/fall-guardian-api
 
 jobs:
-  build:
+  resolve:
+    name: Resolve deploy target
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend/api
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+      rollback: ${{ steps.target.outputs.rollback }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - name: Resolve commit SHA
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_IMAGE_SHA: ${{ inputs.image_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            sha="$RUN_HEAD_SHA"
+            rollback=false
+          elif [ -n "$INPUT_IMAGE_SHA" ]; then
+            sha="$INPUT_IMAGE_SHA"
+            rollback=true
+          else
+            sha="$GITHUB_SHA"
+            rollback=false
+          fi
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Deploy target must be a full 40-character lowercase commit SHA, got '$sha'."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "rollback=$rollback" >> "$GITHUB_OUTPUT"
+          echo "Deploy target: $sha (rollback=$rollback)" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build image
+    needs: resolve
+    if: needs.resolve.outputs.rollback == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: backend/api
           file: backend/api/.docker/api/Dockerfile
           target: frankenphp_prod
           push: true
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          tags: ${{ env.IMAGE }}:${{ needs.resolve.outputs.sha }}
+
+  verify-image:
+    name: Verify rollback image
+    needs: resolve
+    if: needs.resolve.outputs.rollback == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check image exists
+        env:
+          IMAGE_REF: ${{ env.IMAGE }}:${{ needs.resolve.outputs.sha }}
+        run: |
+          if ! docker manifest inspect "$IMAGE_REF" >/dev/null; then
+            echo "::error::Image $IMAGE_REF was not found in GHCR. Only previously built commits can be redeployed."
+            exit 1
+          fi
 
   deploy:
-    needs: build
+    name: Deploy to production
+    needs:
+      - resolve
+      - build
+      - verify-image
+    if: >-
+      always() &&
+      needs.resolve.result == 'success' &&
+      (needs.build.result == 'success' || needs.verify-image.result == 'success')
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v5
+      # Deploy tooling comes from the workflow's own ref so rollbacks to commits
+      # older than scripts/deploy-api-remote.sh still use the current script.
+      - name: Checkout deploy tooling
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # The Compose file must match the image being deployed.
+      - name: Checkout deploy target
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          path: target
+          sparse-checkout: backend/api/compose.prod.yaml
+          sparse-checkout-cone-mode: false
       - name: Configure SSH
         env:
           OVH_SSH_PRIVATE_KEY: ${{ secrets.OVH_SSH_PRIVATE_KEY }}
@@ -62,13 +162,15 @@ jobs:
           OVH_SSH_USER: ${{ secrets.OVH_SSH_USER }}
           OVH_DEPLOY_PATH: ${{ secrets.OVH_DEPLOY_PATH }}
         run: |
-          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes backend/api/compose.prod.yaml "$OVH_SSH_USER@$OVH_SSH_HOST:$OVH_DEPLOY_PATH/compose.prod.yaml"
-      - name: Migrate and deploy exact image
+          scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes target/backend/api/compose.prod.yaml "$OVH_SSH_USER@$OVH_SSH_HOST:$OVH_DEPLOY_PATH/compose.prod.yaml"
+      - name: Migrate, deploy, probe, roll back on failure
         env:
           OVH_SSH_HOST: ${{ secrets.OVH_SSH_HOST }}
           OVH_SSH_USER: ${{ secrets.OVH_SSH_USER }}
           OVH_DEPLOY_PATH: ${{ secrets.OVH_DEPLOY_PATH }}
           OVH_ENV_FILE: ${{ secrets.OVH_ENV_FILE }}
+          IMAGE_REF: ${{ env.IMAGE }}:${{ needs.resolve.outputs.sha }}
         run: |
+          remote_args=$(printf '%q ' "$OVH_DEPLOY_PATH" "$OVH_ENV_FILE" "$IMAGE_REF")
           ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "$OVH_SSH_USER@$OVH_SSH_HOST" \
-            "cd '$OVH_DEPLOY_PATH' && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml pull && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml run --rm migrate && API_IMAGE='$IMAGE:${{ github.sha }}' docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml up -d --no-build --remove-orphans && for i in {1..36}; do docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml exec -T app curl -fsS http://localhost/health && exit 0; sleep 5; done; docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml ps; docker compose --env-file '$OVH_ENV_FILE' -f compose.prod.yaml logs --tail=100 app; exit 1"
+            "bash -s -- $remote_args" < scripts/deploy-api-remote.sh
