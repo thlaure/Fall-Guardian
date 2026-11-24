@@ -80,6 +80,13 @@ services:
             redis:
                 condition: service_healthy
         command: php bin/console messenger:consume async --time-limit=3600 --memory-limit=256M -vv
+        # The worker records a heartbeat on every loop iteration (throttled to 15 s).
+        healthcheck:
+            test: ["CMD", "php", "bin/console", "app:health:heartbeat", "messenger", "--max-age=120"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
         networks:
             - app_network
 
@@ -104,12 +111,22 @@ services:
             PUSH_PROVIDER: ${PUSH_PROVIDER:?PUSH_PROVIDER must be set explicitly (e.g. fcm) - it must not silently default to fake in a deployed environment}
             FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
             FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
+            ALERT_RETENTION_DAYS: ${ALERT_RETENTION_DAYS:-365}
+            LOCATION_RETENTION_DAYS: ${LOCATION_RETENTION_DAYS:-30}
         depends_on:
             postgres:
                 condition: service_healthy
             redis:
                 condition: service_healthy
         command: php bin/console app:alerts:reconcile-overdue --watch
+        # The reconciler records a heartbeat every second and runs the hourly
+        # data-retention purge (ALERT_RETENTION_DAYS / LOCATION_RETENTION_DAYS).
+        healthcheck:
+            test: ["CMD", "php", "bin/console", "app:health:heartbeat", "alert_reconciler", "--max-age=60"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
         networks:
             - app_network
 

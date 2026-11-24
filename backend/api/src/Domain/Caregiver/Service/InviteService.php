@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Caregiver\Service;
 
+use App\Domain\Caregiver\Model\IssuedInvite;
 use App\Domain\Caregiver\Port\CaregiverInviteRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface;
 use App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface;
@@ -12,6 +13,7 @@ use App\Entity\CaregiverLink;
 use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 use App\Enum\CaregiverLinkStatus;
+use App\Infrastructure\Http\Security\DeviceTokenHasher;
 use DateTimeImmutable;
 use DomainException;
 use RuntimeException;
@@ -26,10 +28,11 @@ final readonly class InviteService implements InviteServiceInterface
         private CaregiverInviteRepositoryInterface $inviteRepository,
         private CaregiverLinkRepositoryInterface $linkRepository,
         private CaregiverPushTokenRepositoryInterface $pushTokenRepository,
+        private DeviceTokenHasher $hasher,
     ) {
     }
 
-    public function createInvite(Device $protectedDevice): CaregiverInvite
+    public function createInvite(Device $protectedDevice): IssuedInvite
     {
         if ($protectedDevice->isCaregiver()) {
             throw new DomainException('Only protected-person devices can create invites.');
@@ -38,10 +41,10 @@ final readonly class InviteService implements InviteServiceInterface
         $code = strtoupper(bin2hex(random_bytes(self::CODE_BYTES)));
         $expiresAt = new DateTimeImmutable(sprintf('+%d minutes', self::TTL_MINUTES));
 
-        $invite = new CaregiverInvite($protectedDevice, $code, $expiresAt);
+        $invite = CaregiverInvite::issueHashed($protectedDevice, $this->hashCode($code), $expiresAt);
         $this->inviteRepository->save($invite);
 
-        return $invite;
+        return new IssuedInvite($invite, $code);
     }
 
     public function acceptInvite(
@@ -54,7 +57,8 @@ final readonly class InviteService implements InviteServiceInterface
             throw new DomainException('Only caregiver devices can accept invites.');
         }
 
-        $invite = $this->inviteRepository->findActiveByCode($code);
+        $invite = $this->inviteRepository->findActiveByCodeHash($this->hashCode($code))
+            ?? $this->inviteRepository->findActiveLegacyByPlainCode($code);
 
         if (!$invite instanceof CaregiverInvite) {
             throw new RuntimeException('Invite not found, expired, or already used.');
@@ -98,6 +102,12 @@ final readonly class InviteService implements InviteServiceInterface
         $this->linkRepository->save($link);
 
         return $link;
+    }
+
+    /** Codes are uppercase hex; normalising lets a caregiver type them in any case. */
+    private function hashCode(string $code): string
+    {
+        return $this->hasher->hash(strtoupper(trim($code)));
     }
 
     public function registerPushToken(Device $caregiverDevice, string $fcmToken): CaregiverPushToken

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Infrastructure;
 
+use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\FakePushStore;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -37,8 +38,8 @@ final class FakePushStoreTest extends TestCase
     #[Test]
     public function itAppendsAndReadsEntries(): void
     {
-        $this->store->append('msg-001', 'fcm-token', 'alert-id', '2025-01-01T00:00:00+00:00', 48.8, 2.3);
-        $this->store->append('msg-002', 'fcm-token-2', 'alert-id-2', '2025-01-02T00:00:00+00:00', null, null);
+        $this->store->append('msg-001', 'fcm-token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:30+00:00', 48.8, 2.3));
+        $this->store->append('msg-002', 'fcm-token-2', new FallAlertPushPayload('alert-id-2', '2025-01-02T00:00:00+00:00', '2025-01-02T00:00:30+00:00', null, null));
 
         $entries = $this->store->all();
 
@@ -56,7 +57,7 @@ final class FakePushStoreTest extends TestCase
     #[Test]
     public function itClearsEntries(): void
     {
-        $this->store->append('msg-001', 'fcm-token', 'alert-id', '2025-01-01T00:00:00+00:00', null, null);
+        $this->store->append('msg-001', 'fcm-token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:30+00:00', null, null));
         $this->store->clear();
 
         $result = $this->store->all();

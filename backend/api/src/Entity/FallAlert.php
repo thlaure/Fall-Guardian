@@ -19,6 +19,9 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\UniqueConstraint(name: 'uniq_alerts_device_client', columns: ['device_id', 'client_alert_id'])]
 #[ORM\UniqueConstraint(name: 'uniq_alerts_person_client', columns: ['protected_person_id', 'client_alert_id'])]
 #[ORM\Index(name: 'idx_fall_alerts_dispatch_due', columns: ['status', 'cancel_deadline_at', 'dispatch_claimed_at'])]
+#[ORM\Index(name: 'idx_fall_alerts_retry_due', columns: ['status', 'next_dispatch_retry_at'])]
+#[ORM\Index(name: 'idx_fall_alerts_ack_due', columns: ['status', 'acknowledgement_deadline_at'])]
+#[ORM\Index(name: 'idx_fall_alerts_received_at', columns: ['received_at'])]
 class FallAlert
 {
     public const int GRACE_PERIOD_SECONDS = 30;
@@ -26,6 +29,27 @@ class FallAlert
     public const int DELIVERY_RECEIPT_TIMEOUT_SECONDS = 15;
 
     public const int ACKNOWLEDGEMENT_TIMEOUT_SECONDS = 60;
+
+    /** Initial dispatch + retries. After this many rounds the outcome is final. */
+    public const int MAX_DISPATCH_ATTEMPTS = 6;
+
+    /** Backoff before retry N (1-based), capped by the last value. */
+    public const array DISPATCH_RETRY_BACKOFF_SECONDS = [15, 30, 60, 120, 240];
+
+    /** Re-notifications sent to caregivers while an alert stays unacknowledged. */
+    public const int MAX_REMINDERS = 3;
+
+    public const int REMINDER_SPACING_SECONDS = 120;
+
+    /** A reserved reminder still not enqueued after this long is enqueued again. */
+    public const int REMINDER_ENQUEUE_RETRY_SECONDS = 10;
+
+    /**
+     * Reminders are only sent while the acknowledgement deadline is recent.
+     * This also guarantees that alerts delivered long ago (e.g. before
+     * reminders existed) are never re-notified.
+     */
+    public const int REMINDER_WINDOW_SECONDS = 1800;
 
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
@@ -58,6 +82,35 @@ class FallAlert
 
     #[ORM\Column(name: 'cancelled_at', nullable: true)]
     private ?DateTimeImmutable $cancelledAt = null;
+
+    #[ORM\Column(name: 'dispatch_attempts', options: ['default' => 0])]
+    private int $dispatchAttempts = 0;
+
+    #[ORM\Column(name: 'next_dispatch_retry_at', nullable: true)]
+    private ?DateTimeImmutable $nextDispatchRetryAt = null;
+
+    /**
+     * Outcome of the last completed dispatch round. While a retry round runs
+     * the internal status is `dispatching`, but clients keep seeing this
+     * outcome (see getPublicStatus()).
+     */
+    #[ORM\Column(name: 'last_dispatch_outcome', length: 32, nullable: true, enumType: FallAlertStatus::class)]
+    private ?FallAlertStatus $lastDispatchOutcome = null;
+
+    #[ORM\Column(name: 'reminder_count', options: ['default' => 0])]
+    private int $reminderCount = 0;
+
+    /**
+     * Highest reminder number confirmed handed to the message queue. A
+     * reservation (reminder_count) above this value is pending: it was
+     * reserved but enqueueing failed or the reconciler stopped, and the same
+     * number is enqueued again (outbox pattern).
+     */
+    #[ORM\Column(name: 'reminder_enqueued_count', options: ['default' => 0])]
+    private int $reminderEnqueuedCount = 0;
+
+    #[ORM\Column(name: 'last_reminder_at', nullable: true)]
+    private ?DateTimeImmutable $lastReminderAt = null;
 
     /** @var Collection<int, PushAttempt> */
     #[ORM\OneToMany(targetEntity: PushAttempt::class, mappedBy: 'fallAlert', cascade: ['persist', 'remove'], orphanRemoval: true)]
@@ -142,6 +195,66 @@ class FallAlert
         return $this->status;
     }
 
+    /**
+     * Status exposed through the API. A retry round temporarily moves an
+     * alert back to `dispatching`; installed caregiver apps treat only
+     * sent/partially_sent/failed alerts as active, so the alert would vanish
+     * from their list. Clients therefore keep seeing the last dispatch outcome
+     * until the retry round completes.
+     */
+    public function getPublicStatus(): FallAlertStatus
+    {
+        if (FallAlertStatus::Dispatching === $this->status && $this->lastDispatchOutcome instanceof FallAlertStatus) {
+            return $this->lastDispatchOutcome;
+        }
+
+        return $this->status;
+    }
+
+    public function getLastDispatchOutcome(): ?FallAlertStatus
+    {
+        return $this->lastDispatchOutcome;
+    }
+
+    public function getDispatchAttempts(): int
+    {
+        return $this->dispatchAttempts;
+    }
+
+    public function getNextDispatchRetryAt(): ?DateTimeImmutable
+    {
+        return $this->nextDispatchRetryAt;
+    }
+
+    public function getReminderCount(): int
+    {
+        return $this->reminderCount;
+    }
+
+    public function getReminderEnqueuedCount(): int
+    {
+        return $this->reminderEnqueuedCount;
+    }
+
+    public function getLastReminderAt(): ?DateTimeImmutable
+    {
+        return $this->lastReminderAt;
+    }
+
+    public function hasDispatchAttemptsLeft(): bool
+    {
+        return $this->dispatchAttempts < self::MAX_DISPATCH_ATTEMPTS;
+    }
+
+    /** Delay before the next dispatch round, based on how many rounds already ran. */
+    public static function retryBackoffSeconds(int $completedAttempts): int
+    {
+        $index = max(0, $completedAttempts - 1);
+        $backoff = self::DISPATCH_RETRY_BACKOFF_SECONDS;
+
+        return $backoff[min($index, count($backoff) - 1)];
+    }
+
     public function claimForDispatch(DateTimeImmutable $now, DateTimeImmutable $staleBefore): bool
     {
         $isDue = FallAlertStatus::Received === $this->status
@@ -149,13 +262,19 @@ class FallAlert
         $isStaleClaim = FallAlertStatus::Dispatching === $this->status
             && $this->dispatchClaimedAt instanceof DateTimeImmutable
             && $this->dispatchClaimedAt <= $staleBefore;
+        $isRetryDue = in_array($this->status, [FallAlertStatus::Failed, FallAlertStatus::PartiallySent], true)
+            && $this->nextDispatchRetryAt instanceof DateTimeImmutable
+            && $this->nextDispatchRetryAt <= $now
+            && $this->hasDispatchAttemptsLeft();
 
-        if (!$isDue && !$isStaleClaim) {
+        if (!$isDue && !$isStaleClaim && !$isRetryDue) {
             return false;
         }
 
         $this->status = FallAlertStatus::Dispatching;
         $this->dispatchClaimedAt = $now;
+        $this->nextDispatchRetryAt = null;
+        ++$this->dispatchAttempts;
         $this->deliveryReceiptDeadlineAt = $now->modify(sprintf('+%d seconds', self::DELIVERY_RECEIPT_TIMEOUT_SECONDS));
         $this->acknowledgementDeadlineAt = $now->modify(sprintf('+%d seconds', self::ACKNOWLEDGEMENT_TIMEOUT_SECONDS));
 

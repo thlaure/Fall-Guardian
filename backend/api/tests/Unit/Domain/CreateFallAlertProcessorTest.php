@@ -48,7 +48,7 @@ final class CreateFallAlertProcessorTest extends TestCase
         $alert = $this->buildAlertMock('client-001');
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
-        $this->rateLimiter->expects($this->once())->method('consume')->with('fall_alert_create', 6, 60, 'device-1');
+        $this->rateLimiter->expects($this->once())->method('consume')->with('fall_alert_create', CreateFallAlertProcessor::NEW_ALERT_LIMIT_PER_MINUTE, 60, 'device-1');
         $this->alertIngestionService->method('createAlert')->willReturn($alert);
 
         $data = new CreateFallAlertInputDTO();
@@ -70,7 +70,7 @@ final class CreateFallAlertProcessorTest extends TestCase
         $alert = $this->buildAlertMock('client-cancelled-001', FallAlertStatus::Cancelled);
 
         $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
-        $this->rateLimiter->expects($this->once())->method('consume')->with('fall_alert_create', 6, 60, 'device-1');
+        $this->rateLimiter->expects($this->once())->method('consume')->with('fall_alert_create', CreateFallAlertProcessor::NEW_ALERT_LIMIT_PER_MINUTE, 60, 'device-1');
         $this->alertIngestionService->expects($this->never())->method('createAlert');
         $this->alertIngestionService->expects($this->once())->method('createCancelledAlert')->willReturn($alert);
 
@@ -84,6 +84,37 @@ final class CreateFallAlertProcessorTest extends TestCase
 
         $this->assertSame('client-cancelled-001', $result->clientAlertId);
         $this->assertSame('cancelled', $result->status);
+    }
+
+    #[Test]
+    public function itDeduplicatesBeforeRateLimitingSoReplaysNeverHitTheNewAlertLimit(): void
+    {
+        $device = $this->createMock(Device::class);
+        $device->method('getPublicId')->willReturn('device-1');
+        $alert = $this->buildAlertMock('client-replay', FallAlertStatus::Cancelled);
+
+        $this->currentDeviceProvider->method('requireDevice')->willReturn($device);
+        $this->alertIngestionService->method('isKnownAlert')->with($device, 'client-replay')->willReturn(true);
+        $this->alertIngestionService->method('createCancelledAlert')->willReturn($alert);
+        $this->rateLimiter->expects($this->once())
+            ->method('consume')
+            ->with('fall_alert_replay', CreateFallAlertProcessor::REPLAY_LIMIT_PER_MINUTE, 60, 'device-1');
+
+        $data = new CreateFallAlertInputDTO();
+        $data->clientAlertId = 'client-replay';
+        $data->locale = 'en';
+        $data->cancelled = true;
+
+        $result = $this->processor->process($data, $this->createMock(Operation::class));
+
+        $this->assertSame('cancelled', $result->status);
+    }
+
+    #[Test]
+    public function itKeepsAnAbuseCeilingWellAboveRealisticFallRates(): void
+    {
+        self::assertGreaterThanOrEqual(30, CreateFallAlertProcessor::NEW_ALERT_LIMIT_PER_MINUTE);
+        self::assertGreaterThan(CreateFallAlertProcessor::NEW_ALERT_LIMIT_PER_MINUTE, CreateFallAlertProcessor::REPLAY_LIMIT_PER_MINUTE);
     }
 
     #[Test]
@@ -129,6 +160,7 @@ final class CreateFallAlertProcessorTest extends TestCase
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getClientAlertId')->willReturn($clientAlertId);
         $alert->method('getStatus')->willReturn($status);
+        $alert->method('getPublicStatus')->willReturn($status);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(
             FallAlertStatus::Cancelled === $status ? new DateTimeImmutable() : null,

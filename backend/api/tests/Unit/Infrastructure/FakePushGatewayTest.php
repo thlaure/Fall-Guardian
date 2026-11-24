@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Infrastructure;
 
+use App\Domain\Push\Exception\InvalidPushTokenException;
+use App\Domain\Push\Exception\PermanentPushDeliveryException;
+use App\Domain\Push\Exception\TransientPushDeliveryException;
+use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\FakePushGateway;
 use App\Infrastructure\Push\FakePushStore;
 use PHPUnit\Framework\Attributes\Test;
@@ -34,7 +38,7 @@ final class FakePushGatewayTest extends TestCase
     #[Test]
     public function itAppendsToStoreAndReturnsProviderMessageId(): void
     {
-        $result = $this->gateway->send('fcm-token', 'alert-id', '2025-01-01T00:00:00+00:00', 48.8, 2.3);
+        $result = $this->gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:30+00:00', 48.8, 2.3));
 
         $this->assertArrayHasKey('providerMessageId', $result);
         $this->assertStringStartsWith('fake-push-', $result['providerMessageId']);
@@ -66,5 +70,40 @@ final class FakePushGatewayTest extends TestCase
         $this->assertSame($result['providerMessageId'], $entry['providerMessageId'] ?? null);
         $this->assertSame('fcm-token', $entry['fcmToken'] ?? null);
         $this->assertSame('caregiver_revoked', $entry['type'] ?? null);
+    }
+
+    #[Test]
+    public function itRecordsTheNewContractKeys(): void
+    {
+        $this->gateway->send('fcm-token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00Z', '2025-01-01T00:00:30Z', null, null, 'Mamie', true));
+
+        $entry = $this->store->all()[0];
+        $this->assertSame('2025-01-01T00:00:30Z', $entry['cancelDeadlineAt']);
+        $this->assertSame('Mamie', $entry['protectedPersonName']);
+        $this->assertSame('1', $entry['reminder']);
+    }
+
+    #[Test]
+    public function itSimulatesAnInvalidToken(): void
+    {
+        $this->expectException(InvalidPushTokenException::class);
+
+        $this->gateway->send(FakePushGateway::INVALID_TOKEN_PREFIX.'x', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00Z', '2025-01-01T00:00:30Z'));
+    }
+
+    #[Test]
+    public function itSimulatesAnUnavailableProvider(): void
+    {
+        $this->expectException(TransientPushDeliveryException::class);
+
+        $this->gateway->sendLinkRevoked(FakePushGateway::UNAVAILABLE_TOKEN_PREFIX.'x');
+    }
+
+    #[Test]
+    public function itSimulatesARejectedMessage(): void
+    {
+        $this->expectException(PermanentPushDeliveryException::class);
+
+        $this->gateway->send(FakePushGateway::REJECTED_TOKEN_PREFIX.'x', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00Z', '2025-01-01T00:00:30Z'));
     }
 }

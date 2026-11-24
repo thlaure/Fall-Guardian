@@ -24,6 +24,15 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
  */
 final readonly class CreateFallAlertProcessor implements ProcessorInterface
 {
+    /**
+     * Abuse ceiling for genuinely new alerts. Deliberately high: a real fall
+     * must never be rejected, this only stops a runaway or hostile client.
+     */
+    public const int NEW_ALERT_LIMIT_PER_MINUTE = 30;
+
+    /** Idempotent replays (same clientAlertId) are cheap and only loosely bounded. */
+    public const int REPLAY_LIMIT_PER_MINUTE = 120;
+
     public function __construct(
         private AlertIngestionServiceInterface $alertIngestionService,
         private DeviceContextInterface $currentDeviceProvider,
@@ -43,7 +52,13 @@ final readonly class CreateFallAlertProcessor implements ProcessorInterface
             throw new AccessDeniedHttpException('Caregiver devices cannot create fall alerts.');
         }
 
-        $this->rateLimiter->consume('fall_alert_create', 6, 60, $device->getPublicId());
+        // Deduplicate before rate limiting: retries, revisions and late
+        // cancellations of an already-known alert must never get a 429.
+        if ($this->alertIngestionService->isKnownAlert($device, $data->clientAlertId)) {
+            $this->rateLimiter->consume('fall_alert_replay', self::REPLAY_LIMIT_PER_MINUTE, 60, $device->getPublicId());
+        } else {
+            $this->rateLimiter->consume('fall_alert_create', self::NEW_ALERT_LIMIT_PER_MINUTE, 60, $device->getPublicId());
+        }
 
         $fallTimestamp = $data->fallTimestamp ?? new DateTimeImmutable();
         $alert = $data->cancelled

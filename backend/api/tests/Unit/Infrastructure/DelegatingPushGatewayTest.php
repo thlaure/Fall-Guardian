@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Infrastructure;
 
+use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Infrastructure\Push\DelegatingPushGateway;
 use App\Infrastructure\Push\FakePushGateway;
 use App\Infrastructure\Push\FakePushStore;
@@ -31,7 +32,7 @@ final class DelegatingPushGatewayTest extends TestCase
         $gateway = new DelegatingPushGateway('fake', $this->fcmGateway, $this->fakeGateway);
 
         $this->assertSame('fake', $gateway->getProviderName());
-        $result = $gateway->send('token', 'alert-id', '2025-01-01T00:00:00+00:00', null, null);
+        $result = $gateway->send('token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:30+00:00', null, null));
         $this->assertStringStartsWith('fake-push-', (string) $result['providerMessageId']);
     }
 
@@ -50,6 +51,6 @@ final class DelegatingPushGatewayTest extends TestCase
 
         $this->expectException(InvalidArgumentException::class);
 
-        $gateway->send('token', 'alert-id', '2025-01-01T00:00:00+00:00', null, null);
+        $gateway->send('token', new FallAlertPushPayload('alert-id', '2025-01-01T00:00:00+00:00', '2025-01-01T00:00:30+00:00', null, null));
     }
 }

@@ -295,6 +295,42 @@ final class ApiContext implements Context
         $this->stored[$key] = (string) $value;
     }
 
+    /**
+     * @Then the first response collection item field :field equals :value
+     */
+    public function theFirstResponseCollectionItemFieldEquals(string $field, string $value): void
+    {
+        $members = $this->lastResponseData['hydra:member'] ?? (is_array($this->lastResponseData) && array_is_list($this->lastResponseData) ? $this->lastResponseData : null);
+
+        if (!is_array($members) || !isset($members[0]) || !is_array($members[0]) || !array_key_exists($field, $members[0])) {
+            throw new RuntimeException(sprintf('Field "%s" not found in first collection item: %s', $field, json_encode($this->lastResponseData, JSON_THROW_ON_ERROR)));
+        }
+
+        $actual = json_encode($members[0][$field], JSON_THROW_ON_ERROR);
+        $actual = is_string($members[0][$field]) ? $members[0][$field] : $actual;
+
+        if ($actual !== $this->interpolate($value)) {
+            throw new RuntimeException(sprintf('Expected first item field "%s" to equal "%s" but got "%s".', $field, $value, $actual));
+        }
+    }
+
+    /**
+     * @Then the last fake push message field :field equals :value
+     */
+    public function theLastFakePushMessageFieldEquals(string $field, string $value): void
+    {
+        $messages = $this->pushStore->all();
+        $last = end($messages);
+
+        if (!is_array($last) || !array_key_exists($field, $last)) {
+            throw new RuntimeException(sprintf('Field "%s" not found in the last fake push message.', $field));
+        }
+
+        if ((string) $last[$field] !== $this->interpolate($value)) {
+            throw new RuntimeException(sprintf('Expected push field "%s" to equal "%s" but got "%s".', $field, $value, (string) $last[$field]));
+        }
+    }
+
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
     /** @param array<mixed>|null $data */

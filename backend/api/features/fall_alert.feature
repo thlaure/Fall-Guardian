@@ -154,6 +154,59 @@ Feature: Fall alert management
     And I store the response JSON field "id" as "alertId"
     When the stored alert "alertId" is dispatched after its grace period
     And the fake push inbox contains 1 messages
+    And the last fake push message field "alertId" equals "{alertId}"
+    And the last fake push message field "reminder" equals "0"
+    And the last fake push message field "protectedPersonName" equals ""
+    When I send a GET request to "/api/v1/fall-alerts/{alertId}"
+    Then the response status code is 200
+    And the response JSON field "status" equals "sent"
+
+  Scenario: A dead caregiver push token is removed and the alert is scheduled for retry
+    Given I register a protected person device
+    And I register a caregiver device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/invites"
+    Then the response status code is 201
+    And I store the response JSON field "code" as "inviteCode"
+    And I am authenticated as the caregiver
+    When I send a POST request to "/api/v1/invites/{inviteCode}/accept"
+    Then the response status code is 204
+    When I send a POST request to "/api/v1/caregiver/push-token" with:
+      """
+      {"fcmToken": "fake-invalid-behat-token"}
+      """
+    Then the response status code is 204
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {
+        "clientAlertId": "fa-behat-dead-token",
+        "fallTimestamp": "2025-01-01T12:00:00+00:00",
+        "locale": "en"
+      }
+      """
+    Then the response status code is 201
+    And I store the response JSON field "id" as "alertId"
+    When the stored alert "alertId" is dispatched after its grace period
+    Then the fake push inbox contains 0 messages
+    When I send a GET request to "/api/v1/fall-alerts/{alertId}"
+    Then the response status code is 200
+    And the response JSON field "status" equals "failed"
+
+  Scenario: Replaying an alert with the same clientAlertId returns the same alert
+    Given I register a protected person device
+    And I am authenticated as the protected person
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {"clientAlertId": "fa-behat-replay", "fallTimestamp": "2025-01-01T12:00:00+00:00", "locale": "en"}
+      """
+    Then the response status code is 201
+    And I store the response JSON field "id" as "alertId"
+    When I send a POST request to "/api/v1/fall-alerts" with:
+      """
+      {"clientAlertId": "fa-behat-replay", "fallTimestamp": "2025-01-01T12:00:00+00:00", "locale": "en"}
+      """
+    Then the response JSON field "id" equals "{alertId}"
 
   Scenario: Creating a fall alert without authentication is rejected
     When I send a POST request to "/api/v1/fall-alerts" with:

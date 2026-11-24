@@ -89,16 +89,19 @@ final readonly class FallGuardianOpenApiFactory implements OpenApiFactoryInterfa
                 '422' => 'Only a caregiver device can register a notification token.',
             ],
             example: ['fcmToken' => 'example-firebase-cloud-messaging-token'],
-            requestDescription: 'Firebase Cloud Messaging registration token for this caregiver device.',
+            requestDescription: 'Firebase Cloud Messaging registration token for this caregiver device. '
+                .'Fall-alert pushes carry `data` keys: `type` (`fall_alert`), `alertId`, `fallTimestamp`, `cancelDeadlineAt` (ISO-8601 UTC), '
+                .'`reminder` (`0` for the first notification, `1` for re-notifications while the alert stays unacknowledged), '
+                .'optional `latitude`/`longitude`, and optional `protectedPersonName` (this caregiver\'s name for the protected person). '
+                .'A token rejected by Firebase as unregistered or invalid is deleted server-side; register it again after refreshing it.',
             successDescriptions: [204 => 'Notification token registered.'],
         );
         $this->documentGet($openApi, '/api/v1/caregiver/alerts', [
             '401' => 'Missing or invalid device bearer token.',
-        ], successDescriptions: [200 => 'Fall alerts for linked protected persons.']);
+        ], successDescriptions: [200 => 'Fall alerts for linked protected persons, with `acknowledgedAt`, `acknowledgedByMe` and `acknowledgementCount`.']);
         $this->documentPost($openApi, '/api/v1/fall-alerts/{id}/acknowledge', [
             '401' => 'Missing or invalid device bearer token.',
-            '403' => 'The caregiver is not linked to the protected person for this alert.',
-            '404' => 'No fall alert with that identifier was found.',
+            '404' => 'No fall alert with that identifier was found, or the caregiver is not linked to its protected person.',
         ], successDescriptions: [204 => 'Alert acknowledgement recorded.']);
 
         return $openApi;

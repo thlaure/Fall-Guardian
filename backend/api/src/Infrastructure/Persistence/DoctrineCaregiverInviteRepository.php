@@ -20,11 +20,27 @@ final class DoctrineCaregiverInviteRepository extends ServiceEntityRepository im
         parent::__construct($registry, CaregiverInvite::class);
     }
 
-    public function findActiveByCode(string $code): ?CaregiverInvite
+    public function findActiveByCodeHash(string $codeHash): ?CaregiverInvite
+    {
+        /** @var CaregiverInvite|null $invite */
+        $invite = $this->createQueryBuilder('invite')
+            ->andWhere('invite.codeHash = :codeHash')
+            ->andWhere('invite.usedAt IS NULL')
+            ->andWhere('invite.expiresAt > :now')
+            ->setParameter('codeHash', $codeHash)
+            ->setParameter('now', new DateTimeImmutable())
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        return $invite;
+    }
+
+    public function findActiveLegacyByPlainCode(string $code): ?CaregiverInvite
     {
         /** @var CaregiverInvite|null $invite */
         $invite = $this->createQueryBuilder('invite')
             ->andWhere('invite.code = :code')
+            ->andWhere('invite.codeHash IS NULL')
             ->andWhere('invite.usedAt IS NULL')
             ->andWhere('invite.expiresAt > :now')
             ->setParameter('code', $code)

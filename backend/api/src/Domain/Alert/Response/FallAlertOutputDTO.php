@@ -48,7 +48,7 @@ final class FallAlertOutputDTO
         return new self(
             $alert->getId()->toRfc4122(),
             $alert->getClientAlertId(),
-            $alert->getStatus()->value,
+            $alert->getPublicStatus()->value,
             ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
             ApiDateTimeFormatter::formatUtc($alert->getReceivedAt()),
             ApiDateTimeFormatter::formatUtc($alert->getCancelDeadlineAt()),

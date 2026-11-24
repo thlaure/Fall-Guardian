@@ -9,9 +9,11 @@ use App\Entity\Device;
 use App\Infrastructure\Http\Security\DeviceApiUser;
 use App\Infrastructure\Http\Security\DeviceTokenAuthenticator;
 use App\Infrastructure\Http\Security\DeviceTokenHasher;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
@@ -27,7 +29,7 @@ final class DeviceTokenAuthenticatorTest extends TestCase
     protected function setUp(): void
     {
         $this->deviceRepository = $this->createMock(DeviceRepositoryInterface::class);
-        $this->authenticator = new DeviceTokenAuthenticator($this->deviceRepository, new DeviceTokenHasher('test-secret'));
+        $this->authenticator = new DeviceTokenAuthenticator($this->deviceRepository, new DeviceTokenHasher('test-secret'), new NullLogger());
     }
 
     #[Test]
@@ -102,6 +104,24 @@ final class DeviceTokenAuthenticatorTest extends TestCase
         self::assertInstanceOf(DeviceApiUser::class, $userBadge->getUser());
         self::assertNotNull($device->getLastSeenAt());
         self::assertSame($hmacHash, $device->getTokenHash());
+    }
+
+    #[Test]
+    public function itDoesNotWriteLastSeenOnEveryRequest(): void
+    {
+        $plainToken = 'plain-token';
+        $device = new Device('device-id', hash_hmac('sha256', $plainToken, 'test-secret'), 'ios', '1.0.0');
+        $device->touchSeenAt(new DateTimeImmutable('-1 minute'));
+
+        $this->deviceRepository->method('findActiveByTokenHash')->willReturn($device);
+        $this->deviceRepository->expects($this->never())->method('save');
+
+        $request = Request::create('/api/v1/alerts');
+        $request->headers->set('Authorization', 'Bearer '.$plainToken);
+        $userBadge = $this->authenticator->authenticate($request)->getBadge(UserBadge::class);
+        self::assertInstanceOf(UserBadge::class, $userBadge);
+
+        self::assertInstanceOf(DeviceApiUser::class, $userBadge->getUser());
     }
 
     #[Test]

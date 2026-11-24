@@ -101,10 +101,27 @@ class Device
         $this->touch();
     }
 
-    public function touchSeenAt(): void
+    public const int LAST_SEEN_RESOLUTION_SECONDS = 300;
+
+    /**
+     * Records activity at most once per LAST_SEEN_RESOLUTION_SECONDS so that
+     * authenticated requests do not each cause a database write.
+     *
+     * @return bool true when the timestamp changed and needs persisting
+     */
+    public function touchSeenAt(?DateTimeImmutable $now = null): bool
     {
-        $this->lastSeenAt = new DateTimeImmutable();
+        $now ??= new DateTimeImmutable();
+
+        if ($this->lastSeenAt instanceof DateTimeImmutable
+            && $now->getTimestamp() - $this->lastSeenAt->getTimestamp() < self::LAST_SEEN_RESOLUTION_SECONDS) {
+            return false;
+        }
+
+        $this->lastSeenAt = $now;
         $this->touch();
+
+        return true;
     }
 
     public function getCreatedAt(): DateTimeImmutable

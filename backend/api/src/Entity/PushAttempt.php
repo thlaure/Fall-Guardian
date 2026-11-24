@@ -12,6 +12,7 @@ use Symfony\Component\Uid\Uuid;
 
 #[ORM\Entity(repositoryClass: DoctrinePushAttemptRepository::class)]
 #[ORM\Table(name: 'push_attempts')]
+#[ORM\Index(name: 'idx_push_attempts_alert_round', columns: ['fall_alert_id', 'reminder_number', 'status'])]
 class PushAttempt
 {
     #[ORM\Id]
@@ -44,7 +45,8 @@ class PushAttempt
         private FallAlert $fallAlert, #[ORM\ManyToOne(targetEntity: Device::class)]
         #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
         private Device $caregiverDevice, #[ORM\Column(length: 32)]
-        private string $provider)
+        private string $provider, #[ORM\Column(name: 'reminder_number', options: ['default' => 0])]
+        private int $reminderNumber = 0)
     {
         $this->id = Uuid::v7();
         $this->queuedAt = new DateTimeImmutable();
@@ -58,6 +60,17 @@ class PushAttempt
     public function getCaregiverDevice(): Device
     {
         return $this->caregiverDevice;
+    }
+
+    /** 0 for the initial alert push (and its retries), N for the N-th reminder. */
+    public function getReminderNumber(): int
+    {
+        return $this->reminderNumber;
+    }
+
+    public function getFallAlert(): FallAlert
+    {
+        return $this->fallAlert;
     }
 
     public function getStatus(): PushAttemptStatus

@@ -12,6 +12,11 @@ parameters:
     app.fcm.project_id: '%env(string:FCM_PROJECT_ID)%'
     app.fcm.service_account_json: '%env(string:FCM_SERVICE_ACCOUNT_JSON)%'
     app.device_token_hash_secret: '%env(string:DEVICE_TOKEN_HASH_SECRET)%'
+    # Data retention (GDPR storage limitation). Override per deployment.
+    env(ALERT_RETENTION_DAYS): '365'
+    env(LOCATION_RETENTION_DAYS): '30'
+    app.retention.alert_days: '%env(int:ALERT_RETENTION_DAYS)%'
+    app.retention.location_days: '%env(int:LOCATION_RETENTION_DAYS)%'
 
 services:
     # default configuration for services in *this* file
@@ -35,8 +40,15 @@ services:
     App\Domain\Caregiver\Port\CaregiverInviteRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverInviteRepository'
     App\Domain\Caregiver\Port\CaregiverLinkRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverLinkRepository'
     App\Domain\Caregiver\Port\CaregiverPushTokenRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineCaregiverPushTokenRepository'
+    App\Domain\Healthcheck\Port\HeartbeatRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineHeartbeatRepository'
+    App\Domain\Retention\Port\RetentionRepositoryInterface: '@App\Infrastructure\Persistence\DoctrineRetentionRepository'
     App\Infrastructure\RateLimit\EndpointRateLimiterInterface: '@App\Infrastructure\RateLimit\FixedWindowEndpointRateLimiter'
     Psr\Clock\ClockInterface: '@App\Infrastructure\Time\DatabaseClock'
+
+    App\Domain\Retention\Service\DataRetentionService:
+        arguments:
+            $alertRetentionDays: '%app.retention.alert_days%'
+            $locationRetentionDays: '%app.retention.location_days%'
 
     App\Infrastructure\Push\FakePushStore:
         arguments:

@@ -6,6 +6,7 @@ namespace App\Domain\Alert\Port;
 
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Enum\FallAlertStatus;
 use DateTimeImmutable;
 
 interface FallAlertRepositoryInterface
@@ -20,6 +21,62 @@ interface FallAlertRepositoryInterface
 
     /** @return list<string> */
     public function findDispatchCandidateIds(DateTimeImmutable $now, DateTimeImmutable $staleBefore, int $limit = 100): array;
+
+    /**
+     * Refreshes the dispatch claim timestamp while a dispatch round is still
+     * running, so slow provider calls are not mistaken for a crashed worker.
+     */
+    public function touchDispatchClaim(string $id, DateTimeImmutable $now): void;
+
+    /**
+     * Records the outcome of a dispatch round, but only if the alert is still
+     * `dispatching`: an acknowledgement or other transition that happened
+     * meanwhile must never be overwritten.
+     *
+     * @return bool true when the outcome was applied
+     */
+    public function completeDispatch(string $id, FallAlertStatus $status, ?DateTimeImmutable $nextRetryAt): bool;
+
+    /**
+     * Sent/partially-sent alerts whose acknowledgement deadline passed and
+     * that may receive another reminder.
+     *
+     * @return list<array{id: string, reminderCount: int}>
+     */
+    public function findReminderCandidates(DateTimeImmutable $now, DateTimeImmutable $lastReminderBefore, int $maxReminders, int $limit = 100): array;
+
+    /**
+     * Atomically reserves reminder number `$expectedReminderCount + 1`. Returns
+     * false when another reconciler run already reserved it or the alert was
+     * acknowledged/cancelled meanwhile.
+     */
+    public function claimReminder(string $id, int $expectedReminderCount, DateTimeImmutable $now): bool;
+
+    /** Confirms that reminder number `$reminderNumber` was handed to the message queue. */
+    public function markReminderEnqueued(string $id, int $reminderNumber): void;
+
+    /**
+     * Reminders reserved before `$reservedBefore` but never confirmed as
+     * enqueued (queue unavailable, reconciler stopped in between). They are
+     * enqueued again with the same number; delivery is idempotent per number.
+     *
+     * @return list<array{id: string, reminderNumber: int}>
+     */
+    public function findPendingReminders(DateTimeImmutable $reservedBefore, int $limit = 100): array;
+
+    /**
+     * Gives back reminder number `$reminderNumber` (only if it is still the
+     * latest reserved one) so the reconciler can reserve it again later, e.g.
+     * when the alert was in the middle of a dispatch retry round.
+     */
+    public function releaseReminder(string $id, int $reminderNumber): bool;
+
+    /**
+     * Earliest moment an escalation became due without having completed:
+     * received alerts past their cancel deadline, dispatching alerts (claim
+     * time), and retryable alerts past their retry time.
+     */
+    public function findOldestPendingEscalationDueAt(DateTimeImmutable $now): ?DateTimeImmutable;
 
     /** @return list<FallAlert> */
     public function findByDevice(Device $device, int $limit = 50): array;

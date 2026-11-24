@@ -8,6 +8,7 @@ framework:
 
         routing:
             App\Domain\Alert\Message\SendFallAlertPushMessage: async
+            App\Domain\Alert\Message\SendFallAlertReminderMessage: async
 
 when@test:
     framework:

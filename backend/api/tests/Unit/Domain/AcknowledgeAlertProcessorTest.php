@@ -13,13 +13,14 @@ use App\Entity\AlertAcknowledgement;
 use App\Entity\CaregiverLink;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Enum\FallAlertStatus;
 use App\Infrastructure\Http\Security\DeviceContextInterface;
 use App\Infrastructure\RateLimit\EndpointRateLimiterInterface;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Uid\Uuid;
 
@@ -51,6 +52,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
             $this->acknowledgementRepository,
             $this->rateLimiter,
             new MockClock('2026-07-23T08:00:00+00:00'),
+            new NullLogger(),
         );
     }
 
@@ -66,6 +68,9 @@ final class AcknowledgeAlertProcessorTest extends TestCase
 
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getDevice')->willReturn($protectedDevice);
+        $alert->method('getId')->willReturn(Uuid::v7());
+        $alert->method('getStatus')->willReturn(FallAlertStatus::Sent);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Sent);
         $alert->expects($this->once())->method('markAcknowledged');
 
         $link = $this->createMock(CaregiverLink::class);
@@ -122,7 +127,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
     }
 
     #[Test]
-    public function itThrowsAccessDeniedWhenNotLinked(): void
+    public function itReturnsTheSameNotFoundAsAnUnknownAlertWhenNotLinked(): void
     {
         $caregiverId = Uuid::v7();
         $otherDeviceId = Uuid::v7();
@@ -145,7 +150,12 @@ final class AcknowledgeAlertProcessorTest extends TestCase
         $this->fallAlertRepository->method('findById')->willReturn($alert);
         $this->caregiverLinkRepository->method('findActiveByProtectedDevice')->willReturn([$link]);
 
-        $this->expectException(AccessDeniedHttpException::class);
+        $this->acknowledgementRepository->expects($this->never())->method('save');
+        $alert->expects($this->never())->method('markAcknowledged');
+
+        // Same status and message as an unknown alert: existence must not leak.
+        $this->expectException(NotFoundHttpException::class);
+        $this->expectExceptionMessage('Alert not found.');
 
         $this->processor->process(null, $this->createMock(Operation::class), ['id' => 'some-uuid']);
     }

@@ -49,6 +49,18 @@ final class DoctrineCaregiverPushTokenRepository extends ServiceEntityRepository
         return $token;
     }
 
+    public function deleteIfUnchanged(Device $device, string $fcmToken): bool
+    {
+        $affected = $this->getEntityManager()->createQuery(
+            'DELETE FROM '.CaregiverPushToken::class.' token WHERE token.device = :device AND token.fcmToken = :fcmToken',
+        )
+            ->setParameter('device', $device->getId(), 'uuid')
+            ->setParameter('fcmToken', $fcmToken)
+            ->execute();
+
+        return $affected > 0;
+    }
+
     public function save(CaregiverPushToken $token): void
     {
         $this->getEntityManager()->persist($token);

@@ -43,6 +43,7 @@ final class FallAlertProviderTest extends TestCase
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getClientAlertId')->willReturn('client-001');
         $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Received);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(null);
         $alert->method('getRevision')->willReturn(3);

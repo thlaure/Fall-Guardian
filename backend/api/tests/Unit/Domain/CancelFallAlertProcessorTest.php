@@ -90,6 +90,7 @@ final class CancelFallAlertProcessorTest extends TestCase
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getClientAlertId')->willReturn('client-001');
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(new DateTimeImmutable());
         $alert->method('getRevision')->willReturn(1);

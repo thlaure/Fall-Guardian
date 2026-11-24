@@ -15,6 +15,7 @@ use const DATE_ATOM;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use ReflectionObject;
 
 final class FallAlertTest extends TestCase
 {
@@ -185,5 +186,72 @@ final class FallAlertTest extends TestCase
         self::assertSame(4, $alert->getRevision());
         self::assertSame(FallDetectionSource::AppleWatch, $alert->getDetectionSource());
         self::assertSame(FallResolution::Unresponsive, $alert->getResolution());
+    }
+
+    #[Test]
+    public function itReclaimsAFailedOrPartialAlertOnlyWhenItsRetryIsDueAndBudgetRemains(): void
+    {
+        $receivedAt = new DateTimeImmutable('2026-07-23T08:00:00+00:00');
+        $alert = $this->buildAlert($receivedAt);
+        $dueAt = $receivedAt->modify('+30 seconds');
+
+        self::assertTrue($alert->claimForDispatch($dueAt, $dueAt->modify('-120 seconds')));
+        self::assertSame(1, $alert->getDispatchAttempts());
+
+        // Simulate the outcome written by the dispatch handler: failed, retry in 15 s.
+        $reflection = new ReflectionObject($alert);
+        $reflection->getProperty('status')->setValue($alert, FallAlertStatus::Failed);
+        $reflection->getProperty('nextDispatchRetryAt')->setValue($alert, $dueAt->modify('+15 seconds'));
+
+        self::assertFalse($alert->claimForDispatch($dueAt->modify('+14 seconds'), $dueAt));
+        self::assertTrue($alert->claimForDispatch($dueAt->modify('+15 seconds'), $dueAt));
+        self::assertSame(FallAlertStatus::Dispatching, $alert->getStatus());
+        self::assertSame(2, $alert->getDispatchAttempts());
+        self::assertNull($alert->getNextDispatchRetryAt());
+
+        $reflection->getProperty('status')->setValue($alert, FallAlertStatus::PartiallySent);
+        $reflection->getProperty('dispatchAttempts')->setValue($alert, FallAlert::MAX_DISPATCH_ATTEMPTS);
+        $reflection->getProperty('nextDispatchRetryAt')->setValue($alert, $dueAt);
+
+        self::assertFalse($alert->claimForDispatch($dueAt->modify('+1 hour'), $dueAt));
+    }
+
+    #[Test]
+    public function itNeverReclaimsAFinalFailedAlertWithoutAScheduledRetry(): void
+    {
+        $receivedAt = new DateTimeImmutable('2026-07-23T08:00:00+00:00');
+        $alert = $this->buildAlert($receivedAt);
+        new ReflectionObject($alert)->getProperty('status')->setValue($alert, FallAlertStatus::Failed);
+
+        self::assertFalse($alert->claimForDispatch($receivedAt->modify('+1 hour'), $receivedAt->modify('+1 hour')));
+        self::assertSame(0, $alert->getReminderCount());
+        self::assertNull($alert->getLastReminderAt());
+    }
+
+    #[Test]
+    public function itKeepsExposingTheLastOutcomeWhileARetryRoundRuns(): void
+    {
+        $receivedAt = new DateTimeImmutable('2026-07-23T08:00:00+00:00');
+        $alert = $this->buildAlert($receivedAt);
+        $dueAt = $receivedAt->modify('+30 seconds');
+        $alert->claimForDispatch($dueAt, $dueAt);
+
+        // First round in flight: nothing was delivered yet, so "dispatching" is honest.
+        self::assertSame(FallAlertStatus::Dispatching, $alert->getPublicStatus());
+
+        $reflection = new ReflectionObject($alert);
+        $reflection->getProperty('status')->setValue($alert, FallAlertStatus::PartiallySent);
+        $reflection->getProperty('lastDispatchOutcome')->setValue($alert, FallAlertStatus::PartiallySent);
+        $reflection->getProperty('nextDispatchRetryAt')->setValue($alert, $dueAt->modify('+15 seconds'));
+        self::assertTrue($alert->claimForDispatch($dueAt->modify('+15 seconds'), $dueAt));
+
+        // Retry round in flight: installed caregiver apps hide `dispatching`
+        // alerts, so the public status stays on the last outcome.
+        self::assertSame(FallAlertStatus::Dispatching, $alert->getStatus());
+        self::assertSame(FallAlertStatus::PartiallySent, $alert->getPublicStatus());
+        self::assertSame(FallAlertStatus::PartiallySent, $alert->getLastDispatchOutcome());
+
+        $alert->markAcknowledged();
+        self::assertSame(FallAlertStatus::Acknowledged, $alert->getPublicStatus());
     }
 }

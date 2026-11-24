@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Push;
 
+use App\Domain\Push\Model\FallAlertPushPayload;
+
 use const DATE_ATOM;
 
 use DateTimeImmutable;
@@ -20,7 +22,7 @@ final readonly class FakePushStore
     }
 
     /**
-     * @return array<int, array{providerMessageId: string, fcmToken: string, alertId: string, fallTimestamp: string, latitude: string|null, longitude: string|null, createdAt: string}>
+     * @return array<int, array{providerMessageId: string, fcmToken: string, alertId: string, fallTimestamp: string, latitude: string|null, longitude: string|null, createdAt: string, cancelDeadlineAt: string|null, protectedPersonName: string|null, reminder: string}>
      */
     public function all(): array
     {
@@ -72,6 +74,9 @@ final readonly class FakePushStore
                     'latitude' => $latitude,
                     'longitude' => $longitude,
                     'createdAt' => $createdAt,
+                    'cancelDeadlineAt' => self::optionalString($decoded, 'cancelDeadlineAt'),
+                    'protectedPersonName' => self::optionalString($decoded, 'protectedPersonName'),
+                    'reminder' => self::optionalString($decoded, 'reminder') ?? '0',
                 ];
             }
         }
@@ -98,18 +103,22 @@ final readonly class FakePushStore
         ]);
     }
 
-    public function append(string $providerMessageId, string $fcmToken, string $alertId, string $fallTimestamp, ?float $latitude, ?float $longitude): void
+    public function append(string $providerMessageId, string $fcmToken, FallAlertPushPayload $payload): void
     {
         $this->write([
-            'type' => 'fall_alert',
+            ...$payload->toData(),
             'providerMessageId' => $providerMessageId,
             'fcmToken' => $fcmToken,
-            'alertId' => $alertId,
-            'fallTimestamp' => $fallTimestamp,
-            'latitude' => null !== $latitude ? (string) $latitude : null,
-            'longitude' => null !== $longitude ? (string) $longitude : null,
+            'latitude' => null !== $payload->latitude ? (string) $payload->latitude : null,
+            'longitude' => null !== $payload->longitude ? (string) $payload->longitude : null,
             'createdAt' => new DateTimeImmutable()->format(DATE_ATOM),
         ]);
+    }
+
+    /** @param array<mixed> $decoded */
+    private static function optionalString(array $decoded, string $key): ?string
+    {
+        return isset($decoded[$key]) && is_string($decoded[$key]) ? $decoded[$key] : null;
     }
 
     /** @param array<string, mixed> $entry */

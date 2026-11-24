@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Push;
 
+use App\Domain\Push\Model\FallAlertPushPayload;
 use App\Domain\Push\Port\PushGatewayInterface;
 use InvalidArgumentException;
 
@@ -21,9 +22,9 @@ final readonly class DelegatingPushGateway implements PushGatewayInterface
         return $this->inner()->getProviderName();
     }
 
-    public function send(string $fcmToken, string $alertId, string $fallTimestamp, ?float $latitude, ?float $longitude): array
+    public function send(string $fcmToken, FallAlertPushPayload $payload): array
     {
-        return $this->inner()->send($fcmToken, $alertId, $fallTimestamp, $latitude, $longitude);
+        return $this->inner()->send($fcmToken, $payload);
     }
 
     public function sendLinkRevoked(string $fcmToken): array
