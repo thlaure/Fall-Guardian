@@ -242,7 +242,6 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
     static let shared = SystemFallDetectionService()
 
     private let lastProcessedEventKey = "last_processed_system_fall_timestamp"
-    private let lastDismissedEventKey = "last_dismissed_system_fall_timestamp"
     private var manager: CMFallDetectionManager?
 
     var onFallDetected: ((WatchIncident) -> Void)?
@@ -347,17 +346,8 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
         guard decision != .ignoreDuplicate else { return }
         defaults.set(Double(timestamp), forKey: lastProcessedEventKey)
 
-        switch decision {
-        case .escalate:
-            break
-        case .recordDismissed:
-            // The wearer already answered "I'm OK" on Apple's own prompt: no
-            // second countdown. Recorded locally only (see SystemFallPolicy).
-            defaults.set(Double(timestamp), forKey: lastDismissedEventKey)
-            return
-        case .ignoreRejected, .ignoreDuplicate:
-            return
-        }
+        // Only `rejected` stops here; `dismissed` escalates (see SystemFallPolicy).
+        guard decision == .escalate else { return }
 
         // Identity generated once, at detection, and shared with the phone.
         let incident = WatchIncident.make(timestamp: timestamp)

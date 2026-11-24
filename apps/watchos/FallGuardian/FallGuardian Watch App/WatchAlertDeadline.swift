@@ -156,7 +156,9 @@ enum WatchCancelMatcher {
 enum SystemFallResolution: Equatable {
     /// The wearer told watchOS they fell and need help.
     case confirmed
-    /// The wearer answered Apple's prompt: they fell but are OK.
+    /// The wearer dismissed Apple's alert, immediately or after its haptics
+    /// and chimes. This does NOT mean "I'm OK": a disoriented person can
+    /// swipe the prompt away.
     case dismissed
     /// The wearer told watchOS they did not fall.
     case rejected
@@ -169,8 +171,6 @@ enum SystemFallResolution: Equatable {
 enum SystemFallDecision: Equatable {
     /// Start the Fall Guardian alert and relay the event to the phone.
     case escalate
-    /// The wearer already said "I'm OK" to Apple: record locally, no alert.
-    case recordDismissed
     /// Not a fall: nothing to do.
     case ignoreRejected
     /// Already processed (Apple can redeliver across launches).
@@ -180,12 +180,11 @@ enum SystemFallDecision: Equatable {
 enum SystemFallPolicy {
     /// Decision for one Apple fall event.
     ///
-    /// `dismissed` is NOT forwarded to the phone: the current phone contract has
-    /// no "resolved without alert" event, and sending `alert_cancelled` for an
-    /// incident the phone never saw could cancel a different, real incident on
-    /// phone builds that do not check incident identity. It is only recorded.
-    /// Unknown future resolutions escalate: a missed fall is worse than a
-    /// cancellable false alarm.
+    /// Only `rejected` (the wearer told watchOS they did not fall) is ignored.
+    /// `dismissed` escalates: Apple uses it whenever its alert was dismissed,
+    /// which a disoriented person can do; the 30-second hold-to-cancel covers
+    /// the genuine "I'm fine" case. Unknown future resolutions escalate too:
+    /// a missed fall is worse than a cancellable false alarm.
     static func decide(
         timestamp: Int64,
         resolution: SystemFallResolution,
@@ -194,8 +193,7 @@ enum SystemFallPolicy {
         guard timestamp > lastProcessedTimestamp else { return .ignoreDuplicate }
         switch resolution {
         case .rejected: return .ignoreRejected
-        case .dismissed: return .recordDismissed
-        case .confirmed, .unresponsive, .unknown: return .escalate
+        case .confirmed, .dismissed, .unresponsive, .unknown: return .escalate
         }
     }
 }

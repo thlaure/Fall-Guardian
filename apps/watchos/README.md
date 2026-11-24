@@ -52,13 +52,13 @@ Critical Alerts entitlement.
 | --- | --- | --- |
 | `confirmed` | wearer said they fell and need help | alert + relay to iPhone |
 | `unresponsive` | wearer did not answer Apple's prompt | alert + relay to iPhone |
+| `dismissed` | Apple's alert was dismissed, immediately or after its haptics and chimes | alert + relay to iPhone |
 | unknown future value | — | alert + relay (safety first) |
-| `dismissed` | wearer fell but answered "I'm OK" | no alert, recorded locally only |
 | `rejected` | wearer said they did not fall | ignored |
 
-`dismissed` is not forwarded: the phone contract has no "resolved without
-alert" event, and an `alert_cancelled` for an incident the phone never saw could
-cancel a different, real incident on phone builds that ignore `incidentId`.
+`dismissed` does not mean "I'm OK": a disoriented person can swipe Apple's
+prompt away, so it escalates. The 30-second hold-to-cancel covers the genuine
+"I'm fine" case.
 
 ### WatchConnectivity contract
 

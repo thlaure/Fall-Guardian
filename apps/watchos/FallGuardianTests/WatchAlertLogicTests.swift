@@ -169,8 +169,10 @@ final class SystemFallPolicyTests: XCTestCase {
         XCTAssertEqual(decide(.unknown), .escalate)
     }
 
-    func testDismissedIsRecordedWithoutAlert() {
-        XCTAssertEqual(decide(.dismissed), .recordDismissed)
+    func testDismissedEscalatesBecauseItDoesNotMeanImOK() {
+        // Apple reports `dismissed` when its alert was dismissed, possibly by a
+        // disoriented wearer; caregivers must still be reached.
+        XCTAssertEqual(decide(.dismissed), .escalate)
     }
 
     func testRejectedIsIgnored() {
