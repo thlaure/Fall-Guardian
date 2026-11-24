@@ -220,13 +220,8 @@ jobs:
           ignore-unfixed: true
           severity: HIGH
 
-      # Gate on fixable CRITICAL findings. Temporarily non-blocking: a local
-      # scan on 2026-11-24 found 19 fixable CRITICAL CVEs in the
-      # dunglas/frankenphp:1.12.1-php8.5 base (Debian 13.4 packages and the
-      # frankenphp Go binary). Remove `continue-on-error` once the base image is
-      # bumped (Dependabot docker updates propose it) and this step is green.
+      # Blocking gate on fixable CRITICAL findings (unfixed ones are ignored).
       - name: Fail on fixable CRITICAL vulnerabilities
-        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: fall-guardian-api:ci
