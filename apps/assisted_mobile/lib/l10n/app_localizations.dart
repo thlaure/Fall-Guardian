@@ -37,6 +37,11 @@ abstract class AppLocalizations {
   String homeCaregiverCount(int count);
   String get homeHistoryTitle;
   String get homeFootnote;
+  String get repairRequiredTitle;
+  String get repairRequiredBody;
+  String get repairAction;
+  String get repairSucceeded;
+  String get repairFailed;
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   String get contactsScreenTitle;
@@ -60,6 +65,8 @@ abstract class AppLocalizations {
   String get confirmingCancellation;
   String get cancellationUnconfirmed;
   String get cancelAlert;
+  String get alertRepairRequired;
+  String get caregiversBeingNotified;
 
   // ── History ──────────────────────────────────────────────────────────────
   String get historyTitle;

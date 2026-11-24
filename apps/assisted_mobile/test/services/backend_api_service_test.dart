@@ -8,6 +8,9 @@ import 'package:http/testing.dart';
 
 import 'package:fall_guardian/models/contact.dart';
 import 'package:fall_guardian/services/backend_api_service.dart';
+import 'package:fall_guardian/services/device_pairing_state.dart';
+import 'package:fall_guardian/services/device_registration_marker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/services/secure_store.dart';
 
 class _FakeStore implements KeyValueStore {
@@ -32,6 +35,8 @@ void main() {
 
   setUp(() {
     store = _FakeStore();
+    // Fresh, empty preferences per test (registration marker lives there).
+    SharedPreferences.setMockInitialValues({});
   });
 
   test('ensureReady registers device once and stores credentials', () async {
@@ -70,52 +75,6 @@ void main() {
     expect(store.data['backend_device_token'], 'token-1');
   });
 
-  test('ensureReady refreshes stale stored credentials after unauthorized',
-      () async {
-    store.data['backend_device_id'] = 'stale-device';
-    store.data['backend_device_token'] = 'stale-token';
-
-    final requests = <String>[];
-    final client = MockClient((request) async {
-      requests.add('${request.method} ${request.url.path}');
-
-      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
-          request.headers['authorization'] == 'Bearer stale-token') {
-        return http.Response('unauthorized', 401);
-      }
-
-      if (request.url.path == '/api/v1/devices/register') {
-        return http.Response(
-          jsonEncode({
-            'deviceId': 'fresh-device',
-            'deviceToken': 'fresh-token',
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
-          request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response('[]', 200);
-      }
-
-      fail('Unexpected request: ${request.method} ${request.url}');
-    });
-
-    final service = BackendApiService(store: store, client: client);
-
-    await service.ensureReady();
-
-    expect(store.data['backend_device_id'], 'fresh-device');
-    expect(store.data['backend_device_token'], 'fresh-token');
-    expect(requests, [
-      'GET /api/v1/protected/linked-caregivers',
-      'POST /api/v1/devices/register',
-      'GET /api/v1/protected/linked-caregivers',
-    ]);
-  });
-
   test('ensureReady throws typed exception on validation failure', () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
@@ -133,48 +92,6 @@ void main() {
         isA<BackendApiException>()
             .having((error) => error.statusCode, 'statusCode', 503)
             .having((error) => error.body, 'body', 'backend unavailable'),
-      ),
-    );
-  });
-
-  test('ensureReady throws when refreshed credentials cannot be validated',
-      () async {
-    store.data['backend_device_id'] = 'stale-device';
-    store.data['backend_device_token'] = 'stale-token';
-
-    final client = MockClient((request) async {
-      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
-          request.headers['authorization'] == 'Bearer stale-token') {
-        return http.Response('unauthorized', 401);
-      }
-
-      if (request.url.path == '/api/v1/devices/register') {
-        return http.Response(
-          jsonEncode({
-            'deviceId': 'fresh-device',
-            'deviceToken': 'fresh-token',
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/protected/linked-caregivers' &&
-          request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response('still unavailable', 503);
-      }
-
-      fail('Unexpected request: ${request.method} ${request.url}');
-    });
-
-    final service = BackendApiService(store: store, client: client);
-
-    await expectLater(
-      service.ensureReady(),
-      throwsA(
-        isA<BackendApiException>()
-            .having((error) => error.statusCode, 'statusCode', 503)
-            .having((error) => error.body, 'body', 'still unavailable'),
       ),
     );
   });
@@ -335,68 +252,6 @@ void main() {
     ]);
   });
 
-  test('submitFallAlert refreshes stale credentials after unauthorized',
-      () async {
-    store.data['backend_device_id'] = 'stale-device';
-    store.data['backend_device_token'] = 'stale-token';
-
-    final requests = <String>[];
-    final client = MockClient((request) async {
-      requests.add('${request.method} ${request.url.path}');
-
-      if (request.url.path == '/api/v1/fall-alerts' &&
-          request.headers['authorization'] == 'Bearer stale-token') {
-        return http.Response('unauthorized', 401);
-      }
-
-      if (request.url.path == '/api/v1/devices/register') {
-        return http.Response(
-          jsonEncode({
-            'deviceId': 'fresh-device',
-            'deviceToken': 'fresh-token',
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/fall-alerts' &&
-          request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response(
-          jsonEncode({
-            'id': 'server-alert-1',
-            'clientAlertId': 'alert-1',
-            'status': 'received',
-            'fallTimestamp': '2026-04-09T10:00:00+00:00',
-            'cancelledAt': null,
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      fail('Unexpected request: ${request.method} ${request.url}');
-    });
-
-    final service = BackendApiService(store: store, client: client);
-
-    await service.submitFallAlert(
-      clientAlertId: 'alert-1',
-      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
-      locale: 'en',
-      latitude: null,
-      longitude: null,
-    );
-
-    expect(store.data['backend_device_id'], 'fresh-device');
-    expect(store.data['backend_device_token'], 'fresh-token');
-    expect(requests, [
-      'POST /api/v1/fall-alerts',
-      'POST /api/v1/devices/register',
-      'POST /api/v1/fall-alerts',
-    ]);
-  });
-
   test('recordCancelledFallAlert posts cancelled alert audit', () async {
     final requests = <String>[];
     final client = MockClient((request) async {
@@ -450,61 +305,6 @@ void main() {
     ]);
   });
 
-  test(
-      'recordCancelledFallAlert refreshes stale credentials after unauthorized',
-      () async {
-    store.data['backend_device_id'] = 'stale-device';
-    store.data['backend_device_token'] = 'stale-token';
-
-    final requests = <String>[];
-    final client = MockClient((request) async {
-      requests.add('${request.method} ${request.url.path}');
-
-      if (request.url.path == '/api/v1/fall-alerts' &&
-          request.headers['authorization'] == 'Bearer stale-token') {
-        return http.Response('unauthorized', 401);
-      }
-
-      if (request.url.path == '/api/v1/devices/register') {
-        return http.Response(
-          jsonEncode({
-            'deviceId': 'fresh-device',
-            'deviceToken': 'fresh-token',
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/fall-alerts' &&
-          request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response(
-          jsonEncode({'status': 'cancelled'}),
-          201,
-        );
-      }
-
-      fail('Unexpected request: ${request.method} ${request.url}');
-    });
-
-    final service = BackendApiService(store: store, client: client);
-
-    await service.recordCancelledFallAlert(
-      clientAlertId: 'cancelled-alert-1',
-      fallTimestamp: DateTime.utc(2026, 4, 9, 10).millisecondsSinceEpoch,
-      locale: 'fr',
-      latitude: null,
-      longitude: null,
-    );
-
-    expect(store.data['backend_device_id'], 'fresh-device');
-    expect(requests, [
-      'POST /api/v1/fall-alerts',
-      'POST /api/v1/devices/register',
-      'POST /api/v1/fall-alerts',
-    ]);
-  });
-
   test('recordCancelledFallAlert throws typed exception on API failure',
       () async {
     store.data['backend_device_id'] = 'device-1';
@@ -553,76 +353,21 @@ void main() {
     expect(invite['code'], 'ABC12345');
   });
 
-  test('createInvite refreshes stale credentials after unauthorized response',
-      () async {
-    store.data['backend_device_id'] = 'stale-device';
-    store.data['backend_device_token'] = 'stale-token';
-
-    final requests = <String>[];
-    final client = MockClient((request) async {
-      requests.add('${request.method} ${request.url.path}');
-
-      if (request.url.path == '/api/v1/invites' &&
-          request.headers['authorization'] == 'Bearer stale-token') {
-        return http.Response('unauthorized', 401);
-      }
-
-      if (request.url.path == '/api/v1/devices/register') {
-        final payload = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(payload['deviceType'], 'protected_person');
-        return http.Response(
-          jsonEncode({
-            'deviceId': 'fresh-device',
-            'deviceToken': 'fresh-token',
-          }),
-          201,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      if (request.url.path == '/api/v1/invites' &&
-          request.headers['authorization'] == 'Bearer fresh-token') {
-        return http.Response(
-          jsonEncode({
-            'code': 'FRESH123',
-            'expiresAt': '2026-05-16T10:00:00+00:00',
-          }),
-          201,
-        );
-      }
-
-      fail('Unexpected request: ${request.method} ${request.url}');
-    });
-
-    final service = BackendApiService(store: store, client: client);
-
-    final invite = await service.createInvite();
-
-    expect(invite['code'], 'FRESH123');
-    expect(store.data['backend_device_id'], 'fresh-device');
-    expect(store.data['backend_device_token'], 'fresh-token');
-    expect(requests, [
-      'POST /api/v1/invites',
-      'POST /api/v1/devices/register',
-      'POST /api/v1/invites',
-    ]);
-  });
-
   test('createInvite throws typed exception on API failure', () async {
     store.data['backend_device_id'] = 'device-1';
     store.data['backend_device_token'] = 'token-1';
 
     final service = BackendApiService(
       store: store,
-      client: MockClient((request) async => http.Response('forbidden', 403)),
+      client: MockClient((request) async => http.Response('server error', 500)),
     );
 
     await expectLater(
       service.createInvite(),
       throwsA(
         isA<BackendApiException>()
-            .having((error) => error.statusCode, 'statusCode', 403)
-            .having((error) => error.body, 'body', 'forbidden'),
+            .having((error) => error.statusCode, 'statusCode', 500)
+            .having((error) => error.body, 'body', 'server error'),
       ),
     );
   });
@@ -1072,15 +817,15 @@ void main() {
 
     final service = BackendApiService(
       store: store,
-      client: MockClient((request) async => http.Response('forbidden', 403)),
+      client: MockClient((request) async => http.Response('server error', 500)),
     );
 
     await expectLater(
       service.getLinkedCaregivers(),
       throwsA(
         isA<BackendApiException>()
-            .having((error) => error.statusCode, 'statusCode', 403)
-            .having((error) => error.body, 'body', 'forbidden'),
+            .having((error) => error.statusCode, 'statusCode', 500)
+            .having((error) => error.body, 'body', 'server error'),
       ),
     );
   });
@@ -1097,4 +842,448 @@ void main() {
       'BackendApiException(Failed to fetch, 503, unavailable)',
     );
   });
+  group('re-pairing required instead of silent re-registration', () {
+    late DevicePairingState pairing;
+
+    setUp(() {
+      pairing = DevicePairingState();
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+    });
+
+    for (final status in [401, 403]) {
+      test('ensureReady on $status flags re-pairing and never registers',
+          () async {
+        final requests = <String>[];
+        final service = BackendApiService(
+          store: store,
+          pairingState: pairing,
+          client: MockClient((request) async {
+            requests.add('${request.method} ${request.url.path}');
+            return http.Response('rejected', status);
+          }),
+        );
+
+        await expectLater(
+          service.ensureReady(),
+          throwsA(isA<DeviceRepairRequiredException>()
+              .having((error) => error.statusCode, 'statusCode', status)),
+        );
+
+        expect(requests, ['GET /api/v1/protected/linked-caregivers']);
+        expect(store.data['backend_device_token'], 'token-1');
+        expect(store.data[BackendApiService.reauthRequiredKey], 'true');
+        expect(pairing.repairRequired.value, isTrue);
+      });
+    }
+
+    test('submitFallAlert on 401 fails fast without retry or registration',
+        () async {
+      final requests = <String>[];
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        submitRetryDelays: const [Duration.zero, Duration.zero],
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+          return http.Response('unauthorized', 401);
+        }),
+      );
+
+      await expectLater(
+        service.submitFallAlert(
+          clientAlertId: 'alert-1',
+          fallTimestamp: 0,
+          locale: 'en',
+          latitude: null,
+          longitude: null,
+        ),
+        throwsA(isA<DeviceRepairRequiredException>()),
+      );
+
+      expect(requests, ['POST /api/v1/fall-alerts']);
+      expect(pairing.repairRequired.value, isTrue);
+    });
+
+    test('every authenticated call enters the re-pair state on 401', () async {
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        cancellationRetryDelays: const [],
+        client: MockClient((request) async {
+          if (request.url.path == '/api/v1/devices/register') {
+            fail('must never register silently');
+          }
+          return http.Response('unauthorized', 401);
+        }),
+      );
+      final calls = <Future<Object?> Function()>[
+        () => service.createInvite(),
+        () => service.getLinkedCaregivers(),
+        () => service.cancelFallAlert(clientAlertId: 'alert-1'),
+        () => service.recordCancelledFallAlert(
+              clientAlertId: 'alert-1',
+              fallTimestamp: 0,
+              locale: 'en',
+              latitude: null,
+              longitude: null,
+            ),
+        () => service.attachLocation(
+              clientAlertId: 'alert-1',
+              latitude: 1,
+              longitude: 2,
+            ),
+      ];
+
+      for (final call in calls) {
+        await expectLater(
+            call(), throwsA(isA<DeviceRepairRequiredException>()));
+      }
+    });
+
+    test('lost credentials after a rejection never auto-register', () async {
+      store.data.clear();
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async => fail('no request expected')),
+      );
+
+      await expectLater(
+        service.syncContacts(const []),
+        throwsA(isA<DeviceRepairRequiredException>()),
+      );
+      expect(store.data.containsKey('backend_device_id'), isFalse);
+      expect(pairing.repairRequired.value, isTrue);
+    });
+
+    test('isRepairRequired mirrors the persisted flag (also set natively)',
+        () async {
+      final service = BackendApiService(store: store, pairingState: pairing);
+
+      expect(await service.isRepairRequired(), isFalse);
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      expect(await service.isRepairRequired(), isTrue);
+      expect(pairing.repairRequired.value, isTrue);
+    });
+
+    test('ensureReady success clears a stale re-pair flag', () async {
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      pairing.repairRequired.value = true;
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async => http.Response('[]', 200)),
+      );
+
+      await service.ensureReady();
+
+      expect(
+          store.data.containsKey(BackendApiService.reauthRequiredKey), isFalse);
+      expect(pairing.repairRequired.value, isFalse);
+    });
+
+    test('repairDevice explicitly registers anew and clears the flag',
+        () async {
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      pairing.repairRequired.value = true;
+      final requests = <String>[];
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async {
+          requests.add('${request.method} ${request.url.path}');
+          return http.Response(
+            jsonEncode({'deviceId': 'device-2', 'deviceToken': 'token-2'}),
+            201,
+          );
+        }),
+      );
+
+      await service.repairDevice();
+
+      expect(requests, ['POST /api/v1/devices/register']);
+      expect(store.data['backend_device_id'], 'device-2');
+      expect(store.data['backend_device_token'], 'token-2');
+      expect(
+          store.data.containsKey(BackendApiService.reauthRequiredKey), isFalse);
+      expect(pairing.repairRequired.value, isFalse);
+    });
+
+    test('a failed repairDevice keeps the re-pair state', () async {
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async => http.Response('down', 503)),
+      );
+
+      await expectLater(
+          service.repairDevice(), throwsA(isA<BackendApiException>()));
+      expect(store.data[BackendApiService.reauthRequiredKey], 'true');
+    });
+  });
+
+  group('server deadline receipt', () {
+    http.Response response(Map<String, Object?> body,
+            {Map<String, String> headers = const {}}) =>
+        http.Response(jsonEncode(body), 201, headers: headers);
+
+    test('fresh alert: remaining = cancelDeadlineAt - receivedAt - round trip',
+        () {
+      final receipt = BackendApiService.fallAlertReceiptFrom(
+        response({
+          'receivedAt': '2026-04-09T10:00:00.500+00:00',
+          'cancelDeadlineAt': '2026-04-09T10:00:30.500+00:00',
+        }, headers: {
+          // Second-precision Date header earlier than receivedAt is ignored.
+          'date': 'Thu, 09 Apr 2026 10:00:00 GMT',
+        }),
+        roundTrip: const Duration(milliseconds: 400),
+      );
+
+      expect(receipt?.remainingGrace, const Duration(milliseconds: 29600));
+    });
+
+    test('replayed older alert uses the HTTP Date header as server now', () {
+      final receipt = BackendApiService.fallAlertReceiptFrom(
+        response({
+          'receivedAt': '2026-04-09T10:00:00+00:00',
+          'cancelDeadlineAt': '2026-04-09T10:00:30+00:00',
+        }, headers: {
+          'date': 'Thu, 09 Apr 2026 10:00:20 GMT',
+        }),
+        roundTrip: Duration.zero,
+      );
+
+      expect(receipt?.remainingGrace, const Duration(seconds: 10));
+    });
+
+    test('server times are used as-is, so phone clock skew is irrelevant', () {
+      // Server clock in 2030 while the phone thinks it is 2026: the result
+      // only depends on server-side timestamps.
+      final receipt = BackendApiService.fallAlertReceiptFrom(
+        response({
+          'receivedAt': '2030-01-01T00:00:00Z',
+          'cancelDeadlineAt': '2030-01-01T00:00:30Z',
+        }),
+        roundTrip: const Duration(seconds: 1),
+      );
+
+      expect(receipt?.remainingGrace, const Duration(seconds: 29));
+    });
+
+    test('expired deadline yields zero, never negative', () {
+      final receipt = BackendApiService.fallAlertReceiptFrom(
+        response({
+          'receivedAt': '2026-04-09T10:00:00Z',
+          'cancelDeadlineAt': '2026-04-09T10:00:30Z',
+        }, headers: {
+          'date': 'Thu, 09 Apr 2026 10:05:00 GMT',
+        }),
+        roundTrip: Duration.zero,
+      );
+
+      expect(receipt?.remainingGrace, Duration.zero);
+    });
+
+    test('missing deadline data or invalid body yields no receipt', () {
+      expect(
+        BackendApiService.fallAlertReceiptFrom(
+          response({'status': 'received'}),
+          roundTrip: Duration.zero,
+        ),
+        isNull,
+      );
+      expect(
+        BackendApiService.fallAlertReceiptFrom(
+          http.Response('not json', 201),
+          roundTrip: Duration.zero,
+        ),
+        isNull,
+      );
+      expect(
+        BackendApiService.fallAlertReceiptFrom(
+          http.Response('[]', 201),
+          roundTrip: Duration.zero,
+        ),
+        isNull,
+      );
+    });
+
+    test('malformed Date header falls back to receivedAt', () {
+      final receipt = BackendApiService.fallAlertReceiptFrom(
+        response({
+          'receivedAt': '2026-04-09T10:00:00Z',
+          'cancelDeadlineAt': '2026-04-09T10:00:30Z',
+        }, headers: {
+          'date': 'yesterday-ish',
+        }),
+        roundTrip: Duration.zero,
+      );
+
+      expect(receipt?.remainingGrace, const Duration(seconds: 30));
+    });
+
+    test('submitFallAlert returns the receipt from the create response',
+        () async {
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+      final service = BackendApiService(
+        store: store,
+        client: MockClient((request) async => response({
+              'receivedAt': '2026-04-09T10:00:00Z',
+              'cancelDeadlineAt': '2026-04-09T10:00:30Z',
+            })),
+      );
+
+      final receipt = await service.submitFallAlert(
+        clientAlertId: 'alert-1',
+        fallTimestamp: 0,
+        locale: 'en',
+        latitude: null,
+        longitude: null,
+      );
+
+      expect(receipt, isNotNull);
+      expect(receipt!.remainingGrace.inSeconds, inInclusiveRange(29, 30));
+    });
+  });
+
+  test('submitFallAlert retries rate limiting (429)', () async {
+    store.data['backend_device_id'] = 'device-1';
+    store.data['backend_device_token'] = 'token-1';
+    var calls = 0;
+    final service = BackendApiService(
+      store: store,
+      submitRetryDelays: const [Duration.zero],
+      client: MockClient((request) async {
+        calls++;
+        return calls == 1
+            ? http.Response('slow down', 429)
+            : http.Response('{}', 201);
+      }),
+    );
+
+    await service.submitFallAlert(
+      clientAlertId: 'alert-1',
+      fallTimestamp: 0,
+      locale: 'en',
+      latitude: null,
+      longitude: null,
+    );
+
+    expect(calls, 2);
+  });
+  group('registration marker (lost credentials)', () {
+    const markerKey = SharedPreferencesRegistrationMarker.key;
+
+    Future<bool> markerSet() async =>
+        (await SharedPreferences.getInstance()).getBool(markerKey) ?? false;
+
+    test('first launch registers automatically and records the marker',
+        () async {
+      final service = BackendApiService(
+        store: store,
+        pairingState: DevicePairingState(),
+        client: MockClient((request) async {
+          if (request.url.path == '/api/v1/devices/register') {
+            return http.Response(
+              jsonEncode({'deviceId': 'device-1', 'deviceToken': 'token-1'}),
+              201,
+            );
+          }
+          return http.Response('[]', 200);
+        }),
+      );
+
+      await service.ensureReady();
+
+      expect(store.data['backend_device_token'], 'token-1');
+      expect(await markerSet(), isTrue);
+    });
+
+    test(
+        'credentials lost after a registration require re-pairing instead '
+        'of registering an orphan device', () async {
+      SharedPreferences.setMockInitialValues({markerKey: true});
+      final pairing = DevicePairingState();
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async => fail('no request expected')),
+      );
+
+      await expectLater(
+        service.ensureReady(),
+        throwsA(isA<DeviceRepairRequiredException>()),
+      );
+
+      expect(store.data.containsKey('backend_device_id'), isFalse);
+      expect(store.data[BackendApiService.reauthRequiredKey], 'true');
+      expect(pairing.repairRequired.value, isTrue);
+    });
+
+    test('existing installs get the marker on the next credential read',
+        () async {
+      store.data['backend_device_id'] = 'device-1';
+      store.data['backend_device_token'] = 'token-1';
+      final service = BackendApiService(
+        store: store,
+        pairingState: DevicePairingState(),
+        client: MockClient((request) async => http.Response('[]', 200)),
+      );
+
+      expect(await markerSet(), isFalse);
+      await service.ensureReady();
+
+      expect(await markerSet(), isTrue);
+    });
+
+    test('explicit re-pair works while the marker is set', () async {
+      SharedPreferences.setMockInitialValues({markerKey: true});
+      store.data[BackendApiService.reauthRequiredKey] = 'true';
+      final pairing = DevicePairingState()..repairRequired.value = true;
+      final service = BackendApiService(
+        store: store,
+        pairingState: pairing,
+        client: MockClient((request) async => http.Response(
+              jsonEncode({'deviceId': 'device-2', 'deviceToken': 'token-2'}),
+              201,
+            )),
+      );
+
+      await service.repairDevice();
+
+      expect(store.data['backend_device_token'], 'token-2');
+      expect(pairing.repairRequired.value, isFalse);
+      expect(await markerSet(), isTrue);
+    });
+
+    test('injected marker is honoured', () async {
+      final marker = _MemoryMarker()..value = true;
+      final service = BackendApiService(
+        store: store,
+        pairingState: DevicePairingState(),
+        registrationMarker: marker,
+        client: MockClient((request) async => fail('no request expected')),
+      );
+
+      await expectLater(
+        service.syncContacts(const []),
+        throwsA(isA<DeviceRepairRequiredException>()),
+      );
+    });
+  });
+}
+
+class _MemoryMarker implements DeviceRegistrationMarker {
+  bool value = false;
+
+  @override
+  Future<bool> isSet() async => value;
+
+  @override
+  Future<void> set() async => value = true;
 }

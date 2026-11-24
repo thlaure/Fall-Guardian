@@ -47,13 +47,15 @@ class _FakeBackendGateway implements AlertBackendGateway {
   Future<void> syncContacts(List<Contact> contacts) async {}
 
   @override
-  Future<void> submitFallAlert({
+  Future<FallAlertReceipt?> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
     required double? latitude,
     required double? longitude,
-  }) async {}
+  }) async {
+    return null;
+  }
 
   @override
   Future<void> recordCancelledFallAlert({
@@ -77,7 +79,8 @@ class _FakeBackendGateway implements AlertBackendGateway {
 
 class _FakeWatchGateway implements WatchCommandGateway {
   @override
-  Future<void> sendCancelAlert() async {}
+  Future<void> sendCancelAlert(
+      {String? incidentId, int? fallTimestamp}) async {}
 }
 
 class _EnglishLocaleResolver implements AlertLocaleResolver {

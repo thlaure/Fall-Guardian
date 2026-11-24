@@ -49,5 +49,23 @@ class MethodChannelWatchGateway implements WatchCommandGateway {
   const MethodChannelWatchGateway();
 
   @override
-  Future<void> sendCancelAlert() => WatchCommunicationService.sendCancelAlert();
+  Future<void> sendCancelAlert({String? incidentId, int? fallTimestamp}) =>
+      WatchCommunicationService.sendCancelAlert(
+        incidentId: incidentId,
+        fallTimestamp: fallTimestamp,
+      );
+}
+
+class MethodChannelDurableAlertQueue implements DurableAlertQueue {
+  const MethodChannelDurableAlertQueue();
+
+  @override
+  Future<void> enqueue({
+    required String clientAlertId,
+    required int fallTimestamp,
+  }) =>
+      WatchCommunicationService.enqueuePendingAlert(
+        clientAlertId: clientAlertId,
+        fallTimestamp: fallTimestamp,
+      );
 }

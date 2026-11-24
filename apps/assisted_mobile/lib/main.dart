@@ -23,7 +23,10 @@ import 'screens/fall_alert_screen.dart';
 import 'repositories/contacts_repository.dart';
 
 // The service that talks to the native watch layer (Wear OS / watchOS).
+import 'repositories/fall_events_repository.dart';
+import 'services/alert_runtime.dart';
 import 'services/app_bootstrap_service.dart';
+import 'services/relay_outcome_importer.dart';
 import 'services/watch_communication_service.dart';
 import 'services/alert_coordinator.dart';
 import 'services/backend_api_service.dart';
@@ -116,6 +119,7 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_alertCoordinator.reconcileActiveAlert());
+      unawaited(_syncNativeRelayState());
     }
   }
 
@@ -127,12 +131,39 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     );
     try {
       await bootstrapService.bootstrap();
+    } catch (_) {
+      // Best effort only: the app must still function locally if the backend is
+      // unavailable, and alert submission will surface the failure later.
+      // A rejected device surfaces through DevicePairingState (home banner).
+    }
+    try {
+      // Configure the native relay even when bootstrap failed (e.g. offline):
+      // queued incidents must keep retrying with the stored credentials.
       await WatchCommunicationService.configureNativeAlertRelay(
         _backendApi.debugBaseUrl,
       );
     } catch (_) {
-      // Best effort only: the app must still function locally if the backend is
-      // unavailable, and alert submission will surface the failure later.
+      // No backend URL for this build; the relay keeps incidents queued.
+    }
+    await _syncNativeRelayState();
+  }
+
+  /// Pulls state the native relays may have produced while Flutter was not
+  /// running: terminal outcomes for history, and the re-pairing flag.
+  Future<void> _syncNativeRelayState() async {
+    try {
+      await RelayOutcomeImporter(
+        recorder: FallEventsRepository(),
+        idGenerator: const UuidGenerator(),
+      ).importOutcomes();
+      await _backendApi.isRepairRequired();
+    } catch (error, stackTrace) {
+      developer.log(
+        'Native relay state sync failed',
+        name: 'FallGuardianApp',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -140,8 +171,11 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   // signals that an in-progress alert has been cancelled.
   // We push `null` into the broadcast stream — the value itself doesn't matter,
   // the event ("something was cancelled") is what listeners care about.
-  void _onAlertCancelled() {
-    unawaited(_alertCoordinator.cancelFromWatch());
+  void _onAlertCancelled({String? incidentId, int? fallTimestamp}) {
+    unawaited(_alertCoordinator.cancelFromWatch(
+      incidentId: incidentId,
+      fallTimestamp: fallTimestamp,
+    ));
   }
 
   // Called by WatchCommunicationService when the watch detects a fall.
@@ -280,6 +314,9 @@ class _FallGuardianAppState extends State<FallGuardianApp>
       home: HomeScreen(
         onSimulateFall: _onFallDetected,
         backendApi: _backendApi,
+        onDeviceRepaired: () =>
+            WatchCommunicationService.configureNativeAlertRelay(
+                _backendApi.debugBaseUrl),
       ),
     );
   }

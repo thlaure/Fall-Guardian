@@ -40,6 +40,21 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get homeFootnote =>
       'Monitoring active on your watch.\nKeep the watch app running in the background.';
+  @override
+  String get repairRequiredTitle => 'Caregivers will NOT be notified';
+  @override
+  String get repairRequiredBody =>
+      'Fall Guardian no longer recognises this phone, so fall alerts cannot '
+      'reach your caregivers. Re-pair this phone, then send each caregiver a '
+      'new invitation from Caregivers.';
+  @override
+  String get repairAction => 'Re-pair this phone';
+  @override
+  String get repairSucceeded =>
+      'Phone re-paired. Now send your caregivers a new invitation.';
+  @override
+  String get repairFailed =>
+      'Re-pairing failed. Check your connection and try again.';
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   @override
@@ -88,6 +103,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Cancellation was not confirmed. Caregivers may still be alerted.';
   @override
   String get cancelAlert => "I'm OK\nCancel Alert";
+  @override
+  String get alertRepairRequired =>
+      'Caregivers were NOT notified: this phone is no longer linked to '
+      'Fall Guardian. Re-pair it from the home screen.';
+  @override
+  String get caregiversBeingNotified =>
+      'Cancellation window closed — caregivers are being notified.';
 
   // ── History ──────────────────────────────────────────────────────────────
   @override

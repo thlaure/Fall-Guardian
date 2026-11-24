@@ -9,6 +9,7 @@ import 'package:fall_guardian/models/fall_event.dart';
 import 'package:fall_guardian/services/alert_coordinator.dart';
 import 'package:fall_guardian/services/alert_ports.dart';
 import 'package:fall_guardian/services/alert_runtime.dart';
+import 'package:fall_guardian/services/backend_api_service.dart';
 
 class _FakeFallEventsRepository implements FallEventRecorder {
   final List<FallEvent> savedEvents = [];
@@ -66,7 +67,18 @@ class _FakeBackendGateway implements AlertBackendGateway {
     this.recordCancelledShouldFail = false,
     this.submitCompleter,
     this.cancelCompleter,
+    this.receipt,
+    this.repairRequired = false,
+    this.log,
   });
+
+  final List<String>? log;
+
+  /// Returned by successful submissions (null = API without deadline data).
+  FallAlertReceipt? receipt;
+
+  /// Every submission fails as if the API rejected the device credentials.
+  final bool repairRequired;
 
   final bool shouldFail;
   final bool failFirstSubmitOnly;
@@ -94,7 +106,7 @@ class _FakeBackendGateway implements AlertBackendGateway {
   Future<void> syncContacts(List<Contact> contacts) async {}
 
   @override
-  Future<void> submitFallAlert({
+  Future<FallAlertReceipt?> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
@@ -102,17 +114,22 @@ class _FakeBackendGateway implements AlertBackendGateway {
     required double? longitude,
   }) async {
     callCount++;
+    log?.add('submit:$clientAlertId');
     lastClientAlertId = clientAlertId;
     lastLocale = locale;
     lastTimestamp = fallTimestamp;
     lastLatitude = latitude;
     lastLongitude = longitude;
 
+    if (repairRequired) {
+      throw DeviceRepairRequiredException(statusCode: 401);
+    }
     if (shouldFail || (failFirstSubmitOnly && callCount == 1)) {
       throw Exception('backend unavailable');
     }
 
     await submitCompleter?.future;
+    return receipt;
   }
 
   @override
@@ -159,10 +176,32 @@ class _FakeBackendGateway implements AlertBackendGateway {
 
 class _FakeWatchGateway implements WatchCommandGateway {
   int cancelCount = 0;
+  String? lastIncidentId;
+  int? lastFallTimestamp;
 
   @override
-  Future<void> sendCancelAlert() async {
+  Future<void> sendCancelAlert({String? incidentId, int? fallTimestamp}) async {
     cancelCount++;
+    lastIncidentId = incidentId;
+    lastFallTimestamp = fallTimestamp;
+  }
+}
+
+class _FakeDurableQueue implements DurableAlertQueue {
+  _FakeDurableQueue({this.log, this.shouldFail = false});
+
+  final List<String>? log;
+  final bool shouldFail;
+  final List<String> enqueuedIds = [];
+
+  @override
+  Future<void> enqueue({
+    required String clientAlertId,
+    required int fallTimestamp,
+  }) async {
+    log?.add('enqueue:$clientAlertId');
+    if (shouldFail) throw Exception('native relay unavailable');
+    enqueuedIds.add(clientAlertId);
   }
 }
 
@@ -200,6 +239,7 @@ AlertCoordinator _coordinator({
   AlertLocaleResolver? localeResolver,
   Clock? clock,
   IdGenerator? idGenerator,
+  DurableAlertQueue? durableQueue,
 }) {
   return AlertCoordinator(
     eventRecorder: eventRecorder ?? _FakeFallEventsRepository(),
@@ -210,6 +250,7 @@ AlertCoordinator _coordinator({
     localeResolver: localeResolver ?? const DeviceLocaleResolver(),
     clock: clock ?? _FakeClock(),
     idGenerator: idGenerator ?? _FakeIdGenerator(),
+    durableQueue: durableQueue,
   );
 }
 
@@ -763,5 +804,258 @@ void main() {
     expect(repo.savedEvents.single.longitude, 2.3522);
 
     coordinator.dispose();
+  });
+  group('durable queue', () {
+    test('incident is persisted natively before the first submission',
+        () async {
+      final log = <String>[];
+      final backend = _FakeBackendGateway(log: log);
+      final coordinator = _coordinator(
+        backendGateway: backend,
+        durableQueue: _FakeDurableQueue(log: log),
+      );
+
+      await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(log, ['enqueue:id-0', 'submit:id-0']);
+      coordinator.dispose();
+    });
+
+    test('a native enqueue failure never blocks the in-process submission',
+        () async {
+      final backend = _FakeBackendGateway();
+      final coordinator = _coordinator(
+        backendGateway: backend,
+        durableQueue: _FakeDurableQueue(shouldFail: true),
+      );
+
+      await coordinator.startAlert(DateTime.now().millisecondsSinceEpoch);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(backend.callCount, 1);
+      coordinator.dispose();
+    });
+  });
+
+  group('countdown deadline', () {
+    test('before the server answers it runs from fallTimestamp + 30 s',
+        () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final submit = Completer<void>();
+      final coordinator = _coordinator(
+        clock: clock,
+        backendGateway: _FakeBackendGateway(submitCompleter: submit),
+      );
+
+      // The watch detected the fall 10 s before the phone heard about it.
+      await coordinator.startAlert(
+        clock.now().millisecondsSinceEpoch - 10000,
+      );
+
+      expect(coordinator.remainingCountdownSeconds, 20);
+      submit.complete();
+      coordinator.dispose();
+    });
+
+    test('a watch clock running ahead never extends the window past 30 s',
+        () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final submit = Completer<void>();
+      final coordinator = _coordinator(
+        clock: clock,
+        backendGateway: _FakeBackendGateway(submitCompleter: submit),
+      );
+
+      await coordinator.startAlert(
+        clock.now().millisecondsSinceEpoch + 60000,
+      );
+
+      expect(coordinator.remainingCountdownSeconds, 30);
+      submit.complete();
+      coordinator.dispose();
+    });
+
+    test('after the create response the server deadline drives the countdown',
+        () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final repo = _FakeFallEventsRepository();
+      final backend = _FakeBackendGateway(
+        receipt: const FallAlertReceipt(remainingGrace: Duration(seconds: 45)),
+      );
+      final coordinator = _coordinator(
+        clock: clock,
+        backendGateway: backend,
+        eventRecorder: repo,
+      );
+
+      await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+      await Future<void>.delayed(Duration.zero);
+
+      // Displayed value is capped at the 30 s window.
+      expect(coordinator.remainingCountdownSeconds, 30);
+
+      clock.setNow(clock.now().add(const Duration(seconds: 31)));
+      await coordinator.reconcileActiveAlert();
+      expect(coordinator.currentState?.phase, AlertPhase.countdown,
+          reason: 'server grace is still open, the user can still cancel');
+      expect(coordinator.remainingCountdownSeconds, 14);
+      expect(coordinator.isPastDeadline, isFalse);
+
+      clock.setNow(clock.now().add(const Duration(seconds: 15)));
+      expect(coordinator.remainingCountdownSeconds, 0);
+      expect(coordinator.isPastDeadline, isTrue);
+      await coordinator.reconcileActiveAlert();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(coordinator.currentState?.phase, AlertPhase.alertSent);
+      expect(repo.savedEvents.single.status, FallEventStatus.alertSent);
+      expect(backend.callCount, 1);
+      coordinator.dispose();
+    });
+
+    test('a shorter server deadline ends the countdown early', () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final coordinator = _coordinator(
+        clock: clock,
+        backendGateway: _FakeBackendGateway(
+          receipt: const FallAlertReceipt(remainingGrace: Duration(seconds: 8)),
+        ),
+      );
+
+      await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+      await Future<void>.delayed(Duration.zero);
+      expect(coordinator.remainingCountdownSeconds, 8);
+
+      clock.setNow(clock.now().add(const Duration(seconds: 9)));
+      expect(coordinator.remainingCountdownSeconds, 0,
+          reason: 'never negative');
+      expect(coordinator.isPastDeadline, isTrue);
+      coordinator.dispose();
+    });
+
+    test(
+        'a late-delivered fall whose server grace is still open returns to '
+        'the countdown after the fallback submission', () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final states = <AlertPhase>[];
+      final backend = _FakeBackendGateway(
+        failFirstSubmitOnly: true,
+        receipt: const FallAlertReceipt(remainingGrace: Duration(seconds: 25)),
+      );
+      final coordinator = _coordinator(clock: clock, backendGateway: backend);
+      final sub = coordinator.stateStream.listen((s) => states.add(s.phase));
+
+      // Detected 60 s ago (e.g. phone was offline): local window is over.
+      await coordinator.startAlert(clock.now().millisecondsSinceEpoch - 60000);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(backend.callCount, 2);
+      expect(states, [
+        AlertPhase.countdown,
+        AlertPhase.gettingLocation,
+        AlertPhase.sendingAlert,
+        AlertPhase.countdown,
+      ]);
+      expect(coordinator.remainingCountdownSeconds, 25);
+
+      await sub.cancel();
+      coordinator.dispose();
+    });
+  });
+
+  group('re-pairing required', () {
+    test(
+        'rejected credentials warn during the countdown and end as a '
+        'not-notified failure, never as sent', () async {
+      final clock = _FakeClock(DateTime(2026, 7, 24, 12));
+      final repo = _FakeFallEventsRepository();
+      final coordinator = _coordinator(
+        clock: clock,
+        eventRecorder: repo,
+        backendGateway: _FakeBackendGateway(repairRequired: true),
+      );
+
+      await coordinator.startAlert(clock.now().millisecondsSinceEpoch);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(coordinator.repairRequired, isTrue);
+      expect(coordinator.currentState?.phase, AlertPhase.countdown);
+      expect(coordinator.currentState?.statusMessage, contains('NOT notified'));
+
+      clock.setNow(clock.now().add(const Duration(seconds: 31)));
+      await coordinator.reconcileActiveAlert();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(coordinator.currentState?.phase, AlertPhase.alertFailed);
+      expect(coordinator.currentState?.statusMessage, contains('NOT notified'));
+      expect(repo.savedEvents.single.status, FallEventStatus.alertFailed);
+      coordinator.dispose();
+    });
+  });
+
+  group('incident-targeted watch cancel', () {
+    test('a cancel for another incident id does not dismiss the active alert',
+        () async {
+      final repo = _FakeFallEventsRepository();
+      final coordinator = _coordinator(eventRecorder: repo);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      await coordinator.startAlert(timestamp, clientAlertId: 'incident-a');
+      await Future<void>.delayed(Duration.zero);
+      await coordinator.cancelFromWatch(incidentId: 'incident-b');
+
+      expect(coordinator.currentState?.phase, AlertPhase.countdown);
+      expect(repo.savedEvents, isEmpty);
+
+      await coordinator.cancelFromWatch(fallTimestamp: timestamp - 1);
+      expect(coordinator.currentState?.phase, AlertPhase.countdown);
+      coordinator.dispose();
+    });
+
+    test('a cancel naming the active incident cancels it', () async {
+      final repo = _FakeFallEventsRepository();
+      final coordinator = _coordinator(eventRecorder: repo);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      await coordinator.startAlert(
+        timestamp,
+        clientAlertId: '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f',
+      );
+      await Future<void>.delayed(Duration.zero);
+      await coordinator.cancelFromWatch(
+        incidentId: '3F2B8C1E-9D4A-4C6B-8E2F-1A2B3C4D5E6F',
+      );
+
+      expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+      coordinator.dispose();
+    });
+
+    test('a cancel naming only the fall timestamp cancels the match', () async {
+      final repo = _FakeFallEventsRepository();
+      final coordinator = _coordinator(eventRecorder: repo);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      await coordinator.startAlert(timestamp);
+      await Future<void>.delayed(Duration.zero);
+      await coordinator.cancelFromWatch(fallTimestamp: timestamp);
+
+      expect(repo.savedEvents.single.status, FallEventStatus.cancelled);
+      coordinator.dispose();
+    });
+
+    test('phone cancel tells the watch which incident was cancelled', () async {
+      final watch = _FakeWatchGateway();
+      final coordinator = _coordinator(watchGateway: watch);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+      await coordinator.startAlert(timestamp, clientAlertId: 'incident-a');
+      await Future<void>.delayed(Duration.zero);
+      await coordinator.cancelFromPhone();
+
+      expect(watch.lastIncidentId, 'incident-a');
+      expect(watch.lastFallTimestamp, timestamp);
+      coordinator.dispose();
+    });
   });
 }

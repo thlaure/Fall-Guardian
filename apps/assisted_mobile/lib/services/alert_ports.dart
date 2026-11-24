@@ -22,12 +22,27 @@ abstract class AlertNotificationGateway {
   Future<void> cancelAll();
 }
 
+/// What the API told us when it accepted a fall alert.
+///
+/// The backend owns the cancellation window. [remainingGrace] is how long is
+/// left before the server dispatches caregiver pushes, measured on the
+/// server's own clock (cancelDeadlineAt minus the server time of the
+/// response) and already reduced by the request round trip. The caller
+/// anchors it on its monotonic clock, so phone/watch clock skew cannot move
+/// the displayed deadline.
+class FallAlertReceipt {
+  const FallAlertReceipt({required this.remainingGrace});
+
+  final Duration remainingGrace;
+}
+
 abstract class AlertBackendGateway {
   Future<void> ensureReady();
 
   Future<void> syncContacts(List<Contact> contacts);
 
-  Future<void> submitFallAlert({
+  /// Returns null when the API response does not carry deadline data.
+  Future<FallAlertReceipt?> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
@@ -55,7 +70,19 @@ abstract class AlertBackendGateway {
 }
 
 abstract class WatchCommandGateway {
-  Future<void> sendCancelAlert();
+  /// [incidentId]/[fallTimestamp] let newer watches cancel only the matching
+  /// incident; older watches ignore them.
+  Future<void> sendCancelAlert({String? incidentId, int? fallTimestamp});
+}
+
+/// Durable, process-independent storage of incidents that still need backend
+/// delivery. Implemented by the native relay queue (Android JobScheduler /
+/// iOS BGTaskScheduler), which retries even after the app process dies.
+abstract class DurableAlertQueue {
+  Future<void> enqueue({
+    required String clientAlertId,
+    required int fallTimestamp,
+  });
 }
 
 abstract class AlertLocaleResolver {

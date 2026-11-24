@@ -19,8 +19,29 @@ typedef FallDetectedCallback = void Function(
 );
 
 /// A function that is called when the watch (or any other device) cancels
-/// the current alert.
-typedef CancelAlertCallback = void Function();
+/// an alert. Newer watches name the incident ([incidentId] and/or
+/// [fallTimestamp]) so only the matching alert is cancelled; both are null
+/// for legacy watches, meaning "the current alert".
+typedef CancelAlertCallback = void Function({
+  String? incidentId,
+  int? fallTimestamp,
+});
+
+/// A terminal result reported by the native relay for an incident it handled
+/// while Flutter may not have been running (see [takeRelayOutcomes]).
+class RelayOutcomeRecord {
+  const RelayOutcomeRecord({
+    required this.clientAlertId,
+    required this.fallTimestamp,
+    required this.outcome,
+  });
+
+  final String clientAlertId;
+  final int fallTimestamp;
+
+  /// One of `create_rejected`, `cancel_too_late`, `cancel_rejected`, `dropped`.
+  final String outcome;
+}
 
 // ─── Why a MethodChannel? ────────────────────────────────────────────────────
 // Flutter runs inside a sandboxed Dart VM. To talk to Android or iOS APIs
@@ -111,7 +132,13 @@ class WatchCommunicationService {
       // Native code calls 'onAlertCancelled' with no payload when the user
       // cancels the alert on the watch.
       case 'onAlertCancelled':
-        _onCancelAlert?.call();
+        final args = call.arguments as Map<Object?, Object?>?;
+        final incidentId = args?['incidentId'];
+        final fallTimestamp = args?['fallTimestamp'];
+        _onCancelAlert?.call(
+          incidentId: incidentId is String ? incidentId : null,
+          fallTimestamp: fallTimestamp is int ? fallTimestamp : null,
+        );
         return null;
 
       default:
@@ -146,9 +173,17 @@ class WatchCommunicationService {
   /// Silently no-ops if the watch is not connected or the platform rejects
   /// the call — a failed cancel is better than a crash, and the 30-second
   /// timeout is a safety net.
-  static Future<void> sendCancelAlert() async {
+  static Future<void> sendCancelAlert({
+    String? incidentId,
+    int? fallTimestamp,
+  }) async {
     try {
-      await _channel.invokeMethod('sendCancelAlert');
+      // The native side persists the backend cancellation for this incident
+      // in its durable relay queue and forwards the target to the watch.
+      await _channel.invokeMethod('sendCancelAlert', {
+        if (incidentId != null) 'incidentId': incidentId,
+        if (fallTimestamp != null) 'fallTimestamp': fallTimestamp,
+      });
     } catch (error, stackTrace) {
       developer.log(
         'sendCancelAlert failed',
@@ -157,6 +192,41 @@ class WatchCommunicationService {
         stackTrace: stackTrace,
       );
     }
+  }
+
+  /// Persists an incident in the native relay queue (Android JobScheduler /
+  /// iOS BGTaskScheduler) so it is retried even after the app process dies.
+  /// Idempotent per [clientAlertId]. Throws if the platform rejects it; the
+  /// caller still submits in-process.
+  static Future<void> enqueuePendingAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+  }) async {
+    await _channel.invokeMethod<Object?>('enqueuePendingAlert', {
+      'clientAlertId': clientAlertId,
+      'timestamp': fallTimestamp,
+    });
+  }
+
+  /// Takes (and clears) terminal outcomes recorded by the native relay so
+  /// they can be shown in the local history.
+  static Future<List<RelayOutcomeRecord>> takeRelayOutcomes() async {
+    final raw = await _channel.invokeMethod<List<Object?>>('takeRelayOutcomes');
+    final records = <RelayOutcomeRecord>[];
+    for (final entry in raw ?? const <Object?>[]) {
+      if (entry is! Map) continue;
+      final id = entry['clientAlertId'];
+      final timestamp = entry['timestamp'];
+      final outcome = entry['outcome'];
+      if (id is String && timestamp is int && outcome is String) {
+        records.add(RelayOutcomeRecord(
+          clientAlertId: id,
+          fallTimestamp: timestamp,
+          outcome: outcome,
+        ));
+      }
+    }
+    return records;
   }
 
   /// Gives Android's process-independent JobService the same backend URL used
@@ -168,7 +238,7 @@ class WatchCommunicationService {
         'baseUrl': baseUrl,
       });
     } on MissingPluginException {
-      // iOS has no Android native relay and intentionally ignores this call.
+      // Platforms without a native relay ignore this call.
     }
   }
 
