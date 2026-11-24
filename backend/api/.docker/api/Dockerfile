@@ -1,7 +1,7 @@
 #syntax=docker/dockerfile:1
 
 ARG REGISTRY=""
-FROM ${REGISTRY}dunglas/frankenphp:1.12.1-php8.5 AS frankenphp_upstream
+FROM ${REGISTRY}dunglas/frankenphp:1.13.5-php8.5 AS frankenphp_upstream
 
 FROM frankenphp_upstream AS frankenphp_base
 
@@ -9,8 +9,11 @@ WORKDIR /app
 
 ENV PHP_INI_SCAN_DIR=":$PHP_INI_DIR/app.conf.d"
 
+# Upgrade OS packages so security fixes published after the upstream image
+# build (e.g. Debian point releases) are applied.
 # hadolint ignore=DL3008
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     acl \
     && rm -rf /var/lib/apt/lists/* \
     && set -eux; \
