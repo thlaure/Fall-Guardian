@@ -26,7 +26,8 @@ import org.json.JSONObject
  *   "/thresholds"   — The phone user changed sensitivity settings. The payload
  *                     is a UTF-8 JSON string with updated threshold values.
  *   "/cancel_alert" — The phone user (or the phone's auto-timeout) cancelled
- *                     the alert. No payload needed.
+ *                     the alert. Optional JSON payload with `incidentId` /
+ *                     `fallTimestamp`; a mismatching incident is ignored.
  *
  * --- How this connects to the other files ---
  * • Threshold changes: written to SharedPreferences here →
@@ -55,7 +56,9 @@ class PhoneMessageListenerService : WearableListenerService() {
         // Route the message to the appropriate handler based on the path string.
         when (messageEvent.path) {
             "/thresholds"  -> handleThresholds(messageEvent.data)  // Phone pushed new settings.
-            "/cancel_alert" -> WearDataSender.cancelAlertFromPhone() // Phone user cancelled the alert.
+            // Phone user cancelled. The payload may name the incident; the
+            // decision (match / legacy accept) lives in AlertContract.
+            "/cancel_alert" -> WearDataSender.cancelAlertFromPhone(this, messageEvent.data)
         }
     }
 

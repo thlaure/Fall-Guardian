@@ -84,7 +84,7 @@ class MainActivity : ComponentActivity() {
     private val cancelAlertListener = MessageClient.OnMessageReceivedListener { messageEvent ->
         if (messageEvent.path == "/cancel_alert") {
             Log.d("MainActivity", "cancelAlertListener: received /cancel_alert")
-            WearDataSender.cancelAlertFromPhone()
+            WearDataSender.cancelAlertFromPhone(this@MainActivity, messageEvent.data)
         }
     }
 
@@ -112,6 +112,9 @@ class MainActivity : ComponentActivity() {
 
         // Start fall detection immediately — no permission required for the accelerometer.
         startForegroundService(Intent(this, FallDetectionService::class.java))
+
+        // Re-open an alert that was still counting down when the process died.
+        WearDataSender.restore(this)
 
         // setContent replaces the Activity's view with a Compose UI tree.
         setContent { WearApp() }

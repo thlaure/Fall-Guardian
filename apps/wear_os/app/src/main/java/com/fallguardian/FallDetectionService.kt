@@ -184,6 +184,9 @@ class FallDetectionService : Service(), SensorEventListener {
         WearDataSender.onAlertStateChanged = { active ->
             if (active) showUrgentFallAlert() else dismissUrgentFallAlert()
         }
+        // After a process restart (crash, OS kill, START_STICKY relaunch) the
+        // alert may still be inside its 30-second window: bring it back.
+        WearDataSender.restore(this)
 
         // --- Step 2: Begin reading the accelerometer ---
         registerSensors()
