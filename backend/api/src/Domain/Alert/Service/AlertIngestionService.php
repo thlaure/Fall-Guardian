@@ -14,6 +14,7 @@ use App\Enum\FallResolution;
 use App\Shared\DateTime\ApiDateTimeFormatter;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 
@@ -31,6 +32,7 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
         private FallAlertRepositoryInterface $fallAlertRepository,
         private MessageBusInterface $messageBus,
         private ClockInterface $clock,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -55,6 +57,12 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
             new SendFallAlertPushMessage($alert->getId()->toRfc4122()),
             [new DelayStamp($this->remainingGraceMs($alert, $now))],
         );
+        $this->logger->info('alert.received', [
+            'alertId' => $alert->getId()->toRfc4122(),
+            'deviceId' => $device->getPublicId(),
+            'status' => $alert->getStatus()->value,
+            'detectionSource' => $detectionSource->value,
+        ]);
 
         return $alert;
     }
@@ -81,19 +89,42 @@ final readonly class AlertIngestionService implements AlertIngestionServiceInter
                 $this->fallAlertRepository->save($existing);
             }
 
-            return $this->fallAlertRepository->cancelPending($device, $clientAlertId, $now) ?? $existing;
+            return $this->logCancellation($this->fallAlertRepository->cancelPending($device, $clientAlertId, $now)) ?? $existing;
         }
 
         $alert = new FallAlert($device, $clientAlertId, $fallTimestamp, $locale, $latitude, $longitude, $now, $revision, $detectionSource, $resolution);
         $alert->cancel($now);
         $this->fallAlertRepository->save($alert);
+        $this->logger->info('alert.received', [
+            'alertId' => $alert->getId()->toRfc4122(),
+            'deviceId' => $device->getPublicId(),
+            'status' => $alert->getStatus()->value,
+            'detectionSource' => $detectionSource->value,
+        ]);
 
         return $alert;
     }
 
+    public function isKnownAlert(Device $device, string $clientAlertId): bool
+    {
+        return $this->fallAlertRepository->findOneByDeviceAndClientAlertId($device, $clientAlertId) instanceof FallAlert;
+    }
+
     public function cancelAlert(Device $device, string $clientAlertId): ?FallAlert
     {
-        return $this->fallAlertRepository->cancelPending($device, $clientAlertId, $this->clock->now());
+        return $this->logCancellation($this->fallAlertRepository->cancelPending($device, $clientAlertId, $this->clock->now()));
+    }
+
+    private function logCancellation(?FallAlert $alert): ?FallAlert
+    {
+        if ($alert instanceof FallAlert) {
+            $this->logger->info('alert.cancel_requested', [
+                'alertId' => $alert->getId()->toRfc4122(),
+                'status' => $alert->getStatus()->value,
+            ]);
+        }
+
+        return $alert;
     }
 
     public function getAlertForDevice(Device $device, string $alertId): ?FallAlert

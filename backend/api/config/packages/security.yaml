@@ -15,6 +15,7 @@ security:
 
     access_control:
         - { path: ^/health$, roles: PUBLIC_ACCESS }
+        - { path: ^/health/ready$, roles: PUBLIC_ACCESS }
         - { path: ^/api$, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1/devices/register$, roles: PUBLIC_ACCESS }
         - { path: ^/api/v1/companion-enrollments/claim$, roles: PUBLIC_ACCESS }
