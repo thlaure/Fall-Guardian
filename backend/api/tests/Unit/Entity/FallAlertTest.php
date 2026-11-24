@@ -227,4 +227,31 @@ final class FallAlertTest extends TestCase
         self::assertSame(0, $alert->getReminderCount());
         self::assertNull($alert->getLastReminderAt());
     }
+
+    #[Test]
+    public function itKeepsExposingTheLastOutcomeWhileARetryRoundRuns(): void
+    {
+        $receivedAt = new DateTimeImmutable('2026-07-23T08:00:00+00:00');
+        $alert = $this->buildAlert($receivedAt);
+        $dueAt = $receivedAt->modify('+30 seconds');
+        $alert->claimForDispatch($dueAt, $dueAt);
+
+        // First round in flight: nothing was delivered yet, so "dispatching" is honest.
+        self::assertSame(FallAlertStatus::Dispatching, $alert->getPublicStatus());
+
+        $reflection = new ReflectionObject($alert);
+        $reflection->getProperty('status')->setValue($alert, FallAlertStatus::PartiallySent);
+        $reflection->getProperty('lastDispatchOutcome')->setValue($alert, FallAlertStatus::PartiallySent);
+        $reflection->getProperty('nextDispatchRetryAt')->setValue($alert, $dueAt->modify('+15 seconds'));
+        self::assertTrue($alert->claimForDispatch($dueAt->modify('+15 seconds'), $dueAt));
+
+        // Retry round in flight: installed caregiver apps hide `dispatching`
+        // alerts, so the public status stays on the last outcome.
+        self::assertSame(FallAlertStatus::Dispatching, $alert->getStatus());
+        self::assertSame(FallAlertStatus::PartiallySent, $alert->getPublicStatus());
+        self::assertSame(FallAlertStatus::PartiallySent, $alert->getLastDispatchOutcome());
+
+        $alert->markAcknowledged();
+        self::assertSame(FallAlertStatus::Acknowledged, $alert->getPublicStatus());
+    }
 }

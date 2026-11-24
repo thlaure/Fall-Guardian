@@ -70,6 +70,7 @@ final class AcknowledgeAlertProcessorTest extends TestCase
         $alert->method('getDevice')->willReturn($protectedDevice);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getStatus')->willReturn(FallAlertStatus::Sent);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Sent);
         $alert->expects($this->once())->method('markAcknowledged');
 
         $link = $this->createMock(CaregiverLink::class);

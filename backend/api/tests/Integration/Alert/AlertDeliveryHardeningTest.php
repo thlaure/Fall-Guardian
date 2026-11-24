@@ -6,7 +6,9 @@ namespace App\Tests\Integration\Alert;
 
 use App\Domain\Alert\Handler\SendFallAlertPushMessageHandler;
 use App\Domain\Alert\Message\SendFallAlertPushMessage;
+use App\Domain\Alert\Response\FallAlertOutputDTO;
 use App\Domain\Alert\Service\CaregiverAlertNotifier;
+use App\Domain\Caregiver\Response\CaregiverAlertOutputDTO;
 use App\Domain\Push\Exception\InvalidPushTokenException;
 use App\Domain\Push\Exception\PermanentPushDeliveryException;
 use App\Domain\Push\Exception\TransientPushDeliveryException;
@@ -122,13 +124,26 @@ final class AlertDeliveryHardeningTest extends KernelTestCase
         self::assertNotContains($alertId, $this->alerts->findDispatchCandidateIds($retryAt->modify('-1 second'), $retryAt->modify('-1 hour'), 1000));
         self::assertContains($alertId, $this->alerts->findDispatchCandidateIds($retryAt, $retryAt->modify('-1 hour'), 1000));
 
-        // Next round succeeds: the alert becomes sent.
+        self::assertSame(FallAlertStatus::Failed, $failed->getLastDispatchOutcome());
+
+        // While the retry round is in flight, clients keep seeing `failed`.
         $this->entityManager->getConnection()->executeStatement('UPDATE fall_alerts SET next_dispatch_retry_at = NOW() - INTERVAL \'1 second\' WHERE id = ?', [$alertId]);
+        $now = $this->now();
+        $inFlight = $this->alerts->claimForDispatch($alertId, $now, $now->modify('-60 seconds'));
+        self::assertInstanceOf(FallAlert::class, $inFlight);
+        self::assertSame(FallAlertStatus::Dispatching, $inFlight->getStatus());
+        self::assertSame('failed', FallAlertOutputDTO::fromEntity($inFlight)->status);
+        self::assertSame('failed', CaregiverAlertOutputDTO::fromEntity($inFlight)->status);
+        // Simulate the worker dying mid-round so the next handler run reclaims it.
+        $this->entityManager->getConnection()->executeStatement("UPDATE fall_alerts SET dispatch_claimed_at = NOW() - INTERVAL '10 minutes' WHERE id = ?", [$alertId]);
+
+        // Next round succeeds: the alert becomes sent.
         $this->handler(static fn (): array => ['providerMessageId' => 'msg', 'status' => 'sent'])(new SendFallAlertPushMessage($alertId));
 
         $sent = $this->reload($alertId);
         self::assertSame(FallAlertStatus::Sent, $sent->getStatus());
-        self::assertSame(2, $sent->getDispatchAttempts());
+        self::assertSame(3, $sent->getDispatchAttempts());
+        self::assertSame('sent', FallAlertOutputDTO::fromEntity($sent)->status);
         self::assertNull($sent->getNextDispatchRetryAt());
         self::assertSame([PushAttemptStatus::Failed, PushAttemptStatus::Sent], $this->attemptStatuses($alertId));
     }
@@ -194,6 +209,11 @@ final class AlertDeliveryHardeningTest extends KernelTestCase
         self::assertFalse($this->alerts->claimReminder($alertId, 0, $now));
         // Spacing: not a candidate again right away.
         self::assertNotContains($alertId, array_column($this->alerts->findReminderCandidates($now, $now->modify('-120 seconds'), 3, 1000), 'id'));
+
+        // A deferred reminder is given back and can be reserved again.
+        self::assertTrue($this->alerts->releaseReminder($alertId, 1));
+        self::assertFalse($this->alerts->releaseReminder($alertId, 1), 'Only the latest reserved reminder can be released.');
+        self::assertTrue($this->alerts->claimReminder($alertId, 0, $now));
 
         $connection->executeStatement("UPDATE fall_alerts SET status = 'acknowledged' WHERE id = ?", [$alertId]);
         self::assertFalse($this->alerts->claimReminder($alertId, 1, $now->modify('+5 minutes')));

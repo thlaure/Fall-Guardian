@@ -167,7 +167,7 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
 
         $affected = $this->getEntityManager()->createQuery(
             'UPDATE '.FallAlert::class.' alert'
-            .' SET alert.status = :status, alert.nextDispatchRetryAt = :nextRetryAt'
+            .' SET alert.status = :status, alert.lastDispatchOutcome = :status, alert.nextDispatchRetryAt = :nextRetryAt'
             .' WHERE alert.id = :id AND alert.status = :dispatching',
         )
             ->setParameter('status', $status->value)
@@ -222,6 +222,25 @@ final class DoctrineFallAlertRepository extends ServiceEntityRepository implemen
             ->setParameter('id', $uuid, 'uuid')
             ->setParameter('expected', $expectedReminderCount)
             ->setParameter('remindable', [FallAlertStatus::Sent->value, FallAlertStatus::PartiallySent->value])
+            ->execute();
+
+        return 1 === $affected;
+    }
+
+    public function releaseReminder(string $id, int $reminderNumber): bool
+    {
+        $uuid = self::parseUuid($id);
+
+        if (!$uuid instanceof Uuid || $reminderNumber < 1) {
+            return false;
+        }
+
+        $affected = $this->getEntityManager()->createQuery(
+            'UPDATE '.FallAlert::class.' alert SET alert.reminderCount = alert.reminderCount - 1'
+            .' WHERE alert.id = :id AND alert.reminderCount = :reminderNumber',
+        )
+            ->setParameter('id', $uuid, 'uuid')
+            ->setParameter('reminderNumber', $reminderNumber)
             ->execute();
 
         return 1 === $affected;

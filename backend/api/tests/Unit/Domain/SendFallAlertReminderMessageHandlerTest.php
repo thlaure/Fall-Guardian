@@ -67,6 +67,27 @@ final class SendFallAlertReminderMessageHandlerTest extends TestCase
     public function itSkipsAnAlertAcknowledgedOrCancelledMeanwhile(): void
     {
         $this->alerts->method('findById')->willReturn($this->alertWithStatus(FallAlertStatus::Acknowledged));
+        $this->alerts->expects($this->never())->method('releaseReminder');
+        $this->gateway->expects($this->never())->method('send');
+
+        ($this->handler)(new SendFallAlertReminderMessage('alert-id', 1));
+    }
+
+    #[Test]
+    public function itDefersInsteadOfConsumingTheReminderWhileADispatchRetryRuns(): void
+    {
+        $this->alerts->method('findById')->willReturn($this->alertWithStatus(FallAlertStatus::Dispatching));
+        $this->alerts->expects($this->once())->method('releaseReminder')->with('alert-id', 2)->willReturn(true);
+        $this->gateway->expects($this->never())->method('send');
+
+        ($this->handler)(new SendFallAlertReminderMessage('alert-id', 2));
+    }
+
+    #[Test]
+    public function itDefersWhenTheAlertWaitsForAScheduledRetry(): void
+    {
+        $this->alerts->method('findById')->willReturn($this->alertWithStatus(FallAlertStatus::Failed));
+        $this->alerts->expects($this->once())->method('releaseReminder')->with('alert-id', 1);
         $this->gateway->expects($this->never())->method('send');
 
         ($this->handler)(new SendFallAlertReminderMessage('alert-id', 1));
@@ -85,6 +106,7 @@ final class SendFallAlertReminderMessageHandlerTest extends TestCase
     {
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getStatus')->willReturn($status);
+        $alert->method('getPublicStatus')->willReturn($status);
         $alert->method('getId')->willReturn(\Symfony\Component\Uid\Uuid::v7());
         $alert->method('getDevice')->willReturn(new Device('protected', 'hash-protected', 'ios', '1.0.0'));
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable('2026-07-23T08:00:00+00:00'));

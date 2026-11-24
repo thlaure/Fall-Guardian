@@ -160,6 +160,7 @@ final class CreateFallAlertProcessorTest extends TestCase
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getClientAlertId')->willReturn($clientAlertId);
         $alert->method('getStatus')->willReturn($status);
+        $alert->method('getPublicStatus')->willReturn($status);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn(
             FallAlertStatus::Cancelled === $status ? new DateTimeImmutable() : null,

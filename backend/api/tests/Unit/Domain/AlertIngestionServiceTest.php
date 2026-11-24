@@ -217,6 +217,7 @@ final class AlertIngestionServiceTest extends TestCase
         $device = $this->createMock(Device::class);
         $existing = $this->createMock(FallAlert::class);
         $existing->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $existing->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
         $existing->method('getRevision')->willReturn(1);
         $existing->expects($this->once())
             ->method('applyNewerIncidentMetadata')
@@ -281,6 +282,7 @@ final class AlertIngestionServiceTest extends TestCase
         $device = $this->createMock(Device::class);
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
 
         $this->repository->expects($this->once())
             ->method('cancelPending')
@@ -312,6 +314,7 @@ final class AlertIngestionServiceTest extends TestCase
 
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
         $alertDevice = $this->createMock(Device::class);
         $alertDevice->method('getId')->willReturn($uuid);
         $alert->method('getDevice')->willReturn($alertDevice);
@@ -346,6 +349,7 @@ final class AlertIngestionServiceTest extends TestCase
 
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
         $alertDevice = $this->createMock(Device::class);
         $alertDevice->method('getId')->willReturn(\Symfony\Component\Uid\Uuid::v7());
         $alert->method('getDevice')->willReturn($alertDevice);

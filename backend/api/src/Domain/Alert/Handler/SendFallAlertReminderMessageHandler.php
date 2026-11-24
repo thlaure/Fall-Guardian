@@ -35,6 +35,21 @@ final readonly class SendFallAlertReminderMessageHandler
             return;
         }
 
+        if (in_array($alert->getStatus(), [FallAlertStatus::Dispatching, FallAlertStatus::Failed], true)) {
+            // A dispatch retry round is running or scheduled: defer instead of
+            // consuming the reminder; the reconciler reserves it again once the
+            // alert is sent/partially sent.
+            $released = $this->fallAlertRepository->releaseReminder($message->fallAlertId, $message->reminderNumber);
+            $this->logger->info('alert.reminder_deferred', [
+                'alertId' => $message->fallAlertId,
+                'reminder' => $message->reminderNumber,
+                'status' => $alert->getStatus()->value,
+                'released' => $released,
+            ]);
+
+            return;
+        }
+
         if (!in_array($alert->getStatus(), [FallAlertStatus::Sent, FallAlertStatus::PartiallySent], true)) {
             $this->logger->info('alert.reminder_skipped', [
                 'alertId' => $message->fallAlertId,

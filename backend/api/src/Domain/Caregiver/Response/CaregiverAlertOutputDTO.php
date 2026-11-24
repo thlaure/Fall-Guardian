@@ -62,7 +62,7 @@ final readonly class CaregiverAlertOutputDTO
     ): self {
         return new self(
             $alert->getId()->toRfc4122(),
-            $alert->getStatus()->value,
+            $alert->getPublicStatus()->value,
             ApiDateTimeFormatter::formatUtc($alert->getFallDetectedAt()),
             ApiDateTimeFormatter::formatUtc($alert->getReceivedAt()),
             ApiDateTimeFormatter::formatUtc($alert->getCancelDeadlineAt()),

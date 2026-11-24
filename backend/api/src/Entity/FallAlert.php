@@ -85,6 +85,14 @@ class FallAlert
     #[ORM\Column(name: 'next_dispatch_retry_at', nullable: true)]
     private ?DateTimeImmutable $nextDispatchRetryAt = null;
 
+    /**
+     * Outcome of the last completed dispatch round. While a retry round runs
+     * the internal status is `dispatching`, but clients keep seeing this
+     * outcome (see getPublicStatus()).
+     */
+    #[ORM\Column(name: 'last_dispatch_outcome', length: 32, nullable: true, enumType: FallAlertStatus::class)]
+    private ?FallAlertStatus $lastDispatchOutcome = null;
+
     #[ORM\Column(name: 'reminder_count', options: ['default' => 0])]
     private int $reminderCount = 0;
 
@@ -172,6 +180,27 @@ class FallAlert
     public function getStatus(): FallAlertStatus
     {
         return $this->status;
+    }
+
+    /**
+     * Status exposed through the API. A retry round temporarily moves an
+     * alert back to `dispatching`; installed caregiver apps treat only
+     * sent/partially_sent/failed alerts as active, so the alert would vanish
+     * from their list. Clients therefore keep seeing the last dispatch outcome
+     * until the retry round completes.
+     */
+    public function getPublicStatus(): FallAlertStatus
+    {
+        if (FallAlertStatus::Dispatching === $this->status && $this->lastDispatchOutcome instanceof FallAlertStatus) {
+            return $this->lastDispatchOutcome;
+        }
+
+        return $this->status;
+    }
+
+    public function getLastDispatchOutcome(): ?FallAlertStatus
+    {
+        return $this->lastDispatchOutcome;
     }
 
     public function getDispatchAttempts(): int

@@ -53,6 +53,13 @@ interface FallAlertRepositoryInterface
     public function claimReminder(string $id, int $expectedReminderCount, DateTimeImmutable $now): bool;
 
     /**
+     * Gives back reminder number `$reminderNumber` (only if it is still the
+     * latest reserved one) so the reconciler can reserve it again later, e.g.
+     * when the alert was in the middle of a dispatch retry round.
+     */
+    public function releaseReminder(string $id, int $reminderNumber): bool;
+
+    /**
      * Earliest moment an escalation became due without having completed:
      * received alerts past their cancel deadline, dispatching alerts (claim
      * time), and retryable alerts past their retry time.

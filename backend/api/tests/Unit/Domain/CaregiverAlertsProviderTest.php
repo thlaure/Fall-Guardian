@@ -71,6 +71,7 @@ final class CaregiverAlertsProviderTest extends TestCase
 
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Received);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getLatitude')->willReturn(null);
         $alert->method('getLongitude')->willReturn(null);
@@ -115,6 +116,7 @@ final class CaregiverAlertsProviderTest extends TestCase
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getStatus')->willReturn(FallAlertStatus::Received);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Received);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getLatitude')->willReturn(48.8);
         $alert->method('getLongitude')->willReturn(2.3);
@@ -154,6 +156,7 @@ final class CaregiverAlertsProviderTest extends TestCase
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getId')->willReturn($alertId);
         $alert->method('getStatus')->willReturn(FallAlertStatus::Acknowledged);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Acknowledged);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getDevice')->willReturn($protectedDevice);
 
@@ -187,6 +190,7 @@ final class CaregiverAlertsProviderTest extends TestCase
         $alert = $this->createMock(FallAlert::class);
         $alert->method('getId')->willReturn(Uuid::v7());
         $alert->method('getStatus')->willReturn(FallAlertStatus::Cancelled);
+        $alert->method('getPublicStatus')->willReturn(FallAlertStatus::Cancelled);
         $alert->method('getFallDetectedAt')->willReturn(new DateTimeImmutable());
         $alert->method('getCancelledAt')->willReturn($cancelledAt);
         $alert->method('getLatitude')->willReturn(null);
