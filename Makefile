@@ -8,8 +8,15 @@ ANDROID_HOME ?= $(HOME)/Library/Android/sdk
 BACKEND_BASE_URL ?= http://127.0.0.1:8002
 
 API_DIR := backend/api
+# macOS Podman needs a stable TMPDIR so its external Compose provider finds the
+# machine API socket; Linux uses the default.
+ifeq ($(shell uname -s),Darwin)
 PODMAN_RUNTIME_TMPDIR ?= /private/tmp
-CONTAINER_COMPOSE ?= $(shell if command -v podman >/dev/null 2>&1; then echo TMPDIR=$(PODMAN_RUNTIME_TMPDIR) podman compose; else echo docker compose; fi)
+PODMAN_COMPOSE := TMPDIR=$(PODMAN_RUNTIME_TMPDIR) podman compose
+else
+PODMAN_COMPOSE := podman compose
+endif
+CONTAINER_COMPOSE ?= $(shell if command -v podman >/dev/null 2>&1; then echo $(PODMAN_COMPOSE); else echo docker compose; fi)
 
 # Compose command (run from backend/api) used to export the OpenAPI contract.
 # Defaults to the local development stack; CI passes the test stack.
@@ -38,8 +45,9 @@ up: ## Start the local backend development stack (http://127.0.0.1:8002)
 down: ## Stop the local backend development stack
 	$(MAKE) -C $(API_DIR) down
 
-e2e: e2e-up ## Start an isolated test backend, run the app workflow E2E, then stop it
-	@status=0; $(MAKE) e2e-app-workflow BACKEND_BASE_URL=$(E2E_BASE_URL) || status=$$?; \
+e2e: ## Start an isolated test backend, run the app workflow E2E, then stop it (also on failure)
+	@status=0; \
+		{ $(MAKE) e2e-up && $(MAKE) e2e-app-workflow BACKEND_BASE_URL=$(E2E_BASE_URL); } || status=$$?; \
 		$(MAKE) e2e-down; exit $$status
 
 e2e-up: ## Start the isolated E2E backend (test env, fake push) and migrate its database
