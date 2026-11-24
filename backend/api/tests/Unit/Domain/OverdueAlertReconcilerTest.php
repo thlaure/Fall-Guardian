@@ -51,7 +51,7 @@ final class OverdueAlertReconcilerTest extends TestCase
     {
         $this->repository->expects(self::once())
             ->method('findDispatchCandidateIds')
-            ->with($this->clock->now(), $this->clock->now()->modify('-120 seconds'), 50)
+            ->with($this->clock->now(), $this->clock->now()->modify('-60 seconds'), 50)
             ->willReturn(['alert-1', 'alert-2']);
         $this->heartbeats->expects(self::once())
             ->method('beat')

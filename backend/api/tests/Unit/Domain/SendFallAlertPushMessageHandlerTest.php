@@ -19,6 +19,7 @@ use App\Entity\CaregiverLink;
 use App\Entity\CaregiverPushToken;
 use App\Entity\Device;
 use App\Entity\FallAlert;
+use App\Infrastructure\Push\FcmPushGateway;
 use App\Enum\FallAlertStatus;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Test;
@@ -64,7 +65,7 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
 
         $protectedDevice = new Device('protected-device', 'hash-protected', 'ios', '1.0.0');
         $this->alert = new FallAlert($protectedDevice, 'client-1', new DateTimeImmutable('2026-07-23T08:00:00+00:00'), 'en', null, null, new DateTimeImmutable('2026-07-23T08:00:00+00:00'));
-        $this->alert->claimForDispatch($this->clock->now(), $this->clock->now()->modify('-120 seconds'));
+        $this->alert->claimForDispatch($this->clock->now(), $this->clock->now()->modify('-60 seconds'));
     }
 
     #[Test]
@@ -82,10 +83,20 @@ final class SendFallAlertPushMessageHandlerTest extends TestCase
     {
         $this->fallAlertRepository->expects($this->once())
             ->method('claimForDispatch')
-            ->with('alert-id', $this->clock->now(), $this->clock->now()->modify('-120 seconds'))
+            ->with('alert-id', $this->clock->now(), $this->clock->now()->modify('-60 seconds'))
             ->willReturn(null);
 
         ($this->handler)(new SendFallAlertPushMessage('alert-id'));
+    }
+
+    #[Test]
+    public function theStaleThresholdExceedsTheLongestGapBetweenClaimRefreshes(): void
+    {
+        // Worst case between two refreshes: one OAuth token fetch + one FCM send.
+        self::assertLessThan(
+            SendFallAlertPushMessageHandler::STALE_DISPATCH_CLAIM_SECONDS,
+            2 * FcmPushGateway::HTTP_MAX_DURATION_SECONDS * 1.5,
+        );
     }
 
     #[Test]

@@ -27,7 +27,7 @@ final class FcmPushGateway implements PushGatewayInterface
     private const float HTTP_TIMEOUT_SECONDS = 10.0;
 
     /** Hard upper bound for one HTTP exchange, so a dispatch round stays well below the stale-claim threshold. */
-    private const float HTTP_MAX_DURATION_SECONDS = 15.0;
+    public const float HTTP_MAX_DURATION_SECONDS = 15.0;
 
     /**
      * HTTP statuses after which the same request may succeed later.

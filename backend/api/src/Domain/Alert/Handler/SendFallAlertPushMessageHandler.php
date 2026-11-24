@@ -28,10 +28,12 @@ final readonly class SendFallAlertPushMessageHandler
 {
     /**
      * A claim older than this is considered abandoned by a crashed worker.
-     * The claim is refreshed after every provider call (each bounded to 15 s,
-     * plus up to 15 s for the OAuth token), so a live round never gets close.
+     * The claim is refreshed after every provider call. The longest gap
+     * between two refreshes is one OAuth token fetch plus one FCM send, each
+     * bounded to 15 s by FcmPushGateway (about 30 s), so a live round never
+     * reaches this threshold.
      */
-    public const int STALE_DISPATCH_CLAIM_SECONDS = 120;
+    public const int STALE_DISPATCH_CLAIM_SECONDS = 60;
 
     public function __construct(
         private FallAlertRepositoryInterface $fallAlertRepository,
