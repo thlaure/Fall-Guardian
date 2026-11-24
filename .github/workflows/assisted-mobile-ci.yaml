@@ -65,7 +65,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: temurin
           cache: gradle
           cache-dependency-path: apps/assisted_mobile/android/**/*.gradle*
