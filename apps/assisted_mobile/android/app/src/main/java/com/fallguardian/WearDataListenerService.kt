@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.tasks.Tasks
@@ -14,7 +13,6 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
-import java.nio.ByteBuffer
 
 /**
  * Listens for messages sent by the Wear OS app via the Wearable MessageClient API.
@@ -59,9 +57,22 @@ class WearDataListenerService : WearableListenerService() {
                         deleteDataItem(event)
                         return@forEach
                     }
-                    handleFallDetected(timestamp)
+                    // Optional watch-generated incident UUID (newer watches).
+                    handleFallDetected(timestamp, dataMap.getString("incidentId"))
                 }
-                "/cancel_alert" -> handleCancelAlert()
+                "/cancel_alert" -> {
+                    // Optional incident targeting: newer watches send the
+                    // incidentId and fallTimestamp of the incident to cancel.
+                    // Note "timestamp" on this item is the cancel time, not
+                    // the fall time, so it is deliberately not used here.
+                    val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    val fallTimestamp = if (dataMap.containsKey("fallTimestamp")) {
+                        dataMap.getLong("fallTimestamp")
+                    } else {
+                        null
+                    }
+                    handleCancelAlert(dataMap.getString("incidentId"), fallTimestamp)
+                }
             }
             deleteDataItem(event)
         }
@@ -69,7 +80,11 @@ class WearDataListenerService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
         when (messageEvent.path) {
-            "/cancel_alert" -> { handleCancelAlert(); return }
+            "/cancel_alert" -> {
+                val target = WatchPayloads.parseCancel(messageEvent.data)
+                handleCancelAlert(target.incidentId, target.fallTimestamp)
+                return
+            }
             "/fall_event" -> Unit
             else -> return
         }
@@ -80,8 +95,8 @@ class WearDataListenerService : WearableListenerService() {
             return
         }
         if (connectedNodes.none { it.id == messageEvent.sourceNodeId }) return
-        val timestamp = ByteBuffer.wrap(messageEvent.data).long
-        handleFallDetected(timestamp)
+        val fall = WatchPayloads.parseFall(messageEvent.data) ?: return
+        handleFallDetected(fall.timestamp, fall.incidentId)
     }
 
     private fun isTrustedDataItem(event: DataEvent): Boolean {
@@ -103,14 +118,15 @@ class WearDataListenerService : WearableListenerService() {
         Wearable.getDataClient(this).deleteDataItems(event.dataItem.uri)
     }
 
-    private fun handleFallDetected(timestamp: Long) {
+    private fun handleFallDetected(timestamp: Long, incidentId: String?) {
         // Persist and schedule backend registration before touching UI. The
         // JobService survives a missing Flutter engine, process death and
         // temporary network loss. Dart receives the same idempotency key when
         // it is available, so native and Flutter retries create one incident.
         val clientAlertId = NativeAlertRelay.enqueueFall(
             applicationContext,
-            timestamp
+            timestamp,
+            incidentId
         )
         val activity = MainActivity.getInstance()
         if (activity != null && activity.isInForeground) {
@@ -188,14 +204,14 @@ class WearDataListenerService : WearableListenerService() {
         nm.notify(FALL_WAKEUP_NOTIF_ID, builder.build())
     }
 
-    private fun handleCancelAlert() {
+    private fun handleCancelAlert(rawIncidentId: String?, fallTimestamp: Long?) {
+        val incidentId = NativeAlertRelayPolicy.normalizedIncidentId(rawIncidentId)
         getSystemService(NotificationManager::class.java)
             ?.cancel(FALL_WAKEUP_NOTIF_ID)
 
-        val prefs = getSharedPreferences("fall_guardian", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("pending_alert_cancelled", true).apply()
-        NativeAlertRelay.requestCancel(applicationContext)
+        MainActivity.storePendingCancel(applicationContext, incidentId, fallTimestamp)
+        NativeAlertRelay.requestCancel(applicationContext, incidentId, fallTimestamp)
 
-        MainActivity.getInstance()?.sendCancelAlertToFlutter()
+        MainActivity.getInstance()?.sendCancelAlertToFlutter(incidentId, fallTimestamp)
     }
 }

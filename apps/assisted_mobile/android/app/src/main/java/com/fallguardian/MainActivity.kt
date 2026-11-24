@@ -1,6 +1,7 @@
 package com.fallguardian
 
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -20,6 +21,24 @@ class MainActivity : FlutterActivity() {
         const val PREFS_NAME = "fall_guardian"
         const val PENDING_THRESHOLDS_KEY = "pending_thresholds_json"
         const val PENDING_CANCEL_KEY = "pending_alert_cancelled"
+        private const val PENDING_CANCEL_INCIDENT_KEY = "pending_alert_cancelled_incident_id"
+        private const val PENDING_CANCEL_FALL_TIMESTAMP_KEY = "pending_alert_cancelled_fall_timestamp"
+
+        /**
+         * Persists a watch cancel for Flutter until the engine consumes it.
+         * The optional target lets Flutter cancel only the matching incident.
+         */
+        fun storePendingCancel(context: Context, incidentId: String?, fallTimestamp: Long?) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putBoolean(PENDING_CANCEL_KEY, true)
+                .apply {
+                    if (incidentId != null) putString(PENDING_CANCEL_INCIDENT_KEY, incidentId)
+                    else remove(PENDING_CANCEL_INCIDENT_KEY)
+                    if (fallTimestamp != null) putLong(PENDING_CANCEL_FALL_TIMESTAMP_KEY, fallTimestamp)
+                    else remove(PENDING_CANCEL_FALL_TIMESTAMP_KEY)
+                }
+                .apply()
+        }
 
         // WeakReference prevents Activity leak; @Volatile ensures cross-thread visibility.
         @Volatile
@@ -67,8 +86,38 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "sendCancelAlert" -> {
-                    sendCancelAlertToWatch()
+                    val args = call.arguments as? Map<*, *>
+                    val incidentId = (args?.get("incidentId") as? String)
+                        ?.trim()?.takeIf { it.isNotEmpty() }
+                    val fallTimestamp = (args?.get("fallTimestamp") as? Number)?.toLong()
+                    sendCancelAlertToWatch(incidentId, fallTimestamp)
                     result.success(null)
+                }
+                "enqueuePendingAlert" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val timestamp = (args?.get("timestamp") as? Number)?.toLong()
+                    val clientAlertId = args?.get("clientAlertId") as? String
+                    val queuedId = if (timestamp != null && clientAlertId != null) {
+                        NativeAlertRelay.enqueuePhoneAlert(applicationContext, timestamp, clientAlertId)
+                    } else {
+                        null
+                    }
+                    if (queuedId == null) {
+                        result.error("INVALID_ARGS", "Missing or invalid incident", null)
+                    } else {
+                        result.success(queuedId)
+                    }
+                }
+                "takeRelayOutcomes" -> {
+                    result.success(
+                        NativeAlertRelay.takeOutcomes(applicationContext).map {
+                            mapOf(
+                                "clientAlertId" to it.clientAlertId,
+                                "timestamp" to it.timestamp,
+                                "outcome" to it.kind.wireName
+                            )
+                        }
+                    )
                 }
                 "configureNativeAlertRelay" -> {
                     val baseUrl =
@@ -184,19 +233,35 @@ class MainActivity : FlutterActivity() {
         sendFallDetectedToFlutter(timestamp, clientAlertId)
     }
 
-    fun sendCancelAlertToFlutter() {
-        prefs.edit().putBoolean(PENDING_CANCEL_KEY, false).apply()
+    fun sendCancelAlertToFlutter(incidentId: String? = null, fallTimestamp: Long? = null) {
+        prefs.edit()
+            .putBoolean(PENDING_CANCEL_KEY, false)
+            .remove(PENDING_CANCEL_INCIDENT_KEY)
+            .remove(PENDING_CANCEL_FALL_TIMESTAMP_KEY)
+            .apply()
         runOnUiThread {
             Log.d("MainActivity", "sendCancelAlertToFlutter: forwarding cancel to Flutter")
-            channel.invokeMethod("onAlertCancelled", null)
+            val arguments = buildMap<String, Any> {
+                if (incidentId != null) put("incidentId", incidentId)
+                if (fallTimestamp != null) put("fallTimestamp", fallTimestamp)
+            }
+            channel.invokeMethod("onAlertCancelled", arguments.ifEmpty { null })
         }
     }
 
-    private fun sendCancelAlertToWatch() {
+    private fun sendCancelAlertToWatch(incidentId: String?, fallTimestamp: Long?) {
         // Queue backend cancellation before best-effort watch delivery. This
         // remains effective when Flutter is suspended or killed.
-        NativeAlertRelay.requestCancel(applicationContext)
-        val payload = """{"event":"alert_cancelled"}""".toByteArray(Charsets.UTF_8)
+        NativeAlertRelay.requestCancel(applicationContext, incidentId, fallTimestamp)
+        // Watches only honour an incidentId that matches their active alert,
+        // so only forward watch-generated UUIDs (never derived legacy ids).
+        val watchIncidentId = NativeAlertRelayPolicy.normalizedIncidentId(incidentId)
+        val payloadJson = org.json.JSONObject().apply {
+            put("event", "alert_cancelled")
+            if (watchIncidentId != null) put("incidentId", watchIncidentId)
+            if (fallTimestamp != null) put("fallTimestamp", fallTimestamp)
+        }
+        val payload = payloadJson.toString().toByteArray(Charsets.UTF_8)
         Wearable.getNodeClient(this).connectedNodes
             .addOnSuccessListener { nodes ->
                 Log.d("MainActivity", "sendCancelAlertToWatch: ${nodes.size} node(s) found")
@@ -264,7 +329,13 @@ class MainActivity : FlutterActivity() {
 
     private fun flushPendingCancelToFlutter() {
         if (!prefs.getBoolean(PENDING_CANCEL_KEY, false)) return
-        sendCancelAlertToFlutter()
+        val incidentId = prefs.getString(PENDING_CANCEL_INCIDENT_KEY, null)
+        val fallTimestamp = if (prefs.contains(PENDING_CANCEL_FALL_TIMESTAMP_KEY)) {
+            prefs.getLong(PENDING_CANCEL_FALL_TIMESTAMP_KEY, 0L)
+        } else {
+            null
+        }
+        sendCancelAlertToFlutter(incidentId, fallTimestamp)
     }
 
     /**

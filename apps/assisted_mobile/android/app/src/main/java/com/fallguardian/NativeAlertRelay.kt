@@ -7,117 +7,190 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.net.Uri
 import android.os.PersistableBundle
-import java.time.Instant
 import java.util.Locale
 
-internal data class NativePendingAlert(
-    val timestamp: Long,
-    val clientAlertId: String,
-    val submitted: Boolean,
-    val cancelRequested: Boolean
-)
-
 /**
- * Durable phone-side relay for Wear OS incidents.
+ * Durable phone-side relay for fall incidents (Wear OS and phone-originated).
  *
  * WearableListenerService may be launched while no Flutter engine exists.
- * Persisting the incident before scheduling a network-constrained JobService
- * guarantees that process death or temporary network loss cannot silently
- * discard the backend registration or a later cancellation.
+ * Persisting each incident in a small bounded queue before scheduling a
+ * network-constrained JobService guarantees that process death, temporary
+ * network loss or a second fall cannot silently discard a backend
+ * registration or a later cancellation.
  */
 internal object NativeAlertRelay {
     const val DEVICE_TOKEN_KEY = "backend_device_token"
 
+    /** Shared with Dart (BackendApiService) through AndroidSecureStore. */
+    const val REAUTH_REQUIRED_KEY = "backend_reauth_required"
+
     private const val JOB_ID = 0x4647
     private const val BASE_URL_KEY = "native_alert_relay_base_url"
-    private const val TIMESTAMP_KEY = "native_alert_timestamp"
-    private const val CLIENT_ALERT_ID_KEY = "native_alert_client_id"
-    private const val SUBMITTED_KEY = "native_alert_submitted"
-    private const val CANCEL_REQUESTED_KEY = "native_alert_cancel_requested"
-    private const val ACTIVE_INCIDENT_WINDOW_MS = 30_000L
+    private const val QUEUE_KEY = "native_alert_queue_v2"
+    private const val OUTCOMES_KEY = "native_alert_outcomes_v1"
+
+    // Legacy single-slot keys (pre-queue). Read once, migrated, then removed.
+    private const val LEGACY_TIMESTAMP_KEY = "native_alert_timestamp"
+    private const val LEGACY_CLIENT_ALERT_ID_KEY = "native_alert_client_id"
+    private const val LEGACY_SUBMITTED_KEY = "native_alert_submitted"
+    private const val LEGACY_CANCEL_REQUESTED_KEY = "native_alert_cancel_requested"
 
     @Synchronized
     fun configure(context: Context, baseUrl: String): Boolean {
         if (!isAllowedBaseUrl(context, baseUrl)) return false
         prefs(context).edit().putString(BASE_URL_KEY, baseUrl.trimEnd('/')).apply()
-        if (read(context) != null) schedule(context)
+        if (readQueue(context).isNotEmpty()) schedule(context)
         return true
     }
 
+    /** Persists a watch incident. Returns the clientAlertId Flutter must reuse. */
     @Synchronized
-    fun enqueueFall(context: Context, timestamp: Long): String {
-        val existing = read(context)
-        if (existing != null &&
-            timestamp - existing.timestamp in 0..ACTIVE_INCIDENT_WINDOW_MS
-        ) {
-            schedule(context)
-            return existing.clientAlertId
-        }
-
-        val clientAlertId = NativeAlertRelayPolicy.clientAlertId(timestamp)
-        prefs(context).edit()
-            .putLong(TIMESTAMP_KEY, timestamp)
-            .putString(CLIENT_ALERT_ID_KEY, clientAlertId)
-            .putBoolean(SUBMITTED_KEY, false)
-            .putBoolean(CANCEL_REQUESTED_KEY, false)
-            .apply()
-        schedule(context)
-        return clientAlertId
-    }
-
-    @Synchronized
-    fun requestCancel(context: Context) {
-        if (read(context) == null) return
-        prefs(context).edit().putBoolean(CANCEL_REQUESTED_KEY, true).apply()
-        schedule(context)
-    }
-
-    @Synchronized
-    fun read(context: Context): NativePendingAlert? {
-        val values = prefs(context)
-        val timestamp = values.getLong(TIMESTAMP_KEY, Long.MIN_VALUE)
-        val clientAlertId = values.getString(CLIENT_ALERT_ID_KEY, null)
-        if (timestamp == Long.MIN_VALUE || clientAlertId.isNullOrBlank()) return null
-        return NativePendingAlert(
-            timestamp = timestamp,
-            clientAlertId = clientAlertId,
-            submitted = values.getBoolean(SUBMITTED_KEY, false),
-            cancelRequested = values.getBoolean(CANCEL_REQUESTED_KEY, false)
+    fun enqueueFall(context: Context, timestamp: Long, incidentId: String? = null): String =
+        enqueue(
+            context,
+            timestamp,
+            NativeAlertRelayPolicy.normalizedIncidentId(incidentId),
+            RelaySource.WEAR_OS
         )
+
+    /**
+     * Persists an incident first seen by Flutter (phone-originated or a
+     * transport without native enqueue) so the JobService retries it after
+     * process death. Idempotent per clientAlertId.
+     */
+    @Synchronized
+    fun enqueuePhoneAlert(context: Context, timestamp: Long, clientAlertId: String): String? {
+        val id = clientAlertId.trim()
+        if (!NativeAlertQueue.isSafeClientAlertId(id)) return null
+        return enqueue(context, timestamp, id, RelaySource.ASSISTED_PHONE)
     }
+
+    private fun enqueue(
+        context: Context,
+        timestamp: Long,
+        requestedId: String?,
+        source: RelaySource
+    ): String {
+        val result = NativeAlertQueue.enqueue(
+            readQueue(context),
+            timestamp,
+            requestedId,
+            source,
+            System.currentTimeMillis()
+        )
+        writeQueue(context, result.items)
+        result.dropped.forEach {
+            recordOutcome(context, RelayOutcome(it.clientAlertId, it.timestamp, RelayOutcomeKind.DROPPED))
+        }
+        schedule(context)
+        return result.clientAlertId
+    }
+
+    @Synchronized
+    fun requestCancel(context: Context, incidentId: String? = null, fallTimestamp: Long? = null) {
+        val items = readQueue(context)
+        if (items.isEmpty()) return
+        writeQueue(context, NativeAlertQueue.requestCancel(items, incidentId, fallTimestamp))
+        schedule(context)
+    }
+
+    /** Snapshot of the queue after pruning expired items. */
+    @Synchronized
+    fun pending(context: Context): List<QueuedAlert> {
+        val current = readQueue(context)
+        val (kept, expired) = NativeAlertQueue.prune(current, System.currentTimeMillis())
+        if (kept.size != current.size) {
+            writeQueue(context, kept)
+            expired.forEach {
+                recordOutcome(context, RelayOutcome(it.clientAlertId, it.timestamp, RelayOutcomeKind.DROPPED))
+            }
+        }
+        return kept
+    }
+
+    @Synchronized
+    fun find(context: Context, clientAlertId: String): QueuedAlert? =
+        readQueue(context).firstOrNull { it.clientAlertId == clientAlertId }
 
     @Synchronized
     fun markSubmitted(context: Context, clientAlertId: String) {
-        val current = read(context) ?: return
-        if (current.clientAlertId != clientAlertId) return
-        prefs(context).edit().putBoolean(SUBMITTED_KEY, true).apply()
+        writeQueue(context, NativeAlertQueue.markSubmitted(readQueue(context), clientAlertId))
     }
 
     @Synchronized
-    fun clear(context: Context, clientAlertId: String) {
-        val current = read(context) ?: return
-        if (current.clientAlertId != clientAlertId) return
-        prefs(context).edit()
-            .remove(TIMESTAMP_KEY)
-            .remove(CLIENT_ALERT_ID_KEY)
-            .remove(SUBMITTED_KEY)
-            .remove(CANCEL_REQUESTED_KEY)
-            .apply()
+    fun complete(context: Context, clientAlertId: String, outcome: RelayOutcomeKind? = null) {
+        val items = readQueue(context)
+        val item = items.firstOrNull { it.clientAlertId == clientAlertId } ?: return
+        writeQueue(context, NativeAlertQueue.remove(items, clientAlertId))
+        if (outcome != null) recordOutcome(context, RelayOutcome(item.clientAlertId, item.timestamp, outcome))
+    }
+
+    /** Hands terminal outcomes to Flutter (history) and forgets them. */
+    @Synchronized
+    fun takeOutcomes(context: Context): List<RelayOutcome> {
+        val outcomes = NativeAlertQueue.decodeOutcomes(prefs(context).getString(OUTCOMES_KEY, null))
+        prefs(context).edit().remove(OUTCOMES_KEY).apply()
+        return outcomes
+    }
+
+    fun markReauthRequired(context: Context) {
+        AndroidSecureStore(context).write(REAUTH_REQUIRED_KEY, "true")
     }
 
     fun baseUrl(context: Context): String? =
         prefs(context).getString(BASE_URL_KEY, null)?.takeIf { it.isNotBlank() }
 
-    fun createPayload(alert: NativePendingAlert): String =
+    fun createPayload(alert: QueuedAlert, cancelled: Boolean): String =
         NativeAlertRelayPolicy.createPayload(
             clientAlertId = alert.clientAlertId,
             timestamp = alert.timestamp,
-            locale = Locale.getDefault().language
+            locale = Locale.getDefault().language,
+            source = alert.source,
+            cancelled = cancelled
         )
+
+    private fun recordOutcome(context: Context, outcome: RelayOutcome) {
+        val existing = NativeAlertQueue.decodeOutcomes(prefs(context).getString(OUTCOMES_KEY, null))
+        prefs(context).edit()
+            .putString(OUTCOMES_KEY, NativeAlertQueue.encodeOutcomes(existing + outcome))
+            .apply()
+    }
+
+    private fun readQueue(context: Context): List<QueuedAlert> {
+        val values = prefs(context)
+        val raw = values.getString(QUEUE_KEY, null)
+        if (raw != null) return NativeAlertQueue.decode(raw)
+
+        // First read after upgrading from the single-slot relay: carry over a
+        // possibly unsent incident, then drop the legacy keys.
+        val legacyTimestamp = values.getLong(LEGACY_TIMESTAMP_KEY, Long.MIN_VALUE)
+            .takeIf { it != Long.MIN_VALUE }
+        val migrated = NativeAlertQueue.migrateLegacy(
+            timestamp = legacyTimestamp,
+            clientAlertId = values.getString(LEGACY_CLIENT_ALERT_ID_KEY, null),
+            submitted = values.getBoolean(LEGACY_SUBMITTED_KEY, false),
+            cancelRequested = values.getBoolean(LEGACY_CANCEL_REQUESTED_KEY, false),
+            now = System.currentTimeMillis()
+        )
+        values.edit()
+            .putString(QUEUE_KEY, NativeAlertQueue.encode(migrated))
+            .remove(LEGACY_TIMESTAMP_KEY)
+            .remove(LEGACY_CLIENT_ALERT_ID_KEY)
+            .remove(LEGACY_SUBMITTED_KEY)
+            .remove(LEGACY_CANCEL_REQUESTED_KEY)
+            .commit()
+        return migrated
+    }
+
+    private fun writeQueue(context: Context, items: List<QueuedAlert>) {
+        // commit() (synchronous) so the incident is on disk before the caller
+        // reports it to Flutter or the process is allowed to die.
+        prefs(context).edit().putString(QUEUE_KEY, NativeAlertQueue.encode(items)).commit()
+    }
 
     private fun schedule(context: Context) {
         val extras = PersistableBundle().apply {
-            putString("reason", "wear_os_fall")
+            putString("reason", "fall_alert_relay")
         }
         val job = JobInfo.Builder(
             JOB_ID,
@@ -142,52 +215,4 @@ internal object NativeAlertRelay {
 
     private fun prefs(context: Context) = context.applicationContext
         .getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-}
-
-/**
- * Pure formatting policy kept independent from Android services so JVM tests
- * can verify idempotency and the backend payload without device instrumentation.
- */
-internal object NativeAlertRelayPolicy {
-    fun clientAlertId(timestamp: Long): String = "wear-os-$timestamp"
-
-    fun createPayload(
-        clientAlertId: String,
-        timestamp: Long,
-        locale: String
-    ): String {
-        val safeLocale = locale.take(8).ifBlank { "en" }
-        return buildString {
-            append('{')
-            append("\"clientAlertId\":\"").append(jsonEscape(clientAlertId)).append("\",")
-            append("\"fallTimestamp\":\"").append(Instant.ofEpochMilli(timestamp)).append("\",")
-            append("\"locale\":\"").append(jsonEscape(safeLocale)).append("\",")
-            append("\"latitude\":null,\"longitude\":null,")
-            append("\"revision\":1,")
-            append("\"detectionSource\":\"wear_os\",")
-            append("\"resolution\":\"unknown\"")
-            append('}')
-        }
-    }
-
-    private fun jsonEscape(value: String): String = buildString {
-        value.forEach { character ->
-            when (character) {
-                '\\' -> append("\\\\")
-                '"' -> append("\\\"")
-                '\b' -> append("\\b")
-                '\u000C' -> append("\\f")
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> {
-                    if (character.code < 0x20) {
-                        append("\\u%04x".format(character.code))
-                    } else {
-                        append(character)
-                    }
-                }
-            }
-        }
-    }
 }
