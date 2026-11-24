@@ -20,7 +20,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Fall alerts for linked protected persons.",
+                        "description": "Fall alerts for linked protected persons, with `acknowledgedAt`, `acknowledgedByMe` and `acknowledgementCount`.",
                         "content": {
                             "application/ld+json": {
                                 "schema": {
@@ -62,7 +62,7 @@
                     }
                 },
                 "summary": "List caregiver fall alerts",
-                "description": "Returns alerts from protected persons linked to the authenticated caregiver device, including acknowledgement state.",
+                "description": "Returns alerts from protected persons linked to the authenticated caregiver device, including acknowledgement state. `acknowledged` and `acknowledgedByMe` are true when the authenticated caregiver acknowledged the alert; `acknowledgedAt` is the first acknowledgement time by any linked caregiver (ISO-8601 UTC; omitted, like other null fields, while nobody acknowledged); `acknowledgementCount` is the number of caregivers who acknowledged it. Status may move from `failed` or `partially_sent` back to `dispatching` while the server retries delivery.",
                 "parameters": [
                     {
                         "name": "page",
@@ -128,7 +128,7 @@
                 "description": "Stores the Firebase Cloud Messaging token used to deliver fall notifications to the authenticated caregiver device.",
                 "parameters": [],
                 "requestBody": {
-                    "description": "Firebase Cloud Messaging registration token for this caregiver device.",
+                    "description": "Firebase Cloud Messaging registration token for this caregiver device. Fall-alert pushes carry `data` keys: `type` (`fall_alert`), `alertId`, `fallTimestamp`, `cancelDeadlineAt` (ISO-8601 UTC), `reminder` (`0` for the first notification, `1` for re-notifications while the alert stays unacknowledged), optional `latitude`/`longitude`, and optional `protectedPersonName` (this caregiver's name for the protected person). A token rejected by Firebase as unregistered or invalid is deleted server-side; register it again after refreshing it.",
                     "content": {
                         "application/ld+json": {
                             "schema": {
@@ -212,11 +212,8 @@
                     "401": {
                         "description": "Missing or invalid device bearer token."
                     },
-                    "403": {
-                        "description": "The caregiver is not linked to the protected person for this alert."
-                    },
                     "404": {
-                        "description": "No fall alert with that identifier was found."
+                        "description": "No fall alert with that identifier was found, or the caregiver is not linked to its protected person."
                     }
                 },
                 "summary": "Acknowledge a fall alert",
@@ -1773,6 +1770,18 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "acknowledgedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgedByMe": {
+                        "type": "boolean"
+                    },
+                    "acknowledgementCount": {
+                        "type": "integer"
                     }
                 }
             },
@@ -1849,6 +1858,18 @@
                                     "string",
                                     "null"
                                 ]
+                            },
+                            "acknowledgedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgedByMe": {
+                                "type": "boolean"
+                            },
+                            "acknowledgementCount": {
+                                "type": "integer"
                             }
                         }
                     }
