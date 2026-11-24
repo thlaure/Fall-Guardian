@@ -1,6 +1,6 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
@@ -242,9 +242,8 @@ class _AlertTile extends StatelessWidget {
     final acknowledged = alert['acknowledged'] == true;
     final isCancelled = status == 'cancelled';
 
-    final date = parseApiDateTime(
-      '${alert['fallDetectedAt'] ?? ''}',
-    )?.toLocal();
+    final date = parseApiDateTime('${alert['fallDetectedAt'] ?? ''}')
+        ?.toLocal();
     final dateStr = date != null
         ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}  ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
         : l10n.unknownDate;

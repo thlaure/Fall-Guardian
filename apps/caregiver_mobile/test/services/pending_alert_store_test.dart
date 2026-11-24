@@ -37,8 +37,7 @@ void main() {
     'take migrates one pending plaintext alert and deletes legacy storage',
     () async {
       SharedPreferences.setMockInitialValues({
-        'pending_fall_alert':
-            '{"alertId":"alert-legacy","fallTimestamp":"2026-05-16T08:30:00+00:00"}',
+        'pending_fall_alert': '{"alertId":"alert-legacy","fallTimestamp":"2026-05-16T08:30:00+00:00"}',
       });
 
       final alert = await store.take();

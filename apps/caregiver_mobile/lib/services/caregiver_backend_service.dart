@@ -106,9 +106,9 @@ class CaregiverBackendService {
       );
     }
 
-    final protectedPersons = _decodeCollection(
-      jsonDecode(response.body),
-    ).map(LinkedProtectedPerson.fromJson).toList();
+    final protectedPersons = _decodeCollection(jsonDecode(response.body))
+        .map(LinkedProtectedPerson.fromJson)
+        .toList();
 
     protectedPersons.sort(_namedProtectedPersonsFirst);
 
