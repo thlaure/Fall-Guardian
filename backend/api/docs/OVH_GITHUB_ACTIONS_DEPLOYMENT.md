@@ -34,8 +34,11 @@ deployed code (expand/contract):
 
 ### Roll back to a previous release
 
-GitHub → **Actions** → **Deploy API** → **Run workflow** → set `image_sha` to
-the full 40-character SHA of a previously deployed commit. The build is skipped,
+GitHub → **Actions** → **Deploy API** → **Run workflow** from `main` → set
+`image_sha` to the full 40-character SHA of a previously deployed commit.
+Manual runs are rollback-only: they are rejected from any other branch or
+without `image_sha`, so new code only reaches production after API CI passes on
+`main`. The build is skipped,
 the workflow checks the image exists in GHCR, uploads that commit's
 `compose.prod.yaml`, and deploys it with the same migrate/probe/rollback flow
 (migrations already applied are kept; older code must tolerate them, see above).
@@ -225,6 +228,8 @@ legacy FCM server key. Delete the downloaded JSON after securely storing it.
 
 GitHub repository → **Settings** → **Environments** → `production`.
 Enable **Required reviewers** to require your approval before every VPS update.
+Under **Deployment branches and tags**, choose **Selected branches and tags**
+and allow only `main`, so no other branch can use the production secrets.
 
 Create these **Environment secrets** (not variables):
 
@@ -279,8 +284,8 @@ PostgreSQL or Redis: production Compose exposes neither.
 ## 8. First and later deployments
 
 Merge a green PR into `main`. Once **API CI** passes on `main`, the
-**Deploy API** workflow starts automatically (it may also be run from GitHub
-**Actions**). If protected, after the build completes click **Review
+**Deploy API** workflow starts automatically (manual runs from GitHub
+**Actions** are rollback-only, see above). If protected, after the build completes click **Review
 deployments** → select `production` → **Approve and deploy**.
 
 The job pulls the image, migrates with the new image, starts services, then

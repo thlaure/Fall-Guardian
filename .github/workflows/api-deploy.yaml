@@ -3,9 +3,11 @@ name: Deploy API
 # Production deploys only run after "API CI" succeeded for a push to main, and
 # always deploy the exact commit that CI validated (workflow_run.head_sha).
 #
-# Images are tagged with the immutable commit SHA. To roll back, run this
-# workflow manually with `image_sha` set to a previously deployed commit SHA:
-# the build is skipped and the existing image is redeployed. Database
+# Images are tagged with the immutable commit SHA. Manual runs are
+# rollback-only: run this workflow from `main` with `image_sha` set to a
+# previously built commit SHA; the build is skipped and that existing image is
+# redeployed. Manual runs from other branches, or without `image_sha`, are
+# rejected so nothing reaches production without passing API CI on main. Database
 # migrations are never rolled back, so they must be backward compatible
 # (expand/contract). See backend/api/docs/OVH_GITHUB_ACTIONS_DEPLOYMENT.md.
 
@@ -18,11 +20,9 @@ on:
     inputs:
       image_sha:
         description: >-
-          Rollback: full 40-character commit SHA of an already published image
-          to redeploy (skips the build). Leave empty to build and deploy the
-          selected branch head.
-        required: false
-        default: ''
+          Rollback (required): full 40-character commit SHA of an already
+          published image to redeploy. Run from main.
+        required: true
         type: string
 
 concurrency:
@@ -58,12 +58,19 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_run" ]; then
             sha="$RUN_HEAD_SHA"
             rollback=false
-          elif [ -n "$INPUT_IMAGE_SHA" ]; then
+          else
+            # Manual runs are rollback-only and must run the main-branch
+            # workflow, so production never executes unreviewed deploy tooling.
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Manual deploys must be run from main (got $GITHUB_REF)."
+              exit 1
+            fi
+            if [ -z "$INPUT_IMAGE_SHA" ]; then
+              echo "::error::Manual deploys are rollback-only: set image_sha to a previously built commit SHA."
+              exit 1
+            fi
             sha="$INPUT_IMAGE_SHA"
             rollback=true
-          else
-            sha="$GITHUB_SHA"
-            rollback=false
           fi
           if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
             echo "::error::Deploy target must be a full 40-character lowercase commit SHA, got '$sha'."
