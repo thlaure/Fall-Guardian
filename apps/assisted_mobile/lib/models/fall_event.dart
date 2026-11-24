@@ -24,13 +24,13 @@ class FallEvent {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'timestamp': timestamp.toIso8601String(),
-        'status': status.name,
-        'latitude': latitude,
-        'longitude': longitude,
-        'notifiedContacts': notifiedContacts,
-      };
+    'id': id,
+    'timestamp': timestamp.toIso8601String(),
+    'status': status.name,
+    'latitude': latitude,
+    'longitude': longitude,
+    'notifiedContacts': notifiedContacts,
+  };
 
   factory FallEvent.fromJson(Map<String, dynamic> json) {
     final notifiedContacts =

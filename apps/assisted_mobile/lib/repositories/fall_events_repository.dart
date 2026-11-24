@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import '../models/fall_event.dart';
 import '../services/alert_ports.dart';
 import '../services/secure_store.dart';
@@ -6,7 +7,7 @@ import 'shared_preferences_migration.dart';
 
 class FallEventsRepository implements FallEventRecorder {
   FallEventsRepository({KeyValueStore? store})
-      : _store = store ?? SecureKeyValueStore();
+    : _store = store ?? SecureKeyValueStore();
 
   static const _key = 'fall_events';
   final KeyValueStore _store;
@@ -16,9 +17,7 @@ class FallEventsRepository implements FallEventRecorder {
     final eventsByTimestamp = <int, FallEvent>{};
     for (final s in raw) {
       try {
-        final event = FallEvent.fromJson(
-          jsonDecode(s) as Map<String, dynamic>,
-        );
+        final event = FallEvent.fromJson(jsonDecode(s) as Map<String, dynamic>);
         final key = event.timestamp.millisecondsSinceEpoch;
         final existing = eventsByTimestamp[key];
         if (existing == null ||
@@ -35,11 +34,11 @@ class FallEventsRepository implements FallEventRecorder {
   }
 
   int _outcomePriority(FallEventStatus status) => switch (status) {
-        FallEventStatus.cancelled => 4,
-        FallEventStatus.cancellationPending => 3,
-        FallEventStatus.alertSent => 2,
-        FallEventStatus.alertFailed || FallEventStatus.timedOutNoSms => 1,
-      };
+    FallEventStatus.cancelled => 4,
+    FallEventStatus.cancellationPending => 3,
+    FallEventStatus.alertSent => 2,
+    FallEventStatus.alertFailed || FallEventStatus.timedOutNoSms => 1,
+  };
 
   @override
   Future<void> add(FallEvent event) async {

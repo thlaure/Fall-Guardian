@@ -23,7 +23,8 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get homeStatusTitle => 'Protégé';
   @override
-  String get homeStatusBody => 'La détection de chutes est active.\n'
+  String get homeStatusBody =>
+      'La détection de chutes est active.\n'
       'Une alerte de 30 secondes apparaîtra si une chute est détectée.';
   @override
   String get homeStatusUnlinkedTitle => 'Aucun aidant lié';
@@ -38,7 +39,8 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get homeHistoryTitle => 'Historique des chutes';
   @override
-  String get homeFootnote => 'Surveillance active sur votre montre.\n'
+  String get homeFootnote =>
+      'Surveillance active sur votre montre.\n'
       'Gardez l\'application montre ouverte en arrière-plan.';
   @override
   String get repairRequiredTitle => 'Les aidants ne seront PAS prévenus';

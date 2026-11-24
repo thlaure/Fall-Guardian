@@ -1,6 +1,6 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_localizations.dart';
@@ -114,9 +114,7 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   if (_linkedCaregivers.isEmpty)
                     _EmptyCaregiversState(l10n: l10n)
                   else
-                    _LinkedCaregiversSection(
-                      caregivers: _linkedCaregivers,
-                    ),
+                    _LinkedCaregiversSection(caregivers: _linkedCaregivers),
                 ],
               ),
             ),
@@ -226,9 +224,7 @@ class _InviteCaregiverSection extends StatelessWidget {
 }
 
 class _LinkedCaregiversSection extends StatelessWidget {
-  const _LinkedCaregiversSection({
-    required this.caregivers,
-  });
+  const _LinkedCaregiversSection({required this.caregivers});
 
   final List<Map<String, dynamic>> caregivers;
 
@@ -241,9 +237,8 @@ class _LinkedCaregiversSection extends StatelessWidget {
       children: [
         Text(
           '${caregivers.length} caregiver${caregivers.length > 1 ? 's' : ''} linked',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 10),
         ...caregivers.indexed.map((entry) {
@@ -251,8 +246,9 @@ class _LinkedCaregiversSection extends StatelessWidget {
           final caregiverName = '${caregiver['caregiverName'] ?? ''}'.trim();
           final platform = '${caregiver['platform'] ?? ''}'.trim();
           final deviceId = '${caregiver['caregiverDeviceId'] ?? ''}'.trim();
-          final shortDeviceId =
-              deviceId.length <= 8 ? deviceId : deviceId.substring(0, 8);
+          final shortDeviceId = deviceId.length <= 8
+              ? deviceId
+              : deviceId.substring(0, 8);
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
@@ -269,8 +265,8 @@ class _LinkedCaregiversSection extends StatelessWidget {
                 platform.isEmpty
                     ? 'Receives fall alerts from this device'
                     : shortDeviceId.isEmpty
-                        ? platform.toUpperCase()
-                        : '${platform.toUpperCase()} device $shortDeviceId',
+                    ? platform.toUpperCase()
+                    : '${platform.toUpperCase()} device $shortDeviceId',
               ),
             ),
           );
@@ -302,9 +298,8 @@ class _EmptyCaregiversState extends StatelessWidget {
           Text(
             l10n.contactsEmpty,
             textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
           Text(

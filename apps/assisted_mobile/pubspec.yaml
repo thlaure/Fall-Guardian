@@ -6,12 +6,10 @@ publish_to: 'none'
 version: 1.0.0+8
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ^3.14.0
 
 dependencies:
   flutter:
-    sdk: flutter
-  flutter_localizations:
     sdk: flutter
 
   # GPS location
@@ -31,6 +29,10 @@ dependencies:
 
   # Backend API calls
   http: ^1.2.1
+
+  # Material widgets and localizations; replaces package:flutter/material.dart
+  # (deprecated since Flutter 3.47) and the flutter_localizations delegates.
+  material_ui: ^1.11.1
 
 dev_dependencies:
   flutter_test:

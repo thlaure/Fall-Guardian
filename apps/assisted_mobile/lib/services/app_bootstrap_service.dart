@@ -9,12 +9,10 @@ import 'location_service.dart';
 /// critical backend readiness independent from optional platform permissions.
 class AppBootstrapService {
   AppBootstrapService({
-    required LocationService locationService,
-    required BackendApiService backendApi,
-    required ContactsRepository contactsRepository,
-  })  : _locationService = locationService,
-        _backendApi = backendApi,
-        _contactsRepository = contactsRepository;
+    required this._locationService,
+    required this._backendApi,
+    required this._contactsRepository,
+  });
 
   final LocationService _locationService;
   final BackendApiService _backendApi;

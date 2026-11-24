@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
+
 import '../models/contact.dart';
 import '../services/alert_ports.dart';
 import '../services/backend_api_service.dart';
@@ -13,8 +15,8 @@ class ContactsRepository implements EmergencyContactsStore {
   ContactsRepository({
     KeyValueStore? store,
     AlertBackendGateway? backendGateway,
-  })  : _store = store ?? SecureKeyValueStore(),
-        _backendGateway = backendGateway ?? BackendApiService();
+  }) : _store = store ?? SecureKeyValueStore(),
+       _backendGateway = backendGateway ?? BackendApiService();
 
   static const _key = 'contacts';
   final KeyValueStore _store;

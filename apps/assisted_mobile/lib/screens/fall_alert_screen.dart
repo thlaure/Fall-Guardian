@@ -3,7 +3,7 @@
 import 'dart:async';
 
 // Flutter's Material UI toolkit — widgets, animations, navigation, etc.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 // Our translated strings — all user-visible text comes from here so the app
 // can display in English, French, etc. based on device language.
@@ -58,9 +58,9 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   final Stopwatch _screenStopwatch = Stopwatch();
   Timer? _timer; // periodic timer that re-computes _remaining
   StreamSubscription<AlertUiState>?
-      _alertStateSub; // state updates from the coordinator
+  _alertStateSub; // state updates from the coordinator
   StreamSubscription<void>?
-      _dismissSub; // dismissal events from the coordinator
+  _dismissSub; // dismissal events from the coordinator
   bool _sending = false; // true while the alert-send flow is in progress
   String _statusMessage = ''; // shown beneath the spinner while sending
   AlertPhase _phase = AlertPhase.countdown;
@@ -129,13 +129,15 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
       final coordinatorOwnsCountdown =
           widget.alertCoordinator.currentState?.fallTimestamp ==
-              widget.fallTimestamp;
+          widget.fallTimestamp;
       // The coordinator drives the countdown from the server deadline once
       // the API answered (fallTimestamp + 30 s before that). Never negative.
       final remaining = coordinatorOwnsCountdown
           ? widget.alertCoordinator.remainingCountdownSeconds
-          : (_countdownSeconds - _screenStopwatch.elapsed.inSeconds)
-              .clamp(0, _countdownSeconds);
+          : (_countdownSeconds - _screenStopwatch.elapsed.inSeconds).clamp(
+              0,
+              _countdownSeconds,
+            );
       final pastDeadline = coordinatorOwnsCountdown
           ? widget.alertCoordinator.isPastDeadline
           : remaining <= 0;
@@ -214,8 +216,10 @@ class _FallAlertScreenState extends State<FallAlertScreen>
               padding: const EdgeInsets.all(32),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight:
-                      (constraints.maxHeight - 64).clamp(0, double.infinity),
+                  minHeight: (constraints.maxHeight - 64).clamp(
+                    0,
+                    double.infinity,
+                  ),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -248,8 +252,10 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                     Text(
                       l10n.fallAlertBody, // e.g. "Tap Cancel if you are OK"
                       textAlign: TextAlign.center,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 16),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 40),
 
@@ -299,7 +305,8 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                                       color: _remaining <= 10
                                           ? Colors.redAccent
                                           : const Color(
-                                              0xFFE5694A), // brand orange
+                                              0xFFE5694A,
+                                            ), // brand orange
                                     ),
                                   ),
                                   // Large digit centred inside the ring.
@@ -349,8 +356,10 @@ class _FallAlertScreenState extends State<FallAlertScreen>
                                 height: 60,
                                 child: ElevatedButton.icon(
                                   onPressed: _sending ? null : _cancel,
-                                  icon:
-                                      const Icon(Icons.check_circle, size: 28),
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 28,
+                                  ),
                                   label: Text(
                                     l10n.cancelAlert,
                                     textAlign: TextAlign.center,

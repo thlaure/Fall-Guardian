@@ -1,6 +1,6 @@
 import 'package:fall_guardian/l10n/app_localizations.dart';
 import 'package:fall_guardian/screens/settings_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -12,16 +12,14 @@ void main() {
   });
 
   Widget app({required bool wearOs, double bottomInset = 0}) => MaterialApp(
-        locale: const Locale('en'),
-        localizationsDelegates: const [AppLocalizations.delegate],
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: MediaQuery(
-          data: MediaQueryData(
-            viewPadding: EdgeInsets.only(bottom: bottomInset),
-          ),
-          child: SettingsScreen(wearOsOverride: wearOs),
-        ),
-      );
+    locale: const Locale('en'),
+    localizationsDelegates: const [AppLocalizations.delegate],
+    supportedLocales: AppLocalizations.supportedLocales,
+    home: MediaQuery(
+      data: MediaQueryData(viewPadding: EdgeInsets.only(bottom: bottomInset)),
+      child: SettingsScreen(wearOsOverride: wearOs),
+    ),
+  );
 
   testWidgets('watch connection feature is absent', (tester) async {
     await tester.pumpWidget(app(wearOs: true));
@@ -32,8 +30,9 @@ void main() {
     expect(find.text('Fall Detection Thresholds'), findsOneWidget);
   });
 
-  testWidgets('custom detection thresholds are hidden outside Wear OS',
-      (tester) async {
+  testWidgets('custom detection thresholds are hidden outside Wear OS', (
+    tester,
+  ) async {
     await tester.pumpWidget(app(wearOs: false));
     await tester.pumpAndSettle();
 
@@ -41,8 +40,9 @@ void main() {
     expect(find.text('Save'), findsNothing);
   });
 
-  testWidgets('reset button keeps bottom margin above system navigation',
-      (tester) async {
+  testWidgets('reset button keeps bottom margin above system navigation', (
+    tester,
+  ) async {
     await tester.pumpWidget(app(wearOs: true, bottomInset: 32));
     await tester.pumpAndSettle();
 

@@ -33,12 +33,14 @@ void main() {
     expect(first, isNot(second));
   });
 
-  test('DeviceLocaleResolver.languageCode returns the platform locale code',
-      () {
-    const resolver = DeviceLocaleResolver();
+  test(
+    'DeviceLocaleResolver.languageCode returns the platform locale code',
+    () {
+      const resolver = DeviceLocaleResolver();
 
-    expect(resolver.languageCode(), isNotEmpty);
-  });
+      expect(resolver.languageCode(), isNotEmpty);
+    },
+  );
 
   test('DeviceLocaleResolver.resolve returns supported AppLocalizations', () {
     const resolver = DeviceLocaleResolver();
@@ -46,8 +48,7 @@ void main() {
     expect(resolver.resolve(), isNotNull);
   });
 
-  test(
-      'DeviceLocaleResolver.resolve falls back to English for an unsupported '
+  test('DeviceLocaleResolver.resolve falls back to English for an unsupported '
       'device locale', () {
     final dispatcher = TestWidgetsFlutterBinding.instance.platformDispatcher;
     dispatcher.localeTestValue = const Locale('xx');
@@ -58,18 +59,20 @@ void main() {
     expect(resolver.resolve().appTitle, isNotEmpty);
   });
 
-  test('MethodChannelWatchGateway.sendCancelAlert invokes the watch channel',
-      () async {
-    MethodCall? captured;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-      captured = call;
-      return null;
-    });
+  test(
+    'MethodChannelWatchGateway.sendCancelAlert invokes the watch channel',
+    () async {
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            captured = call;
+            return null;
+          });
 
-    const gateway = MethodChannelWatchGateway();
-    await gateway.sendCancelAlert();
+      const gateway = MethodChannelWatchGateway();
+      await gateway.sendCancelAlert();
 
-    expect(captured?.method, 'sendCancelAlert');
-  });
+      expect(captured?.method, 'sendCancelAlert');
+    },
+  );
 }

@@ -55,14 +55,22 @@ void main() {
   });
 
   test('outcome mapping is explicit', () {
-    expect(RelayOutcomeImporter.statusFor('create_rejected'),
-        FallEventStatus.alertFailed);
     expect(
-        RelayOutcomeImporter.statusFor('dropped'), FallEventStatus.alertFailed);
-    expect(RelayOutcomeImporter.statusFor('cancel_too_late'),
-        FallEventStatus.alertSent);
-    expect(RelayOutcomeImporter.statusFor('cancel_rejected'),
-        FallEventStatus.alertSent);
+      RelayOutcomeImporter.statusFor('create_rejected'),
+      FallEventStatus.alertFailed,
+    );
+    expect(
+      RelayOutcomeImporter.statusFor('dropped'),
+      FallEventStatus.alertFailed,
+    );
+    expect(
+      RelayOutcomeImporter.statusFor('cancel_too_late'),
+      FallEventStatus.alertSent,
+    );
+    expect(
+      RelayOutcomeImporter.statusFor('cancel_rejected'),
+      FallEventStatus.alertSent,
+    );
     expect(RelayOutcomeImporter.statusFor('unknown'), isNull);
   });
 

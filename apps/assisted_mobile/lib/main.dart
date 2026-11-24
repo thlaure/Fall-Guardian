@@ -6,12 +6,11 @@ import 'dart:developer' as developer;
 
 // Flutter's material library provides the core UI building blocks:
 // widgets, themes, navigation, etc. "Material" refers to Google's design system.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-// flutter_localizations ships the translated strings that Flutter's own widgets
-// use (e.g. the "OK" button on a date picker). We need to include its delegates
-// alongside our own so every part of the UI speaks the user's language.
-import 'package:flutter_localizations/flutter_localizations.dart';
+// material_ui ships the translated strings that Flutter's own widgets use
+// (e.g. the "OK" button on a date picker) through
+// GlobalMaterialLocalizations.delegates.
 
 // Our own generated localization helper (lives in lib/l10n/).
 // It reads the device locale and returns the matching translated strings.
@@ -172,19 +171,18 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   // We push `null` into the broadcast stream — the value itself doesn't matter,
   // the event ("something was cancelled") is what listeners care about.
   void _onAlertCancelled({String? incidentId, int? fallTimestamp}) {
-    unawaited(_alertCoordinator.cancelFromWatch(
-      incidentId: incidentId,
-      fallTimestamp: fallTimestamp,
-    ));
+    unawaited(
+      _alertCoordinator.cancelFromWatch(
+        incidentId: incidentId,
+        fallTimestamp: fallTimestamp,
+      ),
+    );
   }
 
   // Called by WatchCommunicationService when the watch detects a fall.
   // [timestamp] is the Unix epoch in milliseconds of the moment the fall
   // was detected — it is the shared "origin" that keeps both countdowns in sync.
-  Future<void> _onFallDetected(
-    int timestamp, [
-    String? clientAlertId,
-  ]) async {
+  Future<void> _onFallDetected(int timestamp, [String? clientAlertId]) async {
     // Retrieve the current localization bundle so we can build translated
     // notification strings. We use the navigator's context rather than the
     // widget's own context because this method can be called at any time,
@@ -215,19 +213,19 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     unawaited(
       navigator
           .push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => FallAlertScreen(
-            // Pass the original fall timestamp so FallAlertScreen can compute
-            // its remaining seconds relative to the same clock origin as the watch.
-            fallTimestamp: timestamp,
-            alertCoordinator: _alertCoordinator,
-          ),
-          fullscreenDialog: true,
-        ),
-      )
+            MaterialPageRoute<void>(
+              builder: (_) => FallAlertScreen(
+                // Pass the original fall timestamp so FallAlertScreen can compute
+                // its remaining seconds relative to the same clock origin as the watch.
+                fallTimestamp: timestamp,
+                alertCoordinator: _alertCoordinator,
+              ),
+              fullscreenDialog: true,
+            ),
+          )
           .whenComplete(() {
-        _isAlertScreenShowing = false;
-      }),
+            _isAlertScreenShowing = false;
+          }),
     );
   }
 
@@ -261,17 +259,13 @@ class _FallGuardianAppState extends State<FallGuardianApp>
 
       // ── Localization ──────────────────────────────────────────────────────
       // "Delegates" are factories: Flutter asks each delegate to produce the
-      // translated strings for a given locale. We need four delegates:
+      // translated strings for a given locale:
       //   1. AppLocalizations.delegate — our own strings (lib/l10n/)
-      //   2. GlobalMaterialLocalizations.delegate — strings for Material widgets
-      //      (e.g. "Cancel", "OK", month names in date pickers)
-      //   3. GlobalWidgetsLocalizations.delegate — text direction (LTR vs RTL)
-      //   4. GlobalCupertinoLocalizations.delegate — strings for iOS-style widgets
-      localizationsDelegates: const [
+      //   2. GlobalMaterialLocalizations.delegates — Material, Widgets (text
+      //      direction) and Cupertino strings, from the material_ui package
+      localizationsDelegates: [
         AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+        ...GlobalMaterialLocalizations.delegates,
       ],
       // Tell Flutter which locales the app supports. If the device is set to a
       // language not in this list, Flutter picks the closest match or the first
@@ -316,7 +310,8 @@ class _FallGuardianAppState extends State<FallGuardianApp>
         backendApi: _backendApi,
         onDeviceRepaired: () =>
             WatchCommunicationService.configureNativeAlertRelay(
-                _backendApi.debugBaseUrl),
+              _backendApi.debugBaseUrl,
+            ),
       ),
     );
   }

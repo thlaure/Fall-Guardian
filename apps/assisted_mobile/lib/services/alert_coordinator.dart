@@ -49,24 +49,16 @@ class AlertCoordinator {
   /// concrete repositories/plugins. That keeps this class focused on
   /// "what should happen next?" rather than "how do we talk to storage/push?".
   AlertCoordinator({
-    required FallEventRecorder eventRecorder,
-    required AlertLocationProvider locationProvider,
-    required AlertNotificationGateway notificationGateway,
-    required AlertBackendGateway backendGateway,
-    required WatchCommandGateway watchGateway,
-    required AlertLocaleResolver localeResolver,
-    required Clock clock,
-    required IdGenerator idGenerator,
+    required this._eventRecorder,
+    required this._locationProvider,
+    required this._notificationGateway,
+    required this._backendGateway,
+    required this._watchGateway,
+    required this._localeResolver,
+    required this._clock,
+    required this._idGenerator,
     DurableAlertQueue? durableQueue,
-  })  : _eventRecorder = eventRecorder,
-        _locationProvider = locationProvider,
-        _notificationGateway = notificationGateway,
-        _backendGateway = backendGateway,
-        _watchGateway = watchGateway,
-        _localeResolver = localeResolver,
-        _clock = clock,
-        _idGenerator = idGenerator,
-        _durableQueue = durableQueue ?? const _NoDurableAlertQueue();
+  }) : _durableQueue = durableQueue ?? const _NoDurableAlertQueue();
 
   factory AlertCoordinator.live() {
     return AlertCoordinator(
@@ -129,10 +121,7 @@ class AlertCoordinator {
   Stream<void> get dismissStream => _dismissController.stream;
   AlertUiState? get currentState => _currentState;
 
-  Future<bool> startAlert(
-    int timestamp, {
-    String? clientAlertId,
-  }) async {
+  Future<bool> startAlert(int timestamp, {String? clientAlertId}) async {
     // One unresolved incident owns one fixed grace-window deadline. Sensor
     // re-triggers and duplicate watch transports must not replace it, restart
     // its timer, or create another backend alert.
@@ -319,10 +308,12 @@ class AlertCoordinator {
 
     final clientAlertId = _activeClientAlertId;
     if (notifyWatch) {
-      unawaited(_watchGateway.sendCancelAlert(
-        incidentId: clientAlertId,
-        fallTimestamp: timestamp,
-      ));
+      unawaited(
+        _watchGateway.sendCancelAlert(
+          incidentId: clientAlertId,
+          fallTimestamp: timestamp,
+        ),
+      );
     }
 
     final wasRegistered = _registeredWithBackend;
@@ -339,10 +330,12 @@ class AlertCoordinator {
       // alert never actually landed server-side. When this phone doesn't
       // yet know registration succeeded, also record a cancelled event so
       // there's still a backend record if it truly never got through.
-      cancellationConfirmed =
-          await _cancelRegisteredFallAlert(clientAlertId: clientAlertId);
+      cancellationConfirmed = await _cancelRegisteredFallAlert(
+        clientAlertId: clientAlertId,
+      );
       if (!wasRegistered) {
-        cancellationConfirmed = await _recordCancelledFallAlert(
+        cancellationConfirmed =
+            await _recordCancelledFallAlert(
               clientAlertId: clientAlertId,
               timestamp: timestamp,
             ) ||
@@ -356,8 +349,10 @@ class AlertCoordinator {
         _AlertOutcome(
           event: FallEvent(
             id: _idGenerator.newId(),
-            timestamp:
-                DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              timestamp,
+              isUtc: true,
+            ),
             status: FallEventStatus.cancellationPending,
           ),
           phase: AlertPhase.cancellationUnconfirmed,
@@ -493,8 +488,10 @@ class AlertCoordinator {
       _AlertOutcome(
         event: FallEvent(
           id: _idGenerator.newId(),
-          timestamp:
-              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            timestamp,
+            isUtc: true,
+          ),
           status: FallEventStatus.alertSent,
           latitude: _lastKnownPosition?.latitude,
           longitude: _lastKnownPosition?.longitude,
@@ -560,8 +557,10 @@ class AlertCoordinator {
       return _AlertOutcome(
         event: FallEvent(
           id: _idGenerator.newId(),
-          timestamp:
-              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            timestamp,
+            isUtc: true,
+          ),
           status: FallEventStatus.alertFailed,
           latitude: position?.latitude,
           longitude: position?.longitude,
@@ -622,11 +621,7 @@ class AlertCoordinator {
   /// active alert: caregivers cannot be reached until it is re-paired.
   bool get repairRequired => _repairRequired;
 
-  void _transition(
-    int timestamp,
-    AlertPhase phase, {
-    String? statusMessage,
-  }) {
+  void _transition(int timestamp, AlertPhase phase, {String? statusMessage}) {
     _emit(
       AlertUiState(
         fallTimestamp: timestamp,

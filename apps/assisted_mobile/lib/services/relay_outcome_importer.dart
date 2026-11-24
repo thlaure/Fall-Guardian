@@ -9,13 +9,11 @@ import 'watch_communication_service.dart';
 /// rejected or late-cancelled incident is never silently lost.
 class RelayOutcomeImporter {
   RelayOutcomeImporter({
-    required FallEventRecorder recorder,
-    required IdGenerator idGenerator,
+    required this._recorder,
+    required this._idGenerator,
     Future<List<RelayOutcomeRecord>> Function()? takeOutcomes,
-  })  : _recorder = recorder,
-        _idGenerator = idGenerator,
-        _takeOutcomes =
-            takeOutcomes ?? WatchCommunicationService.takeRelayOutcomes;
+  }) : _takeOutcomes =
+           takeOutcomes ?? WatchCommunicationService.takeRelayOutcomes;
 
   final FallEventRecorder _recorder;
   final IdGenerator _idGenerator;
@@ -40,14 +38,16 @@ class RelayOutcomeImporter {
     for (final outcome in outcomes) {
       final status = statusFor(outcome.outcome);
       if (status == null) continue;
-      await _recorder.add(FallEvent(
-        id: _idGenerator.newId(),
-        timestamp: DateTime.fromMillisecondsSinceEpoch(
-          outcome.fallTimestamp,
-          isUtc: true,
+      await _recorder.add(
+        FallEvent(
+          id: _idGenerator.newId(),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            outcome.fallTimestamp,
+            isUtc: true,
+          ),
+          status: status,
         ),
-        status: status,
-      ));
+      );
       written++;
     }
     return written;
@@ -56,8 +56,8 @@ class RelayOutcomeImporter {
   /// Never-delivered incidents are failures; a cancellation the server
   /// refused means caregivers were (or may have been) notified.
   static FallEventStatus? statusFor(String outcome) => switch (outcome) {
-        'create_rejected' || 'dropped' => FallEventStatus.alertFailed,
-        'cancel_too_late' || 'cancel_rejected' => FallEventStatus.alertSent,
-        _ => null,
-      };
+    'create_rejected' || 'dropped' => FallEventStatus.alertFailed,
+    'cancel_too_late' || 'cancel_rejected' => FallEventStatus.alertSent,
+    _ => null,
+  };
 }

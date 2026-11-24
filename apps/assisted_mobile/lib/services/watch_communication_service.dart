@@ -181,8 +181,8 @@ class WatchCommunicationService {
       // The native side persists the backend cancellation for this incident
       // in its durable relay queue and forwards the target to the watch.
       await _channel.invokeMethod('sendCancelAlert', {
-        if (incidentId != null) 'incidentId': incidentId,
-        if (fallTimestamp != null) 'fallTimestamp': fallTimestamp,
+        'incidentId': ?incidentId,
+        'fallTimestamp': ?fallTimestamp,
       });
     } catch (error, stackTrace) {
       developer.log(
@@ -219,11 +219,13 @@ class WatchCommunicationService {
       final timestamp = entry['timestamp'];
       final outcome = entry['outcome'];
       if (id is String && timestamp is int && outcome is String) {
-        records.add(RelayOutcomeRecord(
-          clientAlertId: id,
-          fallTimestamp: timestamp,
-          outcome: outcome,
-        ));
+        records.add(
+          RelayOutcomeRecord(
+            clientAlertId: id,
+            fallTimestamp: timestamp,
+            outcome: outcome,
+          ),
+        );
       }
     }
     return records;

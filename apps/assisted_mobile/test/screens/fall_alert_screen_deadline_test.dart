@@ -6,7 +6,7 @@ import 'package:fall_guardian/screens/fall_alert_screen.dart';
 import 'package:fall_guardian/services/alert_coordinator.dart';
 import 'package:fall_guardian/services/alert_ports.dart';
 import 'package:fall_guardian/services/backend_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -89,8 +89,10 @@ class _Notifications implements AlertNotificationGateway {
 
 class _Watch implements WatchCommandGateway {
   @override
-  Future<void> sendCancelAlert(
-      {String? incidentId, int? fallTimestamp}) async {}
+  Future<void> sendCancelAlert({
+    String? incidentId,
+    int? fallTimestamp,
+  }) async {}
 }
 
 class _Locale implements AlertLocaleResolver {
@@ -119,11 +121,11 @@ AlertCoordinator _coordinator(_Clock clock, _Backend backend) =>
     );
 
 Widget _app(Widget child) => MaterialApp(
-      locale: const Locale('en'),
-      localizationsDelegates: const [AppLocalizations.delegate],
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: child,
-    );
+  locale: const Locale('en'),
+  localizationsDelegates: const [AppLocalizations.delegate],
+  supportedLocales: AppLocalizations.supportedLocales,
+  home: child,
+);
 
 void main() {
   testWidgets('countdown follows the server deadline returned by the API', (
@@ -138,10 +140,14 @@ void main() {
     );
     final timestamp = clock.now().millisecondsSinceEpoch;
     await coordinator.startAlert(timestamp);
-    await tester.pumpWidget(_app(FallAlertScreen(
-      fallTimestamp: timestamp,
-      alertCoordinator: coordinator,
-    )));
+    await tester.pumpWidget(
+      _app(
+        FallAlertScreen(
+          fallTimestamp: timestamp,
+          alertCoordinator: coordinator,
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
 
@@ -154,33 +160,41 @@ void main() {
   });
 
   testWidgets(
-      'past the deadline the screen says caregivers are being notified and '
-      'never shows negative time', (tester) async {
-    final clock = _Clock(DateTime(2026, 7, 24, 12));
-    final coordinator = _coordinator(clock, _Backend());
-    final timestamp = clock.now().millisecondsSinceEpoch;
-    await coordinator.startAlert(timestamp);
-    await tester.pumpWidget(_app(FallAlertScreen(
-      fallTimestamp: timestamp,
-      alertCoordinator: coordinator,
-    )));
-    await tester.pump();
+    'past the deadline the screen says caregivers are being notified and '
+    'never shows negative time',
+    (tester) async {
+      final clock = _Clock(DateTime(2026, 7, 24, 12));
+      final coordinator = _coordinator(clock, _Backend());
+      final timestamp = clock.now().millisecondsSinceEpoch;
+      await coordinator.startAlert(timestamp);
+      await tester.pumpWidget(
+        _app(
+          FallAlertScreen(
+            fallTimestamp: timestamp,
+            alertCoordinator: coordinator,
+          ),
+        ),
+      );
+      await tester.pump();
 
-    // Monotonic clock jumps (e.g. app was suspended) without the deadline
-    // timer having fired yet.
-    clock.advance(const Duration(seconds: 40));
-    await tester.pump(const Duration(milliseconds: 600));
+      // Monotonic clock jumps (e.g. app was suspended) without the deadline
+      // timer having fired yet.
+      clock.advance(const Duration(seconds: 40));
+      await tester.pump(const Duration(milliseconds: 600));
 
-    expect(find.text('0'), findsOneWidget);
-    expect(find.textContaining('-'), findsNothing);
-    expect(
-      find.text('Cancellation window closed — caregivers are being notified.'),
-      findsOneWidget,
-    );
+      expect(find.text('0'), findsOneWidget);
+      expect(find.textContaining('-'), findsNothing);
+      expect(
+        find.text(
+          'Cancellation window closed — caregivers are being notified.',
+        ),
+        findsOneWidget,
+      );
 
-    coordinator.dispose();
-    await tester.pumpWidget(const SizedBox());
-  });
+      coordinator.dispose();
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('rejected device credentials are shown during the countdown', (
     tester,
@@ -188,10 +202,14 @@ void main() {
     final clock = _Clock(DateTime(2026, 7, 24, 12));
     final coordinator = _coordinator(clock, _Backend(repairRequired: true));
     final timestamp = clock.now().millisecondsSinceEpoch;
-    await tester.pumpWidget(_app(FallAlertScreen(
-      fallTimestamp: timestamp,
-      alertCoordinator: coordinator,
-    )));
+    await tester.pumpWidget(
+      _app(
+        FallAlertScreen(
+          fallTimestamp: timestamp,
+          alertCoordinator: coordinator,
+        ),
+      ),
+    );
     await coordinator.startAlert(timestamp);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));

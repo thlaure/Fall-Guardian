@@ -2,26 +2,29 @@ import 'package:fall_guardian/l10n/app_localizations.dart';
 import 'package:fall_guardian/screens/home_screen.dart';
 import 'package:fall_guardian/services/backend_api_service.dart';
 import 'package:fall_guardian/services/device_pairing_state.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   testWidgets(
-      'home shows unlinked caregiver status when no caregiver is linked', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _app(
-          HomeScreen(backendApi: _FakeBackendApiService(caregivers: const []))),
-    );
-    await tester.pump();
-    await tester.pump();
+    'home shows unlinked caregiver status when no caregiver is linked',
+    (tester) async {
+      await tester.pumpWidget(
+        _app(
+          HomeScreen(backendApi: _FakeBackendApiService(caregivers: const [])),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    expect(find.text('No caregiver linked'), findsOneWidget);
-    expect(find.textContaining('no caregiver will be alerted yet'),
-        findsOneWidget);
-    expect(find.text('Protected'), findsNothing);
-  });
+      expect(find.text('No caregiver linked'), findsOneWidget);
+      expect(
+        find.textContaining('no caregiver will be alerted yet'),
+        findsOneWidget,
+      );
+      expect(find.text('Protected'), findsNothing);
+    },
+  );
 
   testWidgets('home shows protected status when a caregiver is linked', (
     tester,
@@ -55,11 +58,15 @@ void main() {
         repairRequiredFlag: true,
         state: state,
       );
-      await tester.pumpWidget(_app(HomeScreen(
-        backendApi: api,
-        pairingState: state,
-        onDeviceRepaired: () async => reconfigured++,
-      )));
+      await tester.pumpWidget(
+        _app(
+          HomeScreen(
+            backendApi: api,
+            pairingState: state,
+            onDeviceRepaired: () async => reconfigured++,
+          ),
+        ),
+      );
       await tester.pump();
       await tester.pump();
 
@@ -102,10 +109,17 @@ void main() {
       tester,
     ) async {
       final state = DevicePairingState();
-      await tester.pumpWidget(_app(HomeScreen(
-        backendApi: _FakeBackendApiService(caregivers: const [], state: state),
-        pairingState: state,
-      )));
+      await tester.pumpWidget(
+        _app(
+          HomeScreen(
+            backendApi: _FakeBackendApiService(
+              caregivers: const [],
+              state: state,
+            ),
+            pairingState: state,
+          ),
+        ),
+      );
       await tester.pump();
       expect(find.byKey(const Key('repair-required-banner')), findsNothing);
 

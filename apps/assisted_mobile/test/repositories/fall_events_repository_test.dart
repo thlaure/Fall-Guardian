@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/models/fall_event.dart';
@@ -73,29 +74,31 @@ void main() {
       expect(all.single.status, FallEventStatus.cancelled);
     });
 
-    test('getAll repairs contradictory legacy outcomes for the same fall',
-        () async {
-      final timestamp = DateTime.utc(2026, 7, 23, 9, 55, 7);
-      final cancelled = FallEvent(
-        id: 'cancelled',
-        timestamp: timestamp,
-        status: FallEventStatus.cancelled,
-      );
-      final falseAlertSent = FallEvent(
-        id: 'false-alert-sent',
-        timestamp: timestamp,
-        status: FallEventStatus.alertSent,
-      );
-      store.data['fall_events'] = jsonEncode([
-        jsonEncode(cancelled.toJson()),
-        jsonEncode(falseAlertSent.toJson()),
-      ]);
+    test(
+      'getAll repairs contradictory legacy outcomes for the same fall',
+      () async {
+        final timestamp = DateTime.utc(2026, 7, 23, 9, 55, 7);
+        final cancelled = FallEvent(
+          id: 'cancelled',
+          timestamp: timestamp,
+          status: FallEventStatus.cancelled,
+        );
+        final falseAlertSent = FallEvent(
+          id: 'false-alert-sent',
+          timestamp: timestamp,
+          status: FallEventStatus.alertSent,
+        );
+        store.data['fall_events'] = jsonEncode([
+          jsonEncode(cancelled.toJson()),
+          jsonEncode(falseAlertSent.toJson()),
+        ]);
 
-      final all = await repo.getAll();
-      expect(all, hasLength(1));
-      expect(all.single.id, 'cancelled');
-      expect(all.single.status, FallEventStatus.cancelled);
-    });
+        final all = await repo.getAll();
+        expect(all, hasLength(1));
+        expect(all.single.id, 'cancelled');
+        expect(all.single.status, FallEventStatus.cancelled);
+      },
+    );
 
     test('getAll returns events sorted newest first', () async {
       final older = FallEvent(
@@ -163,15 +166,17 @@ void main() {
       expect(all.first.id, 'valid-1');
     });
 
-    test('getAll deletes and recovers from a corrupted secure store value',
-        () async {
-      store.data['fall_events'] = 'not a valid json list';
+    test(
+      'getAll deletes and recovers from a corrupted secure store value',
+      () async {
+        store.data['fall_events'] = 'not a valid json list';
 
-      final all = await repo.getAll();
+        final all = await repo.getAll();
 
-      expect(all, isEmpty);
-      expect(store.data.containsKey('fall_events'), isFalse);
-    });
+        expect(all, isEmpty);
+        expect(store.data.containsKey('fall_events'), isFalse);
+      },
+    );
 
     test('clear_isIdempotent', () async {
       await repo.add(
@@ -187,25 +192,27 @@ void main() {
       expect(await repo.getAll(), isEmpty);
     });
 
-    test('getAll migrates legacy shared preferences into secure storage',
-        () async {
-      final validEvent = FallEvent(
-        id: 'valid-1',
-        timestamp: DateTime(2024, 3, 1),
-        status: FallEventStatus.cancelled,
-      );
-      final validJson = jsonEncode(validEvent.toJson());
-      SharedPreferences.setMockInitialValues({
-        'fall_events': [validJson],
-      });
-      repo = FallEventsRepository(store: store);
+    test(
+      'getAll migrates legacy shared preferences into secure storage',
+      () async {
+        final validEvent = FallEvent(
+          id: 'valid-1',
+          timestamp: DateTime(2024, 3, 1),
+          status: FallEventStatus.cancelled,
+        );
+        final validJson = jsonEncode(validEvent.toJson());
+        SharedPreferences.setMockInitialValues({
+          'fall_events': [validJson],
+        });
+        repo = FallEventsRepository(store: store);
 
-      final all = await repo.getAll();
+        final all = await repo.getAll();
 
-      expect(all.single.id, 'valid-1');
-      expect(store.data['fall_events'], contains('valid-1'));
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList('fall_events'), isNull);
-    });
+        expect(all.single.id, 'valid-1');
+        expect(store.data['fall_events'], contains('valid-1'));
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getStringList('fall_events'), isNull);
+      },
+    );
   });
 }

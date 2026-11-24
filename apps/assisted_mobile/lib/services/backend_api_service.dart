@@ -24,19 +24,21 @@ class BackendApiService implements AlertBackendGateway {
     List<Duration>? cancellationRetryDelays,
     DevicePairingState? pairingState,
     DeviceRegistrationMarker? registrationMarker,
-  })  : _store = store ?? SecureKeyValueStore(),
-        _registrationMarker =
-            registrationMarker ?? const SharedPreferencesRegistrationMarker(),
-        _pairingState = pairingState ?? DevicePairingState.shared,
-        _client = client ?? http.Client(),
-        _baseUrlOverride = baseUrl,
-        _releaseMode = releaseMode ?? kReleaseMode,
-        _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
-        _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
-        _submitRetryDelays = submitRetryDelays ??
-            const [Duration(milliseconds: 500), Duration(seconds: 2)],
-        _cancellationRetryDelays = cancellationRetryDelays ??
-            const [Duration(milliseconds: 200), Duration(milliseconds: 500)];
+  }) : _store = store ?? SecureKeyValueStore(),
+       _registrationMarker =
+           registrationMarker ?? const SharedPreferencesRegistrationMarker(),
+       _pairingState = pairingState ?? DevicePairingState.shared,
+       _client = client ?? http.Client(),
+       _baseUrlOverride = baseUrl,
+       _releaseMode = releaseMode ?? kReleaseMode,
+       _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
+       _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
+       _submitRetryDelays =
+           submitRetryDelays ??
+           const [Duration(milliseconds: 500), Duration(seconds: 2)],
+       _cancellationRetryDelays =
+           cancellationRetryDelays ??
+           const [Duration(milliseconds: 200), Duration(milliseconds: 500)];
 
   static const _deviceIdKey = 'backend_device_id';
   static const _deviceTokenKey = 'backend_device_token';
@@ -139,7 +141,7 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         return await _submitFallAlertOnce(
           clientAlertId: clientAlertId,
@@ -257,13 +259,15 @@ class BackendApiService implements AlertBackendGateway {
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode(_fallAlertPayload(
-          clientAlertId: clientAlertId,
-          fallTimestamp: fallTimestamp,
-          locale: locale,
-          latitude: latitude,
-          longitude: longitude,
-        )),
+        body: jsonEncode(
+          _fallAlertPayload(
+            clientAlertId: clientAlertId,
+            fallTimestamp: fallTimestamp,
+            locale: locale,
+            latitude: latitude,
+            longitude: longitude,
+          ),
+        ),
       ),
       'Fall alert submission timed out',
     );
@@ -277,7 +281,7 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         await _recordCancelledFallAlertOnce(
           clientAlertId: clientAlertId,
@@ -288,7 +292,8 @@ class BackendApiService implements AlertBackendGateway {
         );
         return;
       } catch (error) {
-        final canRetry = attempt < _cancellationRetryDelays.length &&
+        final canRetry =
+            attempt < _cancellationRetryDelays.length &&
             _isRetryableFailure(error);
         if (!canRetry) rethrow;
         await Future<void>.delayed(_cancellationRetryDelays[attempt]);
@@ -340,14 +345,16 @@ class BackendApiService implements AlertBackendGateway {
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode(_fallAlertPayload(
-          clientAlertId: clientAlertId,
-          fallTimestamp: fallTimestamp,
-          locale: locale,
-          latitude: latitude,
-          longitude: longitude,
-          cancelled: true,
-        )),
+        body: jsonEncode(
+          _fallAlertPayload(
+            clientAlertId: clientAlertId,
+            fallTimestamp: fallTimestamp,
+            locale: locale,
+            latitude: latitude,
+            longitude: longitude,
+            cancelled: true,
+          ),
+        ),
       ),
       'Cancelled fall alert recording timed out',
     );
@@ -381,12 +388,13 @@ class BackendApiService implements AlertBackendGateway {
 
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         await _cancelFallAlertOnce(clientAlertId);
         return;
       } catch (error) {
-        final canRetry = attempt < _cancellationRetryDelays.length &&
+        final canRetry =
+            attempt < _cancellationRetryDelays.length &&
             _isRetryableFailure(error);
         if (!canRetry) rethrow;
         await Future<void>.delayed(_cancellationRetryDelays[attempt]);
@@ -466,17 +474,15 @@ class BackendApiService implements AlertBackendGateway {
       );
     }
 
-    final caregivers =
-        (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+    final caregivers = (jsonDecode(response.body) as List)
+        .cast<Map<String, dynamic>>();
 
     caregivers.sort(_namedCaregiversFirst);
 
     return caregivers;
   }
 
-  Future<http.Response> _getLinkedCaregivers(
-    _BackendCredentials credentials,
-  ) {
+  Future<http.Response> _getLinkedCaregivers(_BackendCredentials credentials) {
     return _send(
       _client.get(
         Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers'),
@@ -534,10 +540,7 @@ class BackendApiService implements AlertBackendGateway {
       if (!await _registrationMarker.isSet()) {
         await _registrationMarker.set();
       }
-      return _BackendCredentials(
-        deviceId: deviceId,
-        deviceToken: deviceToken,
-      );
+      return _BackendCredentials(deviceId: deviceId, deviceToken: deviceToken);
     }
 
     // Only a true first launch registers automatically. After a rejection,
@@ -599,9 +602,10 @@ class BackendApiService implements AlertBackendGateway {
   }) {
     return {
       'clientAlertId': clientAlertId,
-      'fallTimestamp':
-          DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
-              .toIso8601String(),
+      'fallTimestamp': DateTime.fromMillisecondsSinceEpoch(
+        fallTimestamp,
+        isUtc: true,
+      ).toIso8601String(),
       'locale': locale,
       'latitude': latitude,
       'longitude': longitude,
@@ -673,8 +677,8 @@ class BackendApiException implements Exception {
 /// The API rejected this phone's credentials (401/403). Caregivers cannot be
 /// notified until the user explicitly re-pairs the phone.
 class DeviceRepairRequiredException extends BackendApiException {
-  DeviceRepairRequiredException({int? statusCode})
-      : super('Device re-pairing required', statusCode: statusCode);
+  DeviceRepairRequiredException({super.statusCode})
+    : super('Device re-pairing required');
 }
 
 class _BackendCredentials {

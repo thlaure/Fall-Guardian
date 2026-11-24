@@ -63,9 +63,8 @@ class MethodChannelDurableAlertQueue implements DurableAlertQueue {
   Future<void> enqueue({
     required String clientAlertId,
     required int fallTimestamp,
-  }) =>
-      WatchCommunicationService.enqueuePendingAlert(
-        clientAlertId: clientAlertId,
-        fallTimestamp: fallTimestamp,
-      );
+  }) => WatchCommunicationService.enqueuePendingAlert(
+    clientAlertId: clientAlertId,
+    fallTimestamp: fallTimestamp,
+  );
 }

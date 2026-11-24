@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/l10n/app_localizations.dart';
@@ -14,15 +13,15 @@ import 'package:fall_guardian/services/alert_runtime.dart';
 import 'package:geolocator/geolocator.dart';
 
 AlertCoordinator _coordinator() => AlertCoordinator(
-      eventRecorder: _FakeEventRecorder(),
-      locationProvider: _FakeLocationProvider(),
-      notificationGateway: _FakeNotificationGateway(),
-      backendGateway: _FakeBackendGateway(),
-      watchGateway: _FakeWatchGateway(),
-      localeResolver: _EnglishLocaleResolver(),
-      clock: SystemClock(),
-      idGenerator: const UuidGenerator(),
-    );
+  eventRecorder: _FakeEventRecorder(),
+  locationProvider: _FakeLocationProvider(),
+  notificationGateway: _FakeNotificationGateway(),
+  backendGateway: _FakeBackendGateway(),
+  watchGateway: _FakeWatchGateway(),
+  localeResolver: _EnglishLocaleResolver(),
+  clock: SystemClock(),
+  idGenerator: const UuidGenerator(),
+);
 
 class _FakeEventRecorder implements FallEventRecorder {
   @override
@@ -79,8 +78,10 @@ class _FakeBackendGateway implements AlertBackendGateway {
 
 class _FakeWatchGateway implements WatchCommandGateway {
   @override
-  Future<void> sendCancelAlert(
-      {String? incidentId, int? fallTimestamp}) async {}
+  Future<void> sendCancelAlert({
+    String? incidentId,
+    int? fallTimestamp,
+  }) async {}
 }
 
 class _EnglishLocaleResolver implements AlertLocaleResolver {
@@ -92,21 +93,16 @@ class _EnglishLocaleResolver implements AlertLocaleResolver {
 }
 
 Widget _app(Widget child) => MaterialApp(
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: child,
-    );
+  localizationsDelegates: [
+    AppLocalizations.delegate,
+    ...GlobalMaterialLocalizations.delegates,
+  ],
+  supportedLocales: AppLocalizations.supportedLocales,
+  home: child,
+);
 
 FallAlertScreen _screen(int timestamp, AlertCoordinator coordinator) =>
-    FallAlertScreen(
-      fallTimestamp: timestamp,
-      alertCoordinator: coordinator,
-    );
+    FallAlertScreen(fallTimestamp: timestamp, alertCoordinator: coordinator);
 
 void main() {
   int freshFallTimestamp() => DateTime.now().millisecondsSinceEpoch + 200;
@@ -118,64 +114,63 @@ void main() {
     // Silence platform calls from flutter_local_notifications in tests.
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dexterous.com/flutter/local_notifications'),
-      (call) async => null,
-    );
+          const MethodChannel('dexterous.com/flutter/local_notifications'),
+          (call) async => null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('fall_guardian/watch'),
-      (call) async => null,
-    );
+          const MethodChannel('fall_guardian/watch'),
+          (call) async => null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('fall_guardian/secure_storage'),
-      (call) async {
-        final key =
-            (call.arguments as Map<Object?, Object?>?)?['key'] as String?;
-        switch (call.method) {
-          case 'read':
-            return key != null ? secureStore[key] : null;
-          case 'write':
-            final value =
-                (call.arguments as Map<Object?, Object?>?)?['value'] as String?;
-            if (key != null && value != null) {
-              secureStore[key] = value;
+          const MethodChannel('fall_guardian/secure_storage'),
+          (call) async {
+            final key =
+                (call.arguments as Map<Object?, Object?>?)?['key'] as String?;
+            switch (call.method) {
+              case 'read':
+                return key != null ? secureStore[key] : null;
+              case 'write':
+                final value =
+                    (call.arguments as Map<Object?, Object?>?)?['value']
+                        as String?;
+                if (key != null && value != null) {
+                  secureStore[key] = value;
+                }
+                return null;
+              case 'delete':
+                if (key != null) secureStore.remove(key);
+                return null;
+              default:
+                return null;
             }
-            return null;
-          case 'delete':
-            if (key != null) secureStore.remove(key);
-            return null;
-          default:
-            return null;
-        }
-      },
-    );
+          },
+        );
   });
 
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('dexterous.com/flutter/local_notifications'),
-      null,
-    );
+          const MethodChannel('dexterous.com/flutter/local_notifications'),
+          null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('fall_guardian/watch'),
-      null,
-    );
+          const MethodChannel('fall_guardian/watch'),
+          null,
+        );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('fall_guardian/secure_storage'),
-      null,
-    );
+          const MethodChannel('fall_guardian/secure_storage'),
+          null,
+        );
   });
 
   group('FallAlertScreen', () {
     testWidgets('shows 30-second countdown on launch', (tester) async {
       final coordinator = _coordinator();
-      await tester.pumpWidget(
-        _app(_screen(freshFallTimestamp(), coordinator)),
-      );
+      await tester.pumpWidget(_app(_screen(freshFallTimestamp(), coordinator)));
       await tester.pump();
       expect(find.text('30'), findsOneWidget);
       coordinator.dispose();
@@ -183,15 +178,11 @@ void main() {
 
     testWidgets('shows warning icon and cancel button', (tester) async {
       final coordinator = _coordinator();
-      await tester.pumpWidget(
-        _app(_screen(freshFallTimestamp(), coordinator)),
-      );
+      await tester.pumpWidget(_app(_screen(freshFallTimestamp(), coordinator)));
       await tester.pump();
       expect(find.byIcon(Icons.warning_rounded), findsOneWidget);
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
-      final label = tester.widget<Text>(
-        find.text("I'm OK\nCancel Alert"),
-      );
+      final label = tester.widget<Text>(find.text("I'm OK\nCancel Alert"));
       expect(label.textAlign, TextAlign.center);
       coordinator.dispose();
     });
@@ -200,11 +191,10 @@ void main() {
       tester,
     ) async {
       final coordinator = _coordinator();
-      final oldTimestamp = DateTime.now().millisecondsSinceEpoch -
+      final oldTimestamp =
+          DateTime.now().millisecondsSinceEpoch -
           const Duration(seconds: 5).inMilliseconds;
-      await tester.pumpWidget(
-        _app(_screen(oldTimestamp, coordinator)),
-      );
+      await tester.pumpWidget(_app(_screen(oldTimestamp, coordinator)));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
       expect(
@@ -244,11 +234,9 @@ void main() {
       await coordinator.startAlert(timestamp);
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: const [
+          localizationsDelegates: [
             AppLocalizations.delegate,
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
+            ...GlobalMaterialLocalizations.delegates,
           ],
           supportedLocales: AppLocalizations.supportedLocales,
           home: Builder(
@@ -291,11 +279,9 @@ void main() {
       // Push FallAlertScreen on top of a home screen so we can verify the pop.
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: const [
+          localizationsDelegates: [
             AppLocalizations.delegate,
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
+            ...GlobalMaterialLocalizations.delegates,
           ],
           supportedLocales: AppLocalizations.supportedLocales,
           home: Builder(
@@ -339,16 +325,14 @@ void main() {
       final watchCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('fall_guardian/watch'),
-        (call) async {
-          watchCalls.add(call);
-          return null;
-        },
-      );
+            const MethodChannel('fall_guardian/watch'),
+            (call) async {
+              watchCalls.add(call);
+              return null;
+            },
+          );
 
-      await tester.pumpWidget(
-        _app(_screen(timestamp, coordinator)),
-      );
+      await tester.pumpWidget(_app(_screen(timestamp, coordinator)));
       await tester.pump();
 
       await coordinator.cancelFromWatch();
