@@ -97,6 +97,11 @@ import WatchConnectivity
         // UserDefaults and shows a native notification until Flutter is ready.
         watchSession = WatchSessionManager()
         watchSession?.startSession()
+
+        // BGTaskScheduler requires handlers to be registered before launch
+        // finishes. The relay uses them to retry undelivered fall incidents
+        // when iOS wakes the app in the background.
+        NativeAppleWatchAlertRelay.shared.registerBackgroundTasks()
         return super.application(application, didFinishLaunchingWithOptions: launchOptions)
     }
 
@@ -191,8 +196,47 @@ import WatchConnectivity
 
             // Dart calls "sendCancelAlert" when the user taps "I'm OK" on the phone.
             // WatchSessionManager will propagate the cancellation to the Apple Watch.
+            // The optional incidentId/fallTimestamp target the incident being
+            // cancelled. The backend cancellation is persisted in the native
+            // relay first, so it survives Flutter suspension or process death
+            // (same behaviour as Android's MainActivity).
             case "sendCancelAlert":
-                self?.watchSession?.sendCancelAlert()
+                let args = call.arguments as? [String: Any]
+                let incidentID = (args?["incidentId"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallTimestamp = (args?["fallTimestamp"] as? NSNumber)?.int64Value
+                NativeAppleWatchAlertRelay.shared.requestCancel(
+                    incidentID: (incidentID?.isEmpty ?? true) ? nil : incidentID,
+                    fallTimestamp: fallTimestamp
+                )
+                // Watches only honour an incidentId matching their active
+                // alert, so only forward watch-generated UUIDs.
+                self?.watchSession?.sendCancelAlert(
+                    incidentID: RelayQueueLogic.normalizedIncidentID(incidentID),
+                    fallTimestamp: fallTimestamp
+                )
+
+            case "enqueuePendingAlert":
+                guard let args = call.arguments as? [String: Any],
+                      let timestamp = (args["timestamp"] as? NSNumber)?.int64Value,
+                      let clientAlertID = args["clientAlertId"] as? String,
+                      let queuedID = NativeAppleWatchAlertRelay.shared.enqueuePhoneAlert(
+                          timestamp: timestamp,
+                          clientAlertID: clientAlertID
+                      ) else {
+                    result(FlutterError(
+                        code: "INVALID_ARGS",
+                        message: "Missing or invalid incident",
+                        details: nil
+                    ))
+                    return
+                }
+                result(queuedID)
+                return
+
+            case "takeRelayOutcomes":
+                result(NativeAppleWatchAlertRelay.shared.takeOutcomes())
+                return
 
             case "configureNativeAlertRelay":
                 guard let args = call.arguments as? [String: Any],
