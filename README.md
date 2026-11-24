@@ -58,7 +58,7 @@ root Makefile only orchestrates common checks.
 ## Local Requirements
 
 - Flutter SDK for the two mobile apps.
-- Android Studio, Android SDK, and JDK 17 for Android/Wear OS builds.
+- Android Studio, Android SDK, and JDK 21 for Android builds and lint (Wear OS still builds with JDK 17).
 - Xcode for iOS/watchOS builds.
 - Docker Compose or Podman Compose for the backend.
 - GitHub CLI if you need to create or inspect pull requests locally.
