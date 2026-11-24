@@ -28,8 +28,58 @@ uses a native `JobService` to register or cancel it after process death or
 temporary network loss. During the 30-second cancellation window, the watch plays a
 looping alarm and posts a full-screen-intent notification. If Android does not
 grant full-screen access, the same notification remains as a persistent
-heads-up alert with an **I'm OK — Cancel** action. Foreground cancellation
-uses a single tap on the displayed button.
+heads-up alert whose **Open to cancel** action opens the alert screen; the
+notification itself never cancels. Cancelling always needs a deliberate
+**1.5-second press-and-hold** on **I'm OK** (a green fill shows progress, a
+haptic tick confirms, releasing early aborts), matching watchOS. TalkBack users
+get a "Hold to cancel" action that opens an explicit Yes/No confirmation. The
+countdown is announced through a polite live region (every 10 s, then each of
+the last 5 s); alert text follows the system font size up to 1.3x. Per-second
+haptics are played by the foreground service, so they also work screen-off.
+
+If the process dies during the 30-second window, the active incident
+(incident id, fall timestamp, deadline) is restored from private storage and
+the alert screen/notification come back; an expired incident is discarded.
+
+## Watch ↔ phone contract
+
+Every confirmed fall gets an `incidentId` (lowercase random UUID). Paths and
+legacy fields are unchanged so phone builds without incident ids keep working.
+
+| Direction | Path | Transport | Payload |
+| --- | --- | --- | --- |
+| watch → phone | `/fall_event` | message | 8-byte big-endian fall `timestamp` (ms), then UTF-8 `incidentId` (36 bytes) |
+| watch → phone | `/fall_event` | data item | `timestamp`, `updatedAt`, `incidentId` |
+| watch → phone | `/cancel_alert` | message | JSON `{"event":"alert_cancelled","incidentId":…,"fallTimestamp":…}` |
+| watch → phone | `/cancel_alert` | data item | `timestamp` (= fall time), `fallTimestamp`, `incidentId`, `cancelledAt`, `updatedAt` |
+| phone → watch | `/cancel_alert` | message | optional JSON `incidentId` / `fallTimestamp` |
+
+Incoming phone cancels: with an `incidentId`, ignored unless it matches the
+active alert; with only `fallTimestamp`, must match the active fall; with
+neither (legacy phone), accepted only while an alert is active.
+
+Data items use one path each, so a newer incident overwrites an older one.
+Cancelling deletes the queued `/fall_event` item (a cancelled fall is never
+replayed after a long disconnect, and a cancel cannot be overtaken by its own
+fall). A new fall deletes any undelivered `/cancel_alert` item, so an old
+cancel can never close the new alert on an older phone build; worst case the
+previous incident escalates, which is the safe direction.
+
+## Sensor batching and battery
+
+The service prefers the **wake-up** accelerometer
+(`getDefaultSensor(TYPE_ACCELEROMETER, true)`) at 25 Hz with a 5 s
+`maxReportLatency`. The sensor hub buffers samples in its FIFO while the CPU
+sleeps and wakes it only to deliver a batch (≤ 0.2 wake-ups/s; fewer callbacks
+than before while the screen is on). The previous non-wake-up sensor stopped
+delivering, and dropped samples, once the CPU slept, so screen-off falls could
+be missed. If no wake-up variant exists or its FIFO holds less than 2 s, the
+previous non-wake-up 500 ms batching is used. No monitoring wake lock is held;
+a 35 s wake lock is taken only once a fall is confirmed. Trade-off: up to 5 s
+extra alert latency and a small number of sleep wake-ups, measured on device
+via diagnostics (`sensor_registration`, `sensor_elapsed_ms` vs
+`delivery_elapsed_ms`). Sampling stays at 25 Hz: 50 Hz doubles FIFO fill and
+thus wake-ups when the FIFO limits batching, unjustified without measurements.
 
 Algorithm defaults are `0.35 g` low acceleration, `4.2 g` impact, `80°`
 orientation change, and `160 ms` minimum low-acceleration duration. Detection
@@ -163,7 +213,15 @@ make check
 
 This runs:
 
-- JVM tests.
+- JVM tests (including trace replay).
+- Kover line-coverage gate (`make coverage`, `koverVerifyDebug`). It covers the
+  JVM-testable logic (detection, diagnostics storage, alert contract and
+  persistence, alert UI/sensor policy) and must stay at or above 90 % (it
+  measured 100 % when introduced). Activity/Compose
+  UI, services, receivers, the content provider and the
+  Handler/Data Layer/SharedPreferences singletons are excluded because they
+  need a device; they delegate their decisions to the covered classes. The
+  HTML/XML report is in `app/build/reports/kover/`.
 - Android lint.
 - Gradle build.
 
@@ -186,6 +244,28 @@ Prioritize tests around:
 - urgent notification, sound, and cancellation lifecycle;
 - full-screen-intent denial falling back to an actionable notification;
 - debug automation paths not being exposed in production.
+
+## Replay traces
+
+`FallTraceReplayTest` replays every trace in `app/src/test/resources/traces/`
+through the production `FallAlgorithm` (default thresholds, 5 s cooldown, as in
+`FallDetectionService`) and checks the expected outcome.
+
+Format: exactly the diagnostics export (`samples-*.csv.gz` from the ZIP, or the
+same data as plain `.csv`). The header is `FallDiagnosticSample.HEADER`; only
+`sensor_elapsed_ms` (monotonic ms, non-decreasing) and `ax_ms2`, `ay_ms2`,
+`az_ms2` (m/s²) are required, other columns are ignored, so detector output in
+the file never influences the replay.
+
+Each trace must be listed in `traces/labels.csv` (`file,expect_fall,description`,
+description optional and quoted if it contains commas); an unlabelled file
+fails the test. To add a real recording: copy the exported segment (optionally
+trimmed around the event) into the folder, add a label row with what actually
+happened, and run `make test`. Do not add personal data to descriptions.
+
+The checked-in `synthetic-*.csv` traces (fall forward, fall sideways, sitting
+down hard, table bump, walking) are hand-shaped approximations, **not real
+recordings**; regenerate them with `python3 scripts/generate_synthetic_traces.py`.
 
 ## Sensor And Safety Notes
 
