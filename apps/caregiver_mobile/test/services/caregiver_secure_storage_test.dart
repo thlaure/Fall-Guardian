@@ -192,4 +192,121 @@ void main() {
     expect(await service.migrateSecureStorage(), isTrue);
     expect(keychain.accessibilityOf('caregiver_device_id'), 'unlocked');
   });
+
+  group('locked iPhone (plugin read returns null without error)', () {
+    test('readExistingSecureValue separates absent from locked', () async {
+      final keychain = FakeKeychain(legacyItems)..locked = true;
+
+      expect(await readExistingSecureValue(keychain, 'missing'), isNull);
+      await expectLater(
+        readExistingSecureValue(keychain, 'caregiver_device_token'),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+
+      keychain.containsKeyThrows = true;
+      await expectLater(
+        readExistingSecureValue(keychain, 'missing'),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+
+      keychain.locked = false;
+      expect(
+        await readExistingSecureValue(keychain, 'caregiver_device_token'),
+        'token-1',
+      );
+    });
+
+    test('a locked background launch defers instead of marking done', () async {
+      final keychain = FakeKeychain(legacyItems)..locked = true;
+
+      expect(await migration(keychain).run(), isFalse);
+
+      expect(keychain.items.containsKey(marker), isFalse);
+      expect(keychain.accessibilityOf('caregiver_device_token'), 'unlocked');
+
+      keychain.locked = false;
+      expect(await migration(keychain).run(), isTrue);
+      expect(keychain.accessibilityOf('caregiver_device_token'), newClass);
+    });
+
+    test(
+      'null reads of existing items abort even when lock state is unknown',
+      () async {
+        final keychain = FakeKeychain(legacyItems)
+          ..locked = true
+          ..protectedDataStateUnknown = true;
+
+        expect(await migration(keychain).run(), isFalse);
+
+        expect(keychain.items.containsKey(marker), isFalse);
+        expect(keychain.items['caregiver_device_id'], ('device-1', 'unlocked'));
+        expect(
+          keychain.items.keys,
+          isNot(contains(endsWith('migration_backup'))),
+        );
+      },
+    );
+
+    test('a keychain error on containsKey aborts the migration', () async {
+      final keychain = FakeKeychain(legacyItems)
+        ..locked = true
+        ..protectedDataStateUnknown = true
+        ..containsKeyThrows = true;
+
+      expect(await migration(keychain).run(), isFalse);
+      expect(keychain.items.containsKey(marker), isFalse);
+    });
+
+    test('never registers a new device when credentials are locked', () async {
+      final keychain = FakeKeychain({
+        ...legacyItems,
+        'caregiver_linked': 'true',
+      })..locked = true;
+      final requests = <http.Request>[];
+      final service = CaregiverBackendService(
+        baseUrl: 'http://api.test',
+        storage: keychain,
+        isIOSPlatform: true,
+        client: MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode({'deviceId': 'orphan', 'deviceToken': 'orphan-token'}),
+            201,
+          );
+        }),
+      );
+
+      await expectLater(
+        service.ensureRegistered(),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+      await expectLater(
+        service.reportAlertReceived('alert-1'),
+        throwsA(isA<SecureStorageUnavailableException>()),
+      );
+
+      expect(requests, isEmpty);
+      expect(keychain.items['caregiver_device_token']?.$1, 'token-1');
+      expect(keychain.items['caregiver_device_id']?.$1, 'device-1');
+    });
+
+    test('still registers on a fresh install', () async {
+      final keychain = FakeKeychain()..locked = true;
+      final service = CaregiverBackendService(
+        baseUrl: 'http://api.test',
+        storage: keychain,
+        isIOSPlatform: true,
+        client: MockClient(
+          (request) async => http.Response(
+            jsonEncode({'deviceId': 'device-new', 'deviceToken': 'token-new'}),
+            201,
+          ),
+        ),
+      );
+
+      await service.ensureRegistered();
+
+      expect(keychain.items['caregiver_device_id']?.$1, 'device-new');
+    });
+  });
 }

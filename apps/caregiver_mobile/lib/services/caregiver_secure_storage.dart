@@ -22,6 +22,45 @@ const caregiverSecureStorage = FlutterSecureStorage(
 /// restore an item exactly as it was if a rewrite fails.
 const legacyIOSOptions = IOSOptions();
 
+/// A keychain item exists but cannot be read right now (iPhone locked and
+/// the item is in a class that requires the device to be unlocked).
+class SecureStorageUnavailableException implements Exception {
+  const SecureStorageUnavailableException(this.key, [this.cause]);
+
+  final String key;
+  final Object? cause;
+
+  @override
+  String toString() => 'SecureStorageUnavailableException($key)';
+}
+
+/// Reads [key], distinguishing "absent" from "present but unreadable".
+///
+/// On iOS, flutter_secure_storage 9.x `read()` returns null (not an error)
+/// for an item that exists but is locked: its first query fails with
+/// errSecInteractionNotAllowed and its synchronizable fallback query then
+/// reports "not found". Treating that null as "absent" would make the app
+/// register a new device and silently unlink the caregiver. `containsKey`
+/// only queries attributes, so it either finds the item or surfaces the
+/// keychain error; both mean the value must not be treated as missing.
+Future<String?> readExistingSecureValue(
+  FlutterSecureStorage storage,
+  String key, {
+  IOSOptions? iOptions,
+}) async {
+  final value = await storage.read(key: key, iOptions: iOptions);
+  if (value != null) return value;
+
+  final bool exists;
+  try {
+    exists = await storage.containsKey(key: key, iOptions: iOptions);
+  } catch (error) {
+    throw SecureStorageUnavailableException(key, error);
+  }
+  if (exists) throw SecureStorageUnavailableException(key);
+  return null;
+}
+
 /// Moves keychain items written with the legacy accessibility class to
 /// [caregiverIOSOptions].
 ///
@@ -51,13 +90,24 @@ class SecureStorageAccessibilityMigration {
 
   static String backupKeyFor(String key) => '$key$_backupSuffix';
 
-  /// Returns true when all items use the new accessibility class.
+  /// Returns true when all items use the new accessibility class. Returns
+  /// false (and changes nothing) when protected data is unavailable, so the
+  /// caller retries on the next foreground resume.
   Future<bool> run() async {
     if (!enabled) return true;
 
     try {
-      final marker = await _storage.read(
-        key: markerKey,
+      // Null on platforms/mocks without the API: rely on the read checks.
+      if (await _storage.isCupertinoProtectedDataAvailable() == false) {
+        developer.log(
+          'Keychain migration deferred: protected data unavailable',
+          name: 'SecureStorageAccessibilityMigration',
+        );
+        return false;
+      }
+      final marker = await readExistingSecureValue(
+        _storage,
+        markerKey,
         iOptions: caregiverIOSOptions,
       );
       if (marker == _currentVersion) return true;
@@ -71,7 +121,12 @@ class SecureStorageAccessibilityMigration {
 
     var allMigrated = true;
     for (final key in keys) {
-      if (!await _migrateKey(key)) {
+      final result = await _migrateKey(key);
+      if (result == _KeyMigration.unavailable) {
+        // The keychain is locked: stop now, retry the whole run later.
+        return false;
+      }
+      if (result == _KeyMigration.failed) {
         allMigrated = false;
       }
     }
@@ -96,17 +151,40 @@ class SecureStorageAccessibilityMigration {
     return allMigrated;
   }
 
-  Future<bool> _migrateKey(String key) async {
+  Future<_KeyMigration> _migrateKey(String key) async {
     final backupKey = backupKeyFor(key);
     String? value;
     try {
       // The plugin's read ignores accessibility, so legacy items are found.
-      value = await _storage.read(key: key, iOptions: legacyIOSOptions);
+      // A locked item throws instead of looking absent.
+      value = await readExistingSecureValue(
+        _storage,
+        key,
+        iOptions: legacyIOSOptions,
+      );
       // A backup only exists if a previous run was interrupted between the
       // plugin's delete and re-add of the item: restore from it.
-      value ??= await _storage.read(key: backupKey, iOptions: legacyIOSOptions);
-      if (value == null) return true;
+      value ??= await readExistingSecureValue(
+        _storage,
+        backupKey,
+        iOptions: legacyIOSOptions,
+      );
+      if (value == null) return _KeyMigration.done;
+    } on SecureStorageUnavailableException catch (error) {
+      developer.log(
+        'Keychain migration deferred: $error',
+        name: 'SecureStorageAccessibilityMigration',
+      );
+      return _KeyMigration.unavailable;
+    } catch (error) {
+      developer.log(
+        'Keychain migration read failed: $error',
+        name: 'SecureStorageAccessibilityMigration',
+      );
+      return _KeyMigration.failed;
+    }
 
+    try {
       await _storage.write(
         key: backupKey,
         value: value,
@@ -126,16 +204,14 @@ class SecureStorageAccessibilityMigration {
       }
 
       await _storage.delete(key: backupKey, iOptions: caregiverIOSOptions);
-      return true;
+      return _KeyMigration.done;
     } catch (error) {
       developer.log(
         'Keychain migration failed for one item: $error',
         name: 'SecureStorageAccessibilityMigration',
       );
-      if (value != null) {
-        await _restore(key, value);
-      }
-      return false;
+      await _restore(key, value);
+      return _KeyMigration.failed;
     }
   }
 
@@ -143,7 +219,11 @@ class SecureStorageAccessibilityMigration {
   /// The backup key is intentionally kept for the next attempt.
   Future<void> _restore(String key, String value) async {
     try {
-      final current = await _storage.read(key: key, iOptions: legacyIOSOptions);
+      final current = await readExistingSecureValue(
+        _storage,
+        key,
+        iOptions: legacyIOSOptions,
+      );
       if (current == value) return;
       await _storage.write(key: key, value: value, iOptions: legacyIOSOptions);
     } catch (error) {
@@ -154,3 +234,5 @@ class SecureStorageAccessibilityMigration {
     }
   }
 }
+
+enum _KeyMigration { done, failed, unavailable }

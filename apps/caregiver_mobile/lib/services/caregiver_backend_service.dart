@@ -367,8 +367,15 @@ class CaregiverBackendService {
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh) {
-      final deviceId = await _storage.read(key: _deviceIdKey);
-      final deviceToken = await _storage.read(key: _deviceTokenKey);
+      // Throws SecureStorageUnavailableException when a credential exists
+      // but is locked (iPhone locked, legacy keychain class). Registering a
+      // new device in that case would orphan the caregiver's links: fail
+      // this call instead; it is retried once the phone is unlocked.
+      final deviceId = await readExistingSecureValue(_storage, _deviceIdKey);
+      final deviceToken = await readExistingSecureValue(
+        _storage,
+        _deviceTokenKey,
+      );
 
       if (deviceId != null &&
           deviceId.isNotEmpty &&

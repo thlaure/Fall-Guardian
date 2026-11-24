@@ -6,7 +6,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 /// Mirrors the plugin's native behavior that matters for migrations:
 /// - `read` ignores accessibility (an item is found whatever its class);
 /// - `write` with a different accessibility deletes the item, then re-adds it;
-/// - while [locked], items in the `unlocked` class cannot be read.
+/// - while [locked], reading an item in the `unlocked` class returns null
+///   WITHOUT an error (the plugin's errSecInteractionNotAllowed is masked by
+///   its synchronizable fallback query), exactly like iOS;
+/// - `containsKey` queries attributes only, so it still finds locked items
+///   (or throws when [containsKeyThrows] simulates a keychain error);
+/// - `isCupertinoProtectedDataAvailable` reports `!locked`.
 class FakeKeychain extends FlutterSecureStorage {
   FakeKeychain([Map<String, String> unlockedItems = const {}]) : super() {
     unlockedItems.forEach((key, value) => items[key] = (value, 'unlocked'));
@@ -14,6 +19,11 @@ class FakeKeychain extends FlutterSecureStorage {
 
   final Map<String, (String, String)> items = {};
   bool locked = false;
+  bool containsKeyThrows = false;
+
+  /// Simulates platforms/mocks where protected-data state is unknown (null),
+  /// so only the read/containsKey checks protect the migration.
+  bool protectedDataStateUnknown = false;
 
   /// Keys whose re-add fails after the plugin already deleted the old item.
   final Set<String> failAddAfterDelete = {};
@@ -40,10 +50,7 @@ class FakeKeychain extends FlutterSecureStorage {
     final item = items[key];
     if (item == null) return null;
     if (locked && item.$2 == 'unlocked') {
-      throw PlatformException(
-        code: '-25308',
-        message: 'Interaction not allowed',
-      );
+      return null;
     }
     if (_written.contains(key) && corruptReadsAfterWrite.contains(key)) {
       return '${item.$1}-corrupted';
@@ -90,4 +97,27 @@ class FakeKeychain extends FlutterSecureStorage {
   }) async {
     items.remove(key);
   }
+
+  @override
+  Future<bool> containsKey({
+    required String key,
+    IOSOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    MacOsOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (containsKeyThrows) {
+      throw PlatformException(
+        code: '-25308',
+        message: 'Interaction not allowed',
+      );
+    }
+    return items.containsKey(key);
+  }
+
+  @override
+  Future<bool?> isCupertinoProtectedDataAvailable() async =>
+      protectedDataStateUnknown ? null : !locked;
 }
