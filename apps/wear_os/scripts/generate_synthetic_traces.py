@@ -3,7 +3,8 @@
 
 The traces are hand-shaped approximations of wrist motion at 25 Hz, written in
 the exact CSV format exported by the watch diagnostics (FallDiagnosticSample).
-They are NOT real recordings. Real labelled recordings can be dropped into
+They are MODEL-GENERATED regression fixtures, NOT real recordings, and do
+not validate real-world detection accuracy. Real labelled recordings can be dropped into
 app/src/test/resources/traces/ next to them (see the README section
 "Replay traces").
 

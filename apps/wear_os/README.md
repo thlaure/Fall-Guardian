@@ -38,8 +38,21 @@ the last 5 s); alert text follows the system font size up to 1.3x. Per-second
 haptics are played by the foreground service, so they also work screen-off.
 
 If the process dies during the 30-second window, the active incident
-(incident id, fall timestamp, deadline) is restored from private storage and
-the alert screen/notification come back; an expired incident is discarded.
+(incident id, wall fall timestamp, deadline, monotonic anchor, boot count) is
+restored from private storage, the alert screen/notification come back, and
+the fall is re-sent to the phone with the **same** `incidentId` and original
+timestamp (the phone de-duplicates by id), in case the process died before
+the Data Layer write. An expired or cancelled incident is never restored.
+
+The countdown runs on `SystemClock.elapsedRealtime()` anchored at detection,
+so a wall-clock change cannot end or extend it; after a reboot
+(`Settings.Global.BOOT_COUNT` differs) it falls back to the wall clock. The
+phone still receives the wall-clock timestamp.
+
+All alert decisions (start, cancel, phone cancel, expiry, restore, Data Layer
+ordering) live in the pure, unit-tested `AlertSession`; `WearDataSender` only
+supplies clocks and executes its effects. The hold-to-cancel confirmation
+buzz is played by the service after it stops the alarm vibration.
 
 ## Watch ↔ phone contract
 
@@ -68,13 +81,17 @@ previous incident escalates, which is the safe direction.
 ## Sensor batching and battery
 
 The service prefers the **wake-up** accelerometer
-(`getDefaultSensor(TYPE_ACCELEROMETER, true)`) at 25 Hz with a 5 s
-`maxReportLatency`. The sensor hub buffers samples in its FIFO while the CPU
+(`getDefaultSensor(TYPE_ACCELEROMETER, true)`) at 25 Hz with a
+`maxReportLatency` of 5 s, capped to the FIFO space **reserved** for that
+sensor (`fifoReservedEventCount`; `fifoMaxEventCount` is shared with other
+sensors and not guaranteed). The sensor hub buffers samples in its FIFO while the CPU
 sleeps and wakes it only to deliver a batch (≤ 0.2 wake-ups/s; fewer callbacks
 than before while the screen is on). The previous non-wake-up sensor stopped
 delivering, and dropped samples, once the CPU slept, so screen-off falls could
 be missed. If no wake-up variant exists or its FIFO holds less than 2 s, the
-previous non-wake-up 500 ms batching is used. No monitoring wake lock is held;
+previous non-wake-up 500 ms batching is used. The `sensor_registration`
+diagnostic event logs `wake_up`, `fifo_reserved`, `fifo_max`, `period_us` and
+`batch_us`. No monitoring wake lock is held;
 a 35 s wake lock is taken only once a fall is confirmed. Trade-off: up to 5 s
 extra alert latency and a small number of sleep wake-ups, measured on device
 via diagnostics (`sensor_registration`, `sensor_elapsed_ms` vs
@@ -245,6 +262,34 @@ Prioritize tests around:
 - full-screen-intent denial falling back to an actionable notification;
 - debug automation paths not being exposed in production.
 
+## Battery validation before release
+
+**Status: pending.** The wake-up sensor change has not been measured on a
+physical watch yet; do not release it until this is done.
+
+Compare a build with this change against the #129 baseline (non-wake-up
+accelerometer, 500 ms batches, no monitoring wake lock) on the same watch:
+
+1. Install the build, charge to 100 %, unplug, keep the phone paired, wear
+   the watch for a normal day (or leave it still on a desk for a
+   worst-case-idle run). Same scenario and duration for both builds.
+2. Enable diagnostics (see "Detection diagnostics"). Record start/end battery
+   with `adb -s <watch> shell dumpsys battery` and reset/collect
+   `adb -s <watch> shell dumpsys batterystats --reset` /
+   `adb -s <watch> shell dumpsys batterystats com.fallguardian` after 24 h.
+3. Export the diagnostics ZIP and check:
+   - `events-*.csv` `sensor_registration`: `wake_up=true` and the
+     `fifo_reserved` / `batch_us` actually used;
+   - `samples-*.csv.gz`: no multi-second `sensor_elapsed_ms` gaps while the
+     screen is off (the #129 build shows them), and the
+     `delivery_elapsed_ms` cadence (≈ one batch per `batch_us`);
+   - heartbeat gaps (CPU sleep is expected and fine).
+4. Acceptance: 24 h drain at most a few percentage points above the #129
+   baseline, with continuous screen-off samples. Record the numbers here.
+
+Diagnostics recording itself costs battery; compare runs with the same
+diagnostics setting.
+
 ## Replay traces
 
 `FallTraceReplayTest` replays every trace in `app/src/test/resources/traces/`
@@ -263,9 +308,13 @@ fails the test. To add a real recording: copy the exported segment (optionally
 trimmed around the event) into the folder, add a label row with what actually
 happened, and run `make test`. Do not add personal data to descriptions.
 
-The checked-in `synthetic-*.csv` traces (fall forward, fall sideways, sitting
-down hard, table bump, walking) are hand-shaped approximations, **not real
-recordings**; regenerate them with `python3 scripts/generate_synthetic_traces.py`.
+> **The checked-in `synthetic-*.csv` traces are model-generated regression
+> fixtures, not real-world validation.** They (fall forward, fall sideways,
+> sitting down hard, table bump, walking) are hand-shaped approximations that
+> pin the detector's current behaviour so changes are noticed; they say nothing
+> about sensitivity or false-positive rate on real wearers. Regenerate them
+> with `python3 scripts/generate_synthetic_traces.py`. `labels.csv` allows `#`
+> comment lines.
 
 ## Sensor And Safety Notes
 

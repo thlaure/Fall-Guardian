@@ -166,9 +166,13 @@ object TraceReplay {
         if (file.name.endsWith(".gz")) GZIPInputStream(file.inputStream()) else file.inputStream()
 }
 
-/** `file,expect_fall,description` — description may be quoted and contain commas. */
+/**
+ * `file,expect_fall,description` — description may be quoted and contain
+ * commas. Lines starting with `#` are comments.
+ */
 object TraceLabels {
     fun read(file: File): Map<String, Boolean> = file.readLines()
+        .filterNot { it.trimStart().startsWith("#") }
         .drop(1)
         .filter { it.isNotBlank() }
         .associate { line ->
