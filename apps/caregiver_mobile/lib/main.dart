@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -111,7 +110,18 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     _startActiveAlertPolling();
   }
 
+  /// Runs once per launch before any credential read in the foreground.
+  /// Moves legacy keychain items to the locked-readable class so background
+  /// push handling can report alert receipt; never drops credentials.
+  late final Future<void> _secureStorageMigration = _backend
+      .migrateSecureStorage()
+      .then<void>((_) {})
+      .catchError((Object e) {
+        developer.log('Keychain migration skipped: $e', name: '_AppRootState');
+      });
+
   Future<void> _refreshLinkState() async {
+    await _secureStorageMigration;
     try {
       await _backend.ensureRegistered();
       final linked = await _backend.refreshLinkedProtectedPersons();
@@ -133,8 +143,9 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
         options: DefaultFirebaseOptions.currentPlatform,
       );
       await _pushService.initialize();
+      await _secureStorageMigration;
       await _registerFcmToken(await _pushService.getFcmToken());
-      FirebaseMessaging.instance.onTokenRefresh.listen(_registerFcmToken);
+      _pushService.onTokenRefresh.listen(_registerFcmToken);
     } catch (e) {
       developer.log('Push bootstrap skipped: $e', name: '_AppRootState');
     }
@@ -159,9 +170,11 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     if (_recoveringActiveAlert) return;
     _recoveringActiveAlert = true;
     try {
-      final alert = await _backend.getLatestActiveAlertData();
-      if (alert != null) {
-        _handleAlert(alert);
+      await _secureStorageMigration;
+      // Oldest first so alerts are presented in the order they happened.
+      final alerts = (await _backend.getActiveAlertsData()).reversed.toList();
+      if (alerts.isNotEmpty) {
+        alerts.forEach(_handleAlert);
       } else if (mounted && _activeAlertPresentation.clearActive()) {
         setState(() {});
       }
@@ -188,8 +201,10 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     if (!mounted) return;
     if (_activeAlertPresentation.show(data)) {
       unawaited(_reportAlertReceived(data));
-      _presentActiveAlert(data);
     }
+    // Presents the queue front; no-op while an alert route is visible (the
+    // visible screen picks up newer data through its live listenable).
+    _presentActiveAlert();
   }
 
   Future<void> _reportAlertReceived(Map<String, dynamic> data) async {
@@ -208,8 +223,10 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
     }
   }
 
-  void _presentActiveAlert(Map<String, dynamic> data) {
-    if (_activeAlertRouteShowing) return;
+  void _presentActiveAlert() {
+    final data = _activeAlertPresentation.activeAlert;
+    final liveAlert = _activeAlertPresentation.activeAlertListenable;
+    if (_activeAlertRouteShowing || data == null) return;
     _activeAlertRouteShowing = true;
 
     void pushAlertRoute() {
@@ -218,14 +235,31 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
         return;
       }
 
+      var dismissed = false;
+      // Dismiss only the alert this route shows: the queue may have been
+      // cleared and refilled by polling while the screen was open.
+      void dismissShownAlert() {
+        if (ActiveAlertPresentationState.alertId(
+              _activeAlertPresentation.activeAlert ?? const {},
+            ) ==
+            ActiveAlertPresentationState.alertId(data)) {
+          _activeAlertPresentation.dismissActive();
+        }
+      }
+
       Navigator.of(context, rootNavigator: true)
           .push<void>(
             MaterialPageRoute<void>(
               fullscreenDialog: true,
               builder: (_) => ActiveAlertScreen(
                 alertData: data,
+                liveAlert: liveAlert,
+                backend: _backend,
+                waitingCount: _activeAlertPresentation.waitingCount,
                 onDismiss: () {
-                  _activeAlertPresentation.dismissActive();
+                  if (dismissed) return;
+                  dismissed = true;
+                  dismissShownAlert();
                   Navigator.of(context, rootNavigator: true).maybePop();
                 },
               ),
@@ -234,7 +268,12 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
           .whenComplete(() {
             if (!mounted) return;
             _activeAlertRouteShowing = false;
-            setState(_activeAlertPresentation.dismissActive);
+            // Back gesture closes without onDismiss: still dismiss the alert
+            // that was shown (only if it is still the queue front).
+            if (!dismissed) dismissShownAlert();
+            setState(() {});
+            // Next alert for another protected person, if any.
+            _presentActiveAlert();
           });
     }
 

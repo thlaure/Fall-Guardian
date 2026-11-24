@@ -1096,4 +1096,126 @@ void main() {
       'CaregiverApiException(Failed to fetch, 503, unavailable)',
     );
   });
+
+  group('new optional alert fields', () {
+    CaregiverBackendService serviceReturning(List<Map<String, dynamic>> items) {
+      FlutterSecureStorage.setMockInitialValues({
+        'caregiver_device_id': 'device-1',
+        'caregiver_device_token': 'token-1',
+      });
+      return CaregiverBackendService(
+        baseUrl: baseUrl,
+        client: MockClient(
+          (request) async =>
+              http.Response(jsonEncode({'hydra:member': items}), 200),
+        ),
+      );
+    }
+
+    test('current API shape maps to push data without new keys', () {
+      final data = CaregiverBackendService.toPushAlertData({
+        'id': 'alert-1',
+        'status': 'sent',
+        'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+        'latitude': null,
+        'longitude': null,
+        'acknowledged': false,
+        'protectedPersonName': null,
+      });
+
+      expect(data, {
+        'type': 'fall_alert',
+        'alertId': 'alert-1',
+        'fallTimestamp': '2026-05-16T09:00:00+00:00',
+      });
+    });
+
+    test('newer API fields are carried as push-data strings', () {
+      final data = CaregiverBackendService.toPushAlertData({
+        'id': 'alert-1',
+        'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+        'cancelDeadlineAt': '2026-05-16T09:00:30+00:00',
+        'protectedPersonName': 'Marie',
+        'acknowledgedAt': '2026-05-16T09:02:00+00:00',
+        'acknowledgedByMe': false,
+        'acknowledgementCount': 1,
+      });
+
+      expect(data['protectedPersonName'], 'Marie');
+      expect(data['cancelDeadlineAt'], '2026-05-16T09:00:30+00:00');
+      expect(data['acknowledgedAt'], '2026-05-16T09:02:00+00:00');
+      expect(data['acknowledgedByMe'], 'false');
+      expect(data['acknowledgementCount'], '1');
+    });
+
+    test('malformed optional fields are dropped', () {
+      final data = CaregiverBackendService.toPushAlertData({
+        'id': 'alert-1',
+        'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+        'protectedPersonName': '  ',
+        'acknowledgedByMe': 'yes',
+        'acknowledgementCount': '3',
+      });
+
+      expect(data.containsKey('protectedPersonName'), isFalse);
+      expect(data.containsKey('acknowledgedByMe'), isFalse);
+      expect(data.containsKey('acknowledgementCount'), isFalse);
+    });
+
+    test(
+      'getActiveAlertsData returns all waiting alerts, newest first',
+      () async {
+        final service = serviceReturning([
+          {
+            'id': 'marie',
+            'status': 'sent',
+            'fallDetectedAt': '2026-05-16T08:00:00+00:00',
+            'acknowledged': false,
+            'protectedPersonName': 'Marie',
+          },
+          {
+            'id': 'paul',
+            'status': 'sent',
+            'fallDetectedAt': '2026-05-16T09:00:00+00:00',
+            'acknowledged': false,
+            'protectedPersonName': 'Paul',
+            'acknowledgedByMe': false,
+            'acknowledgementCount': 1,
+          },
+        ]);
+
+        final alerts = await service.getActiveAlertsData();
+
+        expect(alerts.map((a) => a['alertId']), ['paul', 'marie']);
+        expect(alerts.first['acknowledgementCount'], '1');
+        expect(alerts.last['protectedPersonName'], 'Marie');
+      },
+    );
+
+    test(
+      'acknowledgedByMe takes precedence over legacy acknowledged',
+      () async {
+        final service = serviceReturning([
+          {
+            'id': 'handled-by-me',
+            'status': 'sent',
+            'fallDetectedAt': '2026-05-16T08:00:00+00:00',
+            'acknowledged': false,
+            'acknowledgedByMe': true,
+          },
+          {
+            'id': 'still-waiting',
+            'status': 'sent',
+            'fallDetectedAt': '2026-05-16T07:00:00+00:00',
+            'acknowledged': true,
+            'acknowledgedByMe': false,
+          },
+        ]);
+
+        final alerts = await service.getActiveAlertsData();
+
+        expect(alerts.single['alertId'], 'still-waiting');
+      },
+    );
+  });
 }

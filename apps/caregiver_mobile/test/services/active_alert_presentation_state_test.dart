@@ -67,4 +67,55 @@ void main() {
     // re-shown even though it was previously dismissed.
     expect(state.show({'alertId': 'alert-0'}), isTrue);
   });
+
+  test('queues alerts for several people and presents them in order', () {
+    final state = ActiveAlertPresentationState();
+
+    expect(state.show({'alertId': 'alert-1'}), isTrue);
+    expect(state.show({'alertId': 'alert-2'}), isTrue);
+
+    expect(state.activeAlert?['alertId'], 'alert-1');
+    expect(state.waitingCount, 1);
+
+    state.dismissActive();
+
+    expect(state.activeAlert?['alertId'], 'alert-2');
+    expect(state.waitingCount, 0);
+  });
+
+  test('newer data for a queued alert updates its live listenable', () {
+    final state = ActiveAlertPresentationState();
+    state.show({'alertId': 'alert-1', 'latitude': '48.1'});
+    final live = state.activeAlertListenable!;
+    var notifications = 0;
+    live.addListener(() => notifications++);
+
+    expect(
+      state.show({'alertId': 'alert-1', 'acknowledgementCount': '1'}),
+      isFalse,
+    );
+
+    expect(notifications, 1);
+    expect(live.value['latitude'], '48.1');
+    expect(live.value['acknowledgementCount'], '1');
+  });
+
+  test('a reminder reopens an alert closed without handling it', () {
+    final state = ActiveAlertPresentationState();
+    state.show({'alertId': 'alert-1'});
+    state.dismissActive();
+
+    expect(state.show({'alertId': 'alert-1', 'reminder': '0'}), isFalse);
+    expect(state.show({'alertId': 'alert-1', 'reminder': '1'}), isTrue);
+    expect(state.activeAlert?['reminder'], '1');
+  });
+
+  test('empty state exposes no active alert', () {
+    final state = ActiveAlertPresentationState();
+
+    state.dismissActive();
+
+    expect(state.activeAlertListenable, isNull);
+    expect(state.waitingCount, 0);
+  });
 }
