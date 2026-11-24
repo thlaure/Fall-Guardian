@@ -5,8 +5,7 @@ assisted iPhone.
 
 ## Responsibilities
 
-- Read Apple Watch motion data.
-- Detect possible falls with native watchOS logic.
+- Receive Apple's system fall events (`CMFallDetectionManager`).
 - Show watch-side detection/alert state.
 - Send fall events to the assisted iPhone.
 - Keep detection thresholds and event contracts aligned with the assisted app.
@@ -16,7 +15,7 @@ assisted iPhone.
 ```text
 Apple system detects a serious fall while the app is foregrounded or suspended
 -> CMFallDetectionManager wakes the Watch extension
--> Watch shows Fall Guardian's cancel action and sends one idempotent event to iPhone
+-> Watch generates an incidentId, shows its alert, and sends one idempotent event to iPhone
 -> iPhone native relay creates the API alert immediately
 -> API owns the 30-second cancellation window and caregiver escalation
 ```
@@ -28,13 +27,78 @@ the API grace period starts even when the Flutter engine has not been launched.
 watchOS does not allow a third-party app to force itself into the foreground.
 The supported background surface is therefore a time-sensitive local
 notification that wakes the display, plays the default notification sound, and
-offers **I'm OK — Cancel Alert**. Tapping the notification launches the app and
-restores the original synchronized countdown. The action is ignored once the
-30-second cancellation deadline has expired.
+offers **I'm OK — Open to cancel**. Neither the notification tap nor the action
+cancels anything: both open the app on its alert screen, where cancelling
+always requires the deliberate 1.5-second hold.
 
-The standard sound respects the person's notification and Focus settings.
-Bypassing silent mode or Focus would require Apple's separately approved
+The alert screen counts down from the fall time (the same origin used by the
+phone and API). Apple delivers its event only after its own check-in prompt, so
+the 30-second window may already be over when the watch receives it. The
+screen then shows **Notifying your caregivers…** instead of a 0 countdown, and
+the hold-to-cancel stays available for at least 30 seconds after the alert is
+shown. Escalation timing is unchanged: the API owns the deadline; a late cancel
+is relayed and the API decides what it still means.
+
+Time-sensitive delivery lets the alert break through Focus (it still respects
+silent mode). Bypassing silent mode would require Apple's separately approved
 Critical Alerts entitlement.
+
+### Apple resolution handling
+
+`CMFallDetectionEvent.resolution` decides what Fall Guardian does
+(`SystemFallPolicy` in `WatchAlertDeadline.swift`):
+
+| Resolution | Meaning | Fall Guardian |
+| --- | --- | --- |
+| `confirmed` | wearer said they fell and need help | alert + relay to iPhone |
+| `unresponsive` | wearer did not answer Apple's prompt | alert + relay to iPhone |
+| unknown future value | — | alert + relay (safety first) |
+| `dismissed` | wearer fell but answered "I'm OK" | no alert, recorded locally only |
+| `rejected` | wearer said they did not fall | ignored |
+
+`dismissed` is not forwarded: the phone contract has no "resolved without
+alert" event, and an `alert_cancelled` for an incident the phone never saw could
+cancel a different, real incident on phone builds that ignore `incidentId`.
+
+### WatchConnectivity contract
+
+Keys are only ever added, so the current iPhone app keeps working.
+
+| Direction | Payload |
+| --- | --- |
+| watch → phone | `event=fall_detected`, `timestamp` (ms), `incidentId` (lowercase UUID) |
+| watch → phone | `event=alert_cancelled`, `fallTimestamp` (ms), `incidentId` |
+| phone → watch | `event=alert_cancelled`, `fallTimestamp`, optional `incidentId` |
+| phone → watch (context) | `alertCancelled`, `fallTimestamp`, optional `incidentId` |
+| phone → watch | `event=set_thresholds` — handled in DEBUG builds only |
+
+An incoming cancel carrying `incidentId` is accepted only when it matches the
+active alert; without one, `fallTimestamp` must match (previous behaviour).
+
+### Time-sensitive notification entitlement
+
+The entitlements file declares
+`com.apple.developer.usernotifications.time-sensitive` next to the approved
+`com.apple.developer.health.fall-detection`. Both projects that build the watch
+app (`FallGuardian.xcodeproj` and `apps/assisted_mobile/ios/Runner.xcodeproj`)
+use automatic signing, so Xcode enables the capability on the App ID and
+regenerates the profile on the next device build or archive. Command-line
+device builds need `-allowProvisioningUpdates` for that. Simulator builds are
+unaffected.
+
+If automatic provisioning fails (for example "Provisioning profile doesn't
+include the com.apple.developer.usernotifications.time-sensitive entitlement"):
+
+1. Apple Developer portal → Certificates, Identifiers & Profiles → Identifiers
+   → `com.fallguardian.app.watchkitapp`.
+2. Enable **Time Sensitive Notifications**, keep **Fall Detection** enabled,
+   save.
+3. Profiles → regenerate (edit + save) every profile for that App ID, or let
+   Xcode do it: Signing & Capabilities → toggle "Automatically manage signing"
+   off and on, then build to a device once.
+4. Rebuild and confirm with
+   `codesign -d --entitlements - "FallGuardian Watch App.app"` that both
+   entitlements are present.
 
 Apple's `CMFallDetectionManager` is the supported background trigger. It needs
 Apple's Fall Detection entitlement and the wearer's permission. Apple owns its
@@ -42,14 +106,11 @@ own emergency/SOS flow; Fall Guardian only starts its separate caregiver grace
 window after receiving the system event. A rejected Apple event does not create
 a Fall Guardian alert.
 
-Raw algorithm defaults are `0.7 g` low acceleration, `2.5 g` impact,
-`50°` orientation change, and `60 ms` minimum low-acceleration duration.
-An impact alone never triggers: the detector also requires orientation change
-or qualified low acceleration, followed by about two seconds of stillness.
-
 Foreground cancellation requires a deliberate 1.5-second hold. Apple system
 detection is the only production source. The custom raw-accelerometer detector
-is intentionally suspended on watchOS in every authorization state. If Apple
+(`FallAlgorithm`, `FallDetectionManager`) is compiled in DEBUG builds only, is
+not started by the app, and is kept for physical tuning experiments and its
+unit tests; `set_thresholds` is ignored outside DEBUG. If Apple
 detection is unavailable or the wearer denies permission, the app reports that
 monitoring is inactive instead of implying background protection.
 
@@ -64,19 +125,28 @@ apps/watchos/
 ├── FallGuardian/
 │   ├── FallGuardian.xcodeproj
 │   └── FallGuardian Watch App/
-├── FallGuardian WatchKit Extension/
-├── FallGuardianTests/
+├── FallGuardianTests/       XCTest suites run by `swift test`
+├── Package.swift            host test harness for the pure logic files
+├── scripts/check_coverage.py
 └── Makefile
 ```
 
 Core source files include:
 
-- `ContentView.swift`: watch UI.
-- `FallAlgorithm.swift`: fall detection rule.
-- `FallDetectionManager.swift`: sensor lifecycle and detection coordination.
+- `ContentView.swift`: watch UI and its thin view model.
+- `FallGuardianApp.swift`: app delegate, notifications, Apple fall detection.
+- `WatchAlertDeadline.swift`: pure, unit-tested logic — deadlines, incident
+  identity, WatchConnectivity payloads, cancel matching, resolution policy,
+  alert state machine. Kept in this existing file because
+  `Runner.xcodeproj` compiles an explicit list of watch source files.
 - `WatchSessionManager.swift`: communication with the iPhone.
-- `FallGuardianTests/FallAlgorithmExecutableTests.swift`: deterministic
-  algorithm tests run by `make test`.
+- `FallAlgorithm.swift`, `FallDetectionManager.swift`: DEBUG-only custom
+  detector.
+- `Localizable.xcstrings`, `InfoPlist.xcstrings`: English and French strings.
+
+Note: `Runner.xcodeproj` (the production build) does not yet reference the
+two string catalogs or the `fr` region; until it does, that build falls back to
+English text.
 
 ## Requirements
 
@@ -117,9 +187,16 @@ make check
 Individual commands:
 
 ```sh
+make test       # swift test (XCTest) on the macOS host, with coverage data
+make coverage   # test + line-coverage gate (MIN_COVERAGE, default 93%)
 make analyze
 make build
-make test
+```
+
+Without an installed watchOS simulator runtime, use the generic destination:
+
+```sh
+make check DESTINATION='generic/platform=watchOS Simulator'
 ```
 
 ## Testing Guidance
@@ -141,8 +218,9 @@ Prioritize tests around:
 - edge cases around sensor spikes;
 - watch-to-phone message payloads;
 - lifecycle behavior when the watch app is paused or resumed.
-- notification action cancellation while the interface is closed;
-- countdown restoration after opening a fall notification.
+- notification action opening the hold-to-cancel screen;
+- countdown restoration after opening a fall notification;
+- late Apple delivery showing "Notifying your caregivers…".
 
 ## Sensor And Safety Notes
 
