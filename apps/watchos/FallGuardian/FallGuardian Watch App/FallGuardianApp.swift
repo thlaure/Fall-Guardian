@@ -51,8 +51,8 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
     private let notificationIdentifier = "fall-guardian-active-fall"
     private let categoryIdentifier = "FALL_GUARDIAN_FALL_ALERT"
     private let openActionIdentifier = "FALL_GUARDIAN_OPEN_ALERT"
-    private let activeFallTimestampKey = "active_watch_fall_timestamp"
-    private let activeFallIncidentIdKey = "active_watch_fall_incident_id"
+    private let activeFallTimestampKey = WatchIncidentStorageKey.activeTimestamp
+    private let activeFallIncidentIdKey = WatchIncidentStorageKey.activeIncidentId
     private let activeFallPresentedAtKey = "active_watch_fall_presented_at"
     private var expiryWorkItem: DispatchWorkItem?
 
@@ -154,14 +154,9 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
             return nil
         }
 
-        let incidentId: String
-        if let storedId = defaults.string(forKey: activeFallIncidentIdKey), !storedId.isEmpty {
-            incidentId = storedId
-        } else {
-            // Upgrade path: an alert stored before incident ids existed.
-            incidentId = WatchIncident.make(timestamp: timestamp).id
-            defaults.set(incidentId, forKey: activeFallIncidentIdKey)
-        }
+        // Same id as the pending phone delivery, even for an alert stored by
+        // a build that predates incident ids.
+        let incidentId = WatchIncidentIdentity.resolve(timestamp: timestamp, store: defaults)
 
         let alert = ActiveAlert(
             incident: WatchIncident(id: incidentId, timestamp: timestamp),

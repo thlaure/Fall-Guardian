@@ -63,8 +63,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     // MARK: - Singleton
 
     static let shared = WatchSessionManager()
-    private let pendingFallTimestampKey = "pending_watch_fall_timestamp"
-    private let pendingFallIncidentIdKey = "pending_watch_fall_incident_id"
+    private let pendingFallTimestampKey = WatchIncidentStorageKey.pendingTimestamp
+    private let pendingFallIncidentIdKey = WatchIncidentStorageKey.pendingIncidentId
 
     // Private init prevents anyone from creating a second instance.
     private override init() {
@@ -440,15 +440,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         let timestamp = Int64(defaults.double(forKey: pendingFallTimestampKey))
         guard timestamp > 0, WCSession.default.activationState == .activated else { return }
 
-        let incidentId: String
-        if let storedId = defaults.string(forKey: pendingFallIncidentIdKey), !storedId.isEmpty {
-            incidentId = storedId
-        } else if let activeIncident, activeIncident.timestamp == timestamp {
-            incidentId = activeIncident.id
-        } else {
-            // Upgrade path: a pending event stored before incident ids existed.
-            incidentId = WatchIncident.make(timestamp: timestamp).id
-        }
+        // Reuses the id stored by the notification path for the same incident
+        // (or generates one shared id for a pre-upgrade pending event).
+        let incidentId = WatchIncidentIdentity.resolve(timestamp: timestamp, store: defaults)
         let message = WatchPayloads.fallDetected(
             WatchIncident(id: incidentId, timestamp: timestamp)
         )

@@ -72,6 +72,55 @@ struct WatchIncident: Equatable {
     }
 }
 
+// MARK: - Persisted incident identity
+
+/// Minimal key-value storage so identity resolution is testable without
+/// UserDefaults. UserDefaults conforms as-is.
+protocol WatchKeyValueStore: AnyObject {
+    func string(forKey defaultName: String) -> String?
+    func double(forKey defaultName: String) -> Double
+    func set(_ value: Any?, forKey defaultName: String)
+}
+
+extension UserDefaults: WatchKeyValueStore {}
+
+/// UserDefaults keys for the two places an in-flight incident is persisted:
+/// the active alert (notification path) and the pending phone delivery.
+enum WatchIncidentStorageKey {
+    static let activeTimestamp = "active_watch_fall_timestamp"
+    static let activeIncidentId = "active_watch_fall_incident_id"
+    static let pendingTimestamp = "pending_watch_fall_timestamp"
+    static let pendingIncidentId = "pending_watch_fall_incident_id"
+}
+
+enum WatchIncidentIdentity {
+    private static let slots = [
+        (timestamp: WatchIncidentStorageKey.activeTimestamp, id: WatchIncidentStorageKey.activeIncidentId),
+        (timestamp: WatchIncidentStorageKey.pendingTimestamp, id: WatchIncidentStorageKey.pendingIncidentId),
+    ]
+
+    /// Stable id for a persisted incident. Reuses an id already stored for the
+    /// same timestamp by either path; otherwise (incident stored by a build
+    /// that predates incident ids) generates ONE id and writes it to every
+    /// slot holding that timestamp, so the notification path, the pending
+    /// phone delivery, and therefore the phone all agree.
+    static func resolve(
+        timestamp: Int64,
+        store: WatchKeyValueStore,
+        generate: () -> String = { UUID().uuidString.lowercased() }
+    ) -> String {
+        let matching = slots.filter { Int64(store.double(forKey: $0.timestamp)) == timestamp }
+        let existing = matching
+            .compactMap { store.string(forKey: $0.id) }
+            .first { !$0.isEmpty }
+        let id = (existing ?? generate()).lowercased()
+        for slot in matching where store.string(forKey: slot.id) != id {
+            store.set(id, forKey: slot.id)
+        }
+        return id
+    }
+}
+
 // MARK: - WatchConnectivity contract
 
 /// Dictionary keys exchanged with the assisted iPhone app. Only ADD keys:

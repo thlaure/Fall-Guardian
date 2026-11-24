@@ -102,6 +102,83 @@ final class WatchPayloadsTests: XCTestCase {
     }
 }
 
+// MARK: - Persisted incident identity
+
+private final class FakeStore: WatchKeyValueStore {
+    var values: [String: Any] = [:]
+    func string(forKey key: String) -> String? { values[key] as? String }
+    func double(forKey key: String) -> Double { values[key] as? Double ?? 0 }
+    func set(_ value: Any?, forKey key: String) { values[key] = value }
+}
+
+final class WatchIncidentIdentityTests: XCTestCase {
+    private typealias Key = WatchIncidentStorageKey
+
+    func testReusesIdStoredByNotificationPathForPendingDelivery() {
+        let store = FakeStore()
+        store.values = [
+            Key.activeTimestamp: 5_000.0, Key.activeIncidentId: "notif-id",
+            Key.pendingTimestamp: 5_000.0,
+        ]
+        XCTAssertEqual(WatchIncidentIdentity.resolve(timestamp: 5_000, store: store) { "generated" }, "notif-id")
+        XCTAssertEqual(store.string(forKey: Key.pendingIncidentId), "notif-id", "pending slot now agrees")
+    }
+
+    func testReusesPendingIdForNotificationPath() {
+        let store = FakeStore()
+        store.values = [
+            Key.activeTimestamp: 5_000.0,
+            Key.pendingTimestamp: 5_000.0, Key.pendingIncidentId: "pending-id",
+        ]
+        XCTAssertEqual(WatchIncidentIdentity.resolve(timestamp: 5_000, store: store) { "generated" }, "pending-id")
+        XCTAssertEqual(store.string(forKey: Key.activeIncidentId), "pending-id")
+    }
+
+    func testLegacyIncidentGetsOneIdSharedByBothPaths() {
+        // Stored by a build without incident ids: neither slot has an id.
+        let store = FakeStore()
+        store.values = [Key.activeTimestamp: 5_000.0, Key.pendingTimestamp: 5_000.0]
+        var generated = 0
+        let generate = { () -> String in generated += 1; return "ID-\(generated)" }
+
+        let fromNotification = WatchIncidentIdentity.resolve(timestamp: 5_000, store: store, generate: generate)
+        let fromPendingDelivery = WatchIncidentIdentity.resolve(timestamp: 5_000, store: store, generate: generate)
+
+        XCTAssertEqual(fromNotification, "id-1", "lowercased")
+        XCTAssertEqual(fromPendingDelivery, fromNotification, "watch and phone agree")
+        XCTAssertEqual(generated, 1, "generated once, then reused")
+        XCTAssertEqual(store.string(forKey: Key.activeIncidentId), "id-1")
+        XCTAssertEqual(store.string(forKey: Key.pendingIncidentId), "id-1")
+    }
+
+    func testIgnoresIdsBelongingToAnotherIncident() {
+        let store = FakeStore()
+        store.values = [
+            Key.activeTimestamp: 9_000.0, Key.activeIncidentId: "other-incident",
+            Key.pendingTimestamp: 5_000.0,
+        ]
+        XCTAssertEqual(WatchIncidentIdentity.resolve(timestamp: 5_000, store: store) { "fresh" }, "fresh")
+        XCTAssertEqual(store.string(forKey: Key.activeIncidentId), "other-incident", "untouched")
+        XCTAssertEqual(store.string(forKey: Key.pendingIncidentId), "fresh")
+    }
+
+    func testDefaultGeneratorProducesLowercaseUUID() {
+        let id = WatchIncidentIdentity.resolve(timestamp: 1, store: FakeStore())
+        XCTAssertNotNil(UUID(uuidString: id))
+        XCTAssertEqual(id, id.lowercased())
+    }
+
+    func testUserDefaultsConformsToStore() {
+        let defaults = UserDefaults(suiteName: "WatchIncidentIdentityTests")!
+        defaults.removePersistentDomain(forName: "WatchIncidentIdentityTests")
+        defaults.set(7_000.0, forKey: Key.pendingTimestamp)
+        let id = WatchIncidentIdentity.resolve(timestamp: 7_000, store: defaults) { "ud-id" }
+        XCTAssertEqual(id, "ud-id")
+        XCTAssertEqual(defaults.string(forKey: Key.pendingIncidentId), "ud-id")
+        defaults.removePersistentDomain(forName: "WatchIncidentIdentityTests")
+    }
+}
+
 // MARK: - Cancel matching
 
 final class WatchCancelMatcherTests: XCTestCase {
