@@ -26,6 +26,11 @@ deploy_path=$1
 env_file=$2
 new_image=$3
 
+# Only the application services are pulled/recreated; postgres and redis keep
+# running untouched during a deploy.
+app_services=(app messenger alert_reconciler)
+last_image_file=.last-deployed-api-image
+
 health_attempts=${HEALTH_ATTEMPTS:-36}
 health_interval_seconds=${HEALTH_INTERVAL_SECONDS:-5}
 
@@ -52,10 +57,18 @@ dump_diagnostics() {
     compose logs --tail=100 app || true
 }
 
-previous_container=$(compose ps -q app 2>/dev/null || true)
+# Rollback target: the image of the existing app container (even if stopped or
+# restarting), else the image recorded by the last successful deploy.
+previous_container=$(compose ps -a -q app 2>/dev/null | head -n 1 || true)
 previous_image=""
 if [ -n "$previous_container" ]; then
     previous_image=$(docker inspect --format '{{.Config.Image}}' "$previous_container" 2>/dev/null || true)
+fi
+if [ -z "$previous_image" ] && [ -f "$last_image_file" ]; then
+    previous_image=$(cat "$last_image_file")
+fi
+if [ -z "$previous_image" ]; then
+    echo "::warning::No previous API image found: automatic rollback is unavailable for this deploy." >&2
 fi
 echo "Previous API image: ${previous_image:-<none>}"
 echo "Target API image:   ${new_image}"
@@ -63,17 +76,18 @@ echo "Target API image:   ${new_image}"
 export API_IMAGE="$new_image"
 
 echo "==> Pulling images"
-compose pull
+compose pull "${app_services[@]}"
 
 echo "==> Running database migrations with the new image"
 compose run --rm migrate \
     php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
 
 echo "==> Starting new containers"
-compose up -d --no-build --remove-orphans
+compose up -d --no-build --remove-orphans "${app_services[@]}"
 
 echo "==> Probing health"
 if probe_health; then
+    printf '%s\n' "$new_image" > "$last_image_file"
     echo "Deployed ${new_image}."
     exit 0
 fi
@@ -88,7 +102,7 @@ fi
 
 echo "==> Rolling containers back to ${previous_image} (database schema is not rolled back)"
 export API_IMAGE="$previous_image"
-compose up -d --no-build --remove-orphans
+compose up -d --no-build --remove-orphans "${app_services[@]}"
 if probe_health; then
     echo "::error::Rolled back to ${previous_image}; deploy of ${new_image} failed." >&2
 else
