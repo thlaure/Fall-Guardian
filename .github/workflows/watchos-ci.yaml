@@ -12,6 +12,9 @@ on:
       - main
   workflow_dispatch: ~
 
+permissions:
+  contents: read
+
 concurrency:
   group: watchos-ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -24,7 +27,7 @@ jobs:
       relevant: ${{ steps.filter.outputs.relevant }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
 
@@ -58,10 +61,10 @@ jobs:
       DESTINATION: generic/platform=watchOS Simulator
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Test
-        run: make test
+      - name: Test with coverage gate
+        run: make coverage
 
       - name: Analyze
         run: make analyze
