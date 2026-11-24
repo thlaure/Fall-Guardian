@@ -86,14 +86,19 @@ data class AccelerometerPlan(
         // latency while keeping sleep wake-ups to <= 0.2 per second.
         const val WAKE_UP_LATENCY_US = 5_000_000
 
-        // A wake-up sensor whose FIFO holds less than this much data would
-        // wake the AP too often (or per sample without a FIFO); not worth it.
+        // Only the FIFO space *reserved* for this sensor is guaranteed
+        // (fifoReservedEventCount); fifoMaxEventCount is shared with other
+        // sensors. Less than 2 s of reserved buffer would wake the AP too
+        // often (or per sample with none), so the previous non-wake-up setup
+        // is kept in that case.
         const val MIN_WAKE_UP_BUFFER_US = 2_000_000L
 
-        fun choose(wakeUpAvailable: Boolean, wakeUpFifoMaxEvents: Int): AccelerometerPlan {
-            val bufferUs = wakeUpFifoMaxEvents.toLong() * SAMPLING_PERIOD_US
+        fun choose(wakeUpAvailable: Boolean, wakeUpFifoReservedEvents: Int): AccelerometerPlan {
+            val bufferUs = wakeUpFifoReservedEvents.toLong() * SAMPLING_PERIOD_US
             return if (wakeUpAvailable && bufferUs >= MIN_WAKE_UP_BUFFER_US) {
-                AccelerometerPlan(true, SAMPLING_PERIOD_US, WAKE_UP_LATENCY_US)
+                // Never ask to batch longer than the guaranteed buffer.
+                val latencyUs = minOf(WAKE_UP_LATENCY_US.toLong(), bufferUs).toInt()
+                AccelerometerPlan(true, SAMPLING_PERIOD_US, latencyUs)
             } else {
                 AccelerometerPlan(false, SAMPLING_PERIOD_US, NON_WAKE_UP_LATENCY_US)
             }

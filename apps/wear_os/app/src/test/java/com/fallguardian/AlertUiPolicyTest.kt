@@ -53,20 +53,24 @@ class AlertUiPolicyTest {
 
 class AccelerometerPlanTest {
     @Test fun `uses wake-up accelerometer with long FIFO batches when the hub can buffer`() {
-        val plan = AccelerometerPlan.choose(wakeUpAvailable = true, wakeUpFifoMaxEvents = 3_000)
+        val plan = AccelerometerPlan.choose(wakeUpAvailable = true, wakeUpFifoReservedEvents = 3_000)
         assertEquals(AccelerometerPlan(true, 40_000, 5_000_000), plan)
     }
 
-    @Test fun `wake-up FIFO of exactly two seconds is accepted`() {
-        assertTrue(AccelerometerPlan.choose(true, 50).useWakeUpSensor)   // 50 * 40 ms = 2 s
+    @Test fun `reserved FIFO of exactly two seconds is accepted with a matching batch`() {
+        // 50 * 40 ms = 2 s: batch no longer than the guaranteed buffer.
+        assertEquals(AccelerometerPlan(true, 40_000, 2_000_000), AccelerometerPlan.choose(true, 50))
         assertFalse(AccelerometerPlan.choose(true, 49).useWakeUpSensor)
+        // 100 events = 4 s reserved: 4 s batch, below the 5 s cap.
+        assertEquals(4_000_000, AccelerometerPlan.choose(true, 100).maxReportLatencyUs)
     }
 
     @Test fun `falls back to previous non-wake-up behaviour`() {
         val previous = AccelerometerPlan(false, 40_000, 500_000)
-        assertEquals(previous, AccelerometerPlan.choose(wakeUpAvailable = false, wakeUpFifoMaxEvents = 3_000))
-        // No FIFO: a wake-up sensor would wake the CPU for every sample.
-        assertEquals(previous, AccelerometerPlan.choose(wakeUpAvailable = true, wakeUpFifoMaxEvents = 0))
+        assertEquals(previous, AccelerometerPlan.choose(wakeUpAvailable = false, wakeUpFifoReservedEvents = 3_000))
+        // No reserved FIFO (the shared max FIFO is not guaranteed): a wake-up
+        // sensor could wake the CPU for every sample.
+        assertEquals(previous, AccelerometerPlan.choose(wakeUpAvailable = true, wakeUpFifoReservedEvents = 0))
     }
 
     @Test fun `sampling stays at 25 Hz so the 160 ms window has four samples`() {

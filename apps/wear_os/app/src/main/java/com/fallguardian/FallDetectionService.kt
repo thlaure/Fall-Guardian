@@ -172,11 +172,13 @@ class FallDetectionService : Service(), SensorEventListener {
         // CPU only to deliver a batch. The default (non-wake-up) sensor stops
         // reporting — and drops samples — once the screen is off and the CPU
         // sleeps, which is how falls were missed. Fall back when unavailable
-        // or when its FIFO is too small to batch efficiently.
+        // or when the FIFO space reserved for it is too small to batch
+        // efficiently (fifoMaxEventCount is shared with other sensors and
+        // guarantees nothing).
         val wakeUpAccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
         accelerometerPlan = AccelerometerPlan.choose(
             wakeUpAvailable = wakeUpAccelerometer?.isWakeUpSensor == true,
-            wakeUpFifoMaxEvents = wakeUpAccelerometer?.fifoMaxEventCount ?: 0
+            wakeUpFifoReservedEvents = wakeUpAccelerometer?.fifoReservedEventCount ?: 0
         )
         accelerometer = if (accelerometerPlan.useWakeUpSensor) {
             wakeUpAccelerometer
@@ -280,7 +282,7 @@ class FallDetectionService : Service(), SensorEventListener {
             plan.samplingPeriodUs,
             plan.maxReportLatencyUs
         )
-        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};fifo_max=${sensor.fifoMaxEventCount};period_us=${plan.samplingPeriodUs};batch_us=${plan.maxReportLatencyUs}")
+        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};fifo_reserved=${sensor.fifoReservedEventCount};fifo_max=${sensor.fifoMaxEventCount};period_us=${plan.samplingPeriodUs};batch_us=${plan.maxReportLatencyUs}")
     }
 
     // --- Step 3: Process each accelerometer reading ---
