@@ -6,17 +6,19 @@
 // typical watch apps), so this single file renders both possible states:
 //
 //   IDLE      — shield icon + "Monitoring active" text (normal state)
-//   ALERT     — large countdown number with red background (fall detected)
+//   ALERT     — countdown, then "Notifying your caregivers…" (fall detected);
+//               the 1.5 s hold-to-cancel stays available in both phases
 //
 // Architecture pattern used here: MVVM (Model-View-ViewModel)
 //   - `ContentView`      is the VIEW      — pure SwiftUI, no business logic.
 //   - `ContentViewModel` is the VIEWMODEL — holds state and coordinates actions.
-//   - FallDetectionManager / WatchSessionManager are the MODEL layer.
+//   - WatchAlertState (pure, unit tested) holds the alert state machine;
+//     SystemFallDetectionService / WatchSessionManager are the platform layer.
 //
 // How data flows end-to-end when a fall happens:
 //   1. CMFallDetectionManager wakes the app with Apple's system event
 //   2. SystemFallDetectionService validates and deduplicates the event
-//   3. ContentViewModel.alertDidFire(timestamp:) sets isAlertActive = true
+//   3. ContentViewModel.alertDidFire(_:) starts WatchAlertState
 //   4. SwiftUI re-renders ContentView, showing alertView
 //   5. WatchSessionManager.sendFallEvent() notifies the iPhone
 //
@@ -31,6 +33,7 @@ import Observation  // Provides the @Observable macro used on ContentViewModel.
                     // Replaces the older @ObservedObject/@Published pattern on iOS 17+.
 import WatchKit     // WKInterfaceDevice.current().play() — haptic feedback API.
 import CoreMotion
+import Accessibility  // AccessibilityNotification.Announcement for VoiceOver.
 
 // MARK: - ContentView (the SwiftUI view)
 
@@ -48,72 +51,66 @@ struct ContentView: View {
 
     /// The main body of the view.  SwiftUI reads this whenever state changes.
     var body: some View {
-        // `Group` is a transparent container — it lets us branch between two
-        // completely different layouts without wrapping them in a VStack or ZStack.
         Group {
-            if viewModel.isAlertActive {
-                alertView   // Big red countdown — fall is in progress.
+            if let phase = viewModel.alertPhase {
+                alertView(phase: phase)  // Fall in progress.
             } else {
-                idleView    // Shield icon — monitoring quietly.
+                idleView                 // Shield icon — monitoring quietly.
             }
         }
         // Called once when the view first appears on screen.
-        // We start the fall detection pipeline here rather than in init() because
-        // watchOS may keep the view object alive in memory while suspending the app;
+        // We start the services here rather than in init() because watchOS may
+        // keep the view object alive in memory while suspending the app;
         // onAppear fires reliably when the face is actually visible.
         .onAppear {
             viewModel.startIfNeeded()
         }
-        // Fires every time remainingSeconds changes (every 0.5 s during an alert).
-        // We use it to play haptic feedback — physical vibrations on the watch band
-        // that alert the user even if they are not looking at the screen.
-        .onChange(of: viewModel.remainingSeconds) { _, newValue in
-            guard viewModel.isAlertActive, newValue > 0 else { return }
-            // `.notification` is a stronger buzz used under 10 s (urgent!).
-            // `.click` is a subtle tap used during the normal countdown.
-            WKInterfaceDevice.current().play(newValue <= 10 ? .notification : .click)
-        }
     }
 
-    // MARK: - Alert view (fall detected, countdown active)
+    // MARK: - Alert view (fall detected)
 
-    /// Full-screen red layout shown during the 30-second alert window.
+    /// Full-screen red layout shown while an alert is active.
     ///
-    /// Design choices:
-    ///   - Very large countdown number (56 pt bold) — readable at a glance.
-    ///   - Dark red background with an animated red flash under 10 s — urgency cue.
-    ///   - Instruction text is dim (60% opacity) so it doesn't compete with the number.
-    ///   - `ignoresSafeArea()` extends the background to the screen edges and
-    ///     under the digital crown area on round Apple Watch faces.
-    private var alertView: some View {
-        ZStack {  // ZStack layers views from back to front (like CSS z-index).
-
-            // Base background: near-black with a slight red tint.
+    /// Fonts use Dynamic Type text styles so they follow the wearer's text-size
+    /// setting; `minimumScaleFactor` keeps the largest sizes on screen.
+    private func alertView(phase: WatchAlertPhase) -> some View {
+        ZStack {
             Color(red: 0.1, green: 0, blue: 0).ignoresSafeArea()
 
-            // Animated red flash overlay — only shown when 10 or fewer seconds remain.
-            // `.repeatForever(autoreverses: true)` pulses the opacity in and out
-            // continuously without any manual timer.
-            if viewModel.remainingSeconds <= 10 {
+            if isUrgent(phase) {
                 Color.red.opacity(0.3).ignoresSafeArea()
-                    .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true),
-                               value: viewModel.remainingSeconds)
             }
 
-            // Foreground content: number + instruction.
             VStack(spacing: 6) {
-                // The main countdown digit.  Updates every 0.5 s via ContentViewModel.
-                Text("\(viewModel.remainingSeconds)")
-                    .font(.system(size: 56, weight: .bold))
-                    .foregroundColor(.white)
+                switch phase {
+                case .countdown(let seconds):
+                    Text(verbatim: "\(seconds)")
+                        .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .accessibilityLabel(Text("\(seconds) seconds before your caregivers are notified"))
+                        .accessibilityAddTraits(.updatesFrequently)
+                case .notifyingCaregivers:
+                    Text("Notifying your caregivers…")
+                        .font(.headline)
+                        .minimumScaleFactor(0.6)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
 
-                Text("Hold 1.5 s")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: 130, minHeight: 38)
+                Text("I'm OK\nHold to cancel")
+                    .font(.footnote.weight(.semibold))
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .background(Color.green.opacity(0.85))
                     .clipShape(Capsule())
-                    .multilineTextAlignment(.center)
                     .contentShape(Capsule())
                     .onLongPressGesture(
                         minimumDuration: 1.5,
@@ -121,52 +118,55 @@ struct ContentView: View {
                     ) {
                         viewModel.cancelAlert()
                     }
-                    .accessibilityLabel("I'm OK. Cancel alert")
-                    .accessibilityHint("Touch and hold for one and a half seconds")
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text("I'm OK. Cancel alert"))
+                    .accessibilityHint(Text("Touch and hold for one and a half seconds"))
+                    .accessibilityAddTraits(.isButton)
+                    // No accessibilityAction on purpose: a single VoiceOver
+                    // double-tap must not cancel a safety alert. VoiceOver users
+                    // double-tap and hold, which passes the long press through.
             }
+            .padding(.horizontal, 4)
         }
-        // `containerBackground` sets the ambient color used by watchOS for the
-        // "page curl" transition and the navigation background on watchOS 10+.
         .containerBackground(.red.opacity(0.1), for: .navigation)
+    }
+
+    private func isUrgent(_ phase: WatchAlertPhase) -> Bool {
+        if case .countdown(let seconds) = phase { return seconds <= 10 }
+        return true
     }
 
     // MARK: - Idle view (no active alert, monitoring silently)
 
     /// Compact status view shown when no fall is in progress.
-    ///
-    /// Displays the app icon and a "Monitoring active" label to reassure the user
-    /// that detection is running.  A debug-only button is included so developers
-    /// can trigger a simulated fall without physically dropping the device.
     private var idleView: some View {
         VStack(spacing: 8) {
-
-            // Circular icon — layered using ZStack (teal circle behind shield icon).
             ZStack {
                 Circle()
                     .fill(Color(red: 0.0, green: 0.247, blue: 0.235))  // Dark teal
                     .frame(width: 52, height: 52)
-                Image(systemName: "shield.fill")  // SF Symbols icon — built into the OS.
-                    .font(.system(size: 28))
-                    .foregroundColor(.white)
+                Image(systemName: "shield.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
             }
+            .accessibilityHidden(true)
 
-            Text("Fall Guardian")
+            Text(verbatim: "Fall Guardian")
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundStyle(.white)
 
             Text(viewModel.monitoringStatusText)
                 .font(.caption)
-                .foregroundColor(Color(red: 0.820, green: 0.878, blue: 0.843))  // Light mint
+                .foregroundStyle(Color(red: 0.820, green: 0.878, blue: 0.843))  // Light mint
                 .multilineTextAlignment(.center)
 
             // Test builds only — stripped from App Store / release builds.
-            // The condition is evaluated at compile time, not runtime.
             #if DEBUG || TESTING
             Button("Test Apple relay (debug)") {
                 viewModel.simulateAppleSystemFall()
             }
-            .font(.system(size: 11))
-            .foregroundColor(Color(red: 0.898, green: 0.412, blue: 0.290))
+            .font(.footnote)
+            .foregroundStyle(Color(red: 0.898, green: 0.412, blue: 0.290))
             #endif
         }
         .containerBackground(.black, for: .navigation)
@@ -175,71 +175,45 @@ struct ContentView: View {
 
 // MARK: - ContentViewModel (the business logic layer)
 
-/// Holds all state and coordinates actions between the UI and the underlying services.
+/// Thin coordinator between the UI, the pure `WatchAlertState` machine, and
+/// the platform services. Decisions (phase, haptics, announcements, cancel
+/// matching) live in tested pure types; this class only wires side effects.
 ///
-/// `@Observable` (from the Observation framework, iOS/watchOS 17+) is a macro that
-/// automatically instruments every stored property so SwiftUI knows exactly which
-/// views need to be re-drawn when a property changes.  It replaces the older
-/// `ObservableObject` + `@Published` pattern with zero boilerplate.
-///
-/// Threading note: `isAlertActive` and `remainingSeconds` are read by the SwiftUI
-/// render thread.  Every write to them must happen on the main thread.  Code below
-/// uses `DispatchQueue.main.async` and `await MainActor.run { }` to enforce this.
+/// Threading note: properties are read by SwiftUI on the main thread; every
+/// write happens on the main thread.
 @Observable
 class ContentViewModel {
 
     // MARK: - Published state (read by ContentView)
 
-    /// Whether the 30-second emergency countdown is currently running.
-    /// ContentView switches between idleView and alertView based on this flag.
-    var isAlertActive: Bool = false
+    /// nil = idle; otherwise what the alert screen shows.
+    var alertPhase: WatchAlertPhase?
 
-    /// Seconds remaining in the current alert countdown.
-    /// Starts at 30 (or less if there was network latency) and counts down to 0.
-    var remainingSeconds: Int = 30
+    var isAlertActive: Bool { alertState.isActive }
 
     /// Makes the important difference between system background monitoring and
-    /// the foreground accelerometer fallback visible to the wearer.
-    var monitoringStatusText: String = "Checking permission…"
+    /// an inactive watch visible to the wearer.
+    var monitoringStatusText: String = String(localized: "Checking permission…")
 
     // MARK: - Private state
 
-    /// The background task that drives the countdown timer.
-    /// Stored so we can cancel it if the alert is dismissed before it expires.
-    /// `Task<Void, Never>` means: runs asynchronously, never throws an error.
-    private var alertExpireTask: Task<Void, Never>?
+    private var alertState = WatchAlertState()
 
-    /// The millisecond-since-epoch timestamp captured when the fall was detected.
-    /// This is the shared reference point used by BOTH the watch and the phone to
-    /// compute `remainingSeconds = 30 - (now - fallTimestamp) / 1000`.
-    /// Using the same origin timestamp keeps both countdowns in sync even if there
-    /// is a small delay between when the watch detects the fall and when the phone
-    /// receives the notification.
-    private var fallTimestamp: Int64 = 0
+    /// The background task that drives the alert screen.
+    private var alertTickTask: Task<Void, Never>?
 
-    /// Cancel the countdown task when the ViewModel is deallocated.
-    /// Without this, a dismissed alert could leave a background Task running
-    /// and writing to deallocated memory.
     deinit {
-        alertExpireTask?.cancel()
+        alertTickTask?.cancel()
     }
 
     // MARK: - Lifecycle
 
-    /// Called by ContentView.onAppear — starts detection if not already running
-    /// and registers the callbacks that wire the services to the UI.
-    ///
-    /// Why not start in init()?  watchOS may create the ViewModel eagerly during
-    /// app warm-up.  `startIfNeeded()` guards against double-starting and only
-    /// runs the side-effecting setup once the view is actually on screen.
     func startIfNeeded() {
-        // Raw accelerometer detection is intentionally suspended on watchOS.
-        // Only Apple's supported background fall API drives production alerts.
-        FallDetectionManager.shared.stop()
-
         let systemDetection = SystemFallDetectionService.shared
-        systemDetection.onFallDetected = { [weak self] timestamp in
-            DispatchQueue.main.async { self?.alertDidFire(timestamp: timestamp, notifyUser: false) }
+        systemDetection.onFallDetected = { [weak self] incident in
+            DispatchQueue.main.async {
+                self?.alertDidFire(incident, presentedAt: WatchAlertNotificationService.nowMilliseconds())
+            }
         }
         systemDetection.onAuthorizationChanged = { [weak self] status in
             DispatchQueue.main.async { self?.applyDetectionMode(for: status) }
@@ -255,19 +229,14 @@ class ContentViewModel {
         }
 
         let notificationService = WatchAlertNotificationService.shared
-        notificationService.onCancelRequested = { [weak self] in
-            // The notification action already notified the phone.
-            self?.cancelAlert(notifyPhone: false)
-        }
         notificationService.requestAuthorizationIfNeeded()
 
         // If watchOS launched the app because the wearer tapped a fall
-        // notification, restore the incident's original synchronized countdown.
-        if let timestamp = notificationService.activeFallTimestamp() {
-            alertDidFire(timestamp: timestamp, notifyUser: false)
+        // notification (or its "Open to cancel" action), restore the incident.
+        if let active = notificationService.activeAlert() {
+            alertDidFire(active.incident, presentedAt: active.presentedAt)
         }
 
-        // In DEBUG + simulator builds, also start polling for test-script triggers.
         #if DEBUG && targetEnvironment(simulator)
         startDebugTriggerPolling()
         #endif
@@ -276,20 +245,10 @@ class ContentViewModel {
     // MARK: - Debug / simulator test helpers
 
     #if DEBUG && targetEnvironment(simulator)
-    /// Polls a pair of /tmp flag files written by the automated E2E test script
-    /// (`scripts/test_ios_watchos.sh`).  This lets the CI script simulate a fall
-    /// or a cancel without any UI interaction — no XCUITest framework needed.
-    ///
-    /// Polled files:
-    ///   /tmp/com.fallguardian.debugSimulateFall  → triggers simulateFall()
-    ///   /tmp/com.fallguardian.debugCancelWatch   → triggers cancelAlert()
-    ///
-    /// The loop runs every 500 ms.  Files are deleted after reading so each trigger
-    /// fires exactly once.
-    ///
-    /// `MainActor.run { }` is the async/await equivalent of `DispatchQueue.main.async`.
-    /// It ensures the state mutations happen on the main thread even though the
-    /// surrounding Task runs on a background thread.
+    /// Polls /tmp flag files written by `scripts/test_ios_watchos.sh` so the E2E
+    /// script can simulate a fall or a cancel without UI interaction.
+    ///   /tmp/com.fallguardian.debugSimulateFall  → simulateFall()
+    ///   /tmp/com.fallguardian.debugCancelWatch   → cancelAlert()
     private func startDebugTriggerPolling() {
         Task {
             while true {
@@ -309,25 +268,19 @@ class ContentViewModel {
             }
         }
     }
+
+    /// Fires a local fall and relays it, exercising watch + phone end-to-end.
+    func simulateFall() {
+        guard !isAlertActive else { return }
+        let now = WatchAlertNotificationService.nowMilliseconds()
+        let incident = WatchIncident.make(timestamp: now)
+        WatchAlertNotificationService.shared.presentFallAlert(incident)
+        alertDidFire(incident, presentedAt: now)
+        WatchSessionManager.shared.sendFallEvent(incident)
+    }
     #endif
 
     // MARK: - Actions
-
-    /// Manually triggers a fall event as if the algorithm had detected one.
-    ///
-    /// Used by:
-    ///   1. The debug button in idleView (developer testing on device/simulator).
-    ///   2. startDebugTriggerPolling() (automated E2E tests).
-    ///
-    /// We generate our own timestamp, fire the alert locally, AND send the event
-    /// to the phone so the full alert flow (watch countdown + phone notification)
-    /// is exercised end-to-end.
-    func simulateFall() {
-        guard !isAlertActive else { return }
-        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)  // ms since epoch
-        alertDidFire(timestamp: timestamp)                          // Update this device's UI.
-        WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)  // Notify the phone.
-    }
 
     /// Tests the same relay used by CMFallDetectionManager. It deliberately does
     /// not claim to emulate Apple's proprietary fall-detection sensor model.
@@ -338,115 +291,111 @@ class ContentViewModel {
         #endif
     }
 
-    /// Cancels the active alert, stops the countdown, and optionally notifies the phone.
+    /// Cancels the active alert and optionally notifies the phone.
     ///
-    /// - Parameter notifyPhone: Pass `false` when the cancel originated from the phone
-    ///   to avoid sending a cancel back (which would create an infinite loop).
-    ///   Default is `true` (user tapped the watch → phone should dismiss its alert too).
+    /// - Parameter notifyPhone: `false` when the cancel originated from the phone
+    ///   (avoids a cancel ping-pong loop).
     func cancelAlert(notifyPhone: Bool = true) {
-        alertExpireTask?.cancel()                // Stop the 0.5 s countdown loop.
-        WatchSessionManager.shared.stopPolling() // Stop waiting for a phone cancel.
-        isAlertActive = false                    // Switch UI back to idleView.
-        remainingSeconds = 30                    // Reset so the next alert starts at 30.
-        WatchAlertNotificationService.shared.clearAlert()
-        resumeDetectionMonitoring()
+        let cancelled = finishAlert()
         if notifyPhone {
             WKInterfaceDevice.current().play(.success)
-            // Tell the phone to dismiss its FallAlertScreen.
-            WatchSessionManager.shared.sendCancelAlert()
+            // Tell the phone to dismiss its alert, naming the incident.
+            WatchSessionManager.shared.sendCancelAlert(for: cancelled)
         }
     }
 
     // MARK: - Private alert logic
 
-    /// Starts the alert state machine when a fall is confirmed.
+    /// Starts the alert screen for an incident.
     ///
-    /// Step-by-step:
-    /// 1. Store the fall timestamp (used as countdown origin on both devices).
-    /// 2. Show the alert UI immediately.
-    /// 3. Compute `remainingSeconds` from the timestamp — if there was network
-    ///    delay before this method was called, we start at fewer than 30 s so
-    ///    the watch matches the phone countdown exactly.
-    /// 4. Cancel any previous countdown task (safety net for rapid re-triggers).
-    /// 5. Start polling for a phone-side cancel.
-    /// 6. Launch the countdown Task:
-    ///    - Wakes every 0.5 s to recompute remainingSeconds from the wall clock.
-    ///    - When remaining reaches 0: stops polling and hides the alert.
-    ///    - Backend escalation continues independently; the watch dismisses its
-    ///      own UI when the local grace period ends.
-    private func alertDidFire(timestamp: Int64, notifyUser: Bool = true) {
-        guard !isAlertActive else { return }
-        fallTimestamp = timestamp
-        isAlertActive = true
+    /// The countdown is computed from the fall timestamp (shared with phone and
+    /// API). Apple can deliver its event after its own check-in, so the grace
+    /// window may already be over: the screen then shows "Notifying your
+    /// caregivers…" with cancel still available, never a 0 countdown. Escalation
+    /// timing is unchanged — the API owns the deadline.
+    private func alertDidFire(_ incident: WatchIncident, presentedAt: Int64) {
+        let now = WatchAlertNotificationService.nowMilliseconds()
+        guard alertState.start(incident, presentedAt: presentedAt, now: now) else { return }
 
-        if notifyUser {
-            WatchAlertNotificationService.shared.presentFallAlert(
-                timestamp: timestamp
-            )
-        }
+        // Watch for a phone-side cancellation of this exact incident.
+        WatchSessionManager.shared.startPollingForCancel(incident: incident)
+        update(now: now)
 
-        // Compute how many full seconds remain.  If the phone sent this event and
-        // there was 2 s of Bluetooth latency, we start at 28 s, not 30 s, so both
-        // countdowns show the same number.
-        remainingSeconds = max(0, 30 - Int((Int64(Date().timeIntervalSince1970 * 1000) - timestamp) / 1000))
-
-        alertExpireTask?.cancel()  // Cancel stale task if alertDidFire is called twice.
-
-        // Watch for a phone-side cancellation. The incident timestamp is required
-        // so a durable context left by an older incident cannot close this alert.
-        WatchSessionManager.shared.startPollingForCancel(timestamp: timestamp)
-
-        // Launch the countdown timer as a Swift Concurrency Task.
-        // Swift Concurrency (`async/await`) is Apple's modern threading model.
-        // A `Task` runs its body on a background thread but never blocks the main
-        // UI thread — that's why we use `await MainActor.run { }` for state writes.
-        alertExpireTask = Task {
+        alertTickTask?.cancel()
+        alertTickTask = Task { [weak self] in
             while !Task.isCancelled {
-                // Sleep 0.5 s — half-second updates keep the display smooth
-                // (the seconds digit changes at most once per second anyway).
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if Task.isCancelled { return }
-
-                // Recompute from the original timestamp each iteration to avoid
-                // drift — accumulated sleep error would cause the watch countdown
-                // to diverge from the phone's over 30 seconds.
-                let now = Int64(Date().timeIntervalSince1970 * 1000)
-                let remaining = max(0, 30 - Int((now - fallTimestamp) / 1000))
-
-                // Write to @Observable properties — must be on main thread.
-                await MainActor.run { remainingSeconds = remaining }
-
-                if remaining <= 0 {
-                    // Time is up. Backend escalation continues independently;
-                    // the watch dismisses its local alert UI.
-                    await MainActor.run {
-                        WatchSessionManager.shared.stopPolling()
-                        isAlertActive = false  // SwiftUI switches back to idleView.
-                        WatchAlertNotificationService.shared.clearAlert()
-                        resumeDetectionMonitoring()
-                    }
-                    return  // Exit the loop — task is done.
+                let keepRunning = await MainActor.run { () -> Bool in
+                    guard let self else { return false }
+                    return self.update(now: WatchAlertNotificationService.nowMilliseconds())
                 }
+                if !keepRunning { return }
             }
         }
     }
 
-    private func resumeDetectionMonitoring() {
-        applyDetectionMode(for: SystemFallDetectionService.shared.authorizationStatus)
+    /// Recomputes the phase from the wall clock (no drift), plays haptics and
+    /// VoiceOver announcements on changes. Returns false once the alert ended.
+    ///
+    /// Haptics play from this tick (not from the view), so they keep running
+    /// while the app process is active even if the view is not redrawn.
+    /// watchOS does not let a suspended third-party app play haptics; the
+    /// time-sensitive notification covers the closed-app case.
+    @discardableResult
+    private func update(now: Int64) -> Bool {
+        let previous = alertPhase
+        guard let phase = alertState.phase(now: now) else {
+            // Display window over. Backend escalation continues independently.
+            finishAlert()
+            return false
+        }
+        alertPhase = phase
+
+        switch WatchAlertState.hapticCue(from: previous, to: phase) {
+        case .tick: WKInterfaceDevice.current().play(.click)
+        case .urgent: WKInterfaceDevice.current().play(.notification)
+        case nil: break
+        }
+
+        if WatchAlertState.shouldAnnounce(phase, previous: previous) {
+            AccessibilityNotification.Announcement(announcement(for: phase)).post()
+        }
+        return true
     }
 
-    /// Apple detection is the only production source because it can wake the app
-    /// in the background. Raw accelerometer detection stays suspended in every
-    /// authorization state.
+    private func announcement(for phase: WatchAlertPhase) -> String {
+        switch phase {
+        case .countdown(let seconds):
+            return String(localized: "\(seconds) seconds before your caregivers are notified")
+        case .notifyingCaregivers:
+            return String(localized: "Notifying your caregivers…")
+        }
+    }
+
+    @discardableResult
+    private func finishAlert() -> WatchIncident? {
+        alertTickTask?.cancel()
+        alertTickTask = nil
+        WatchSessionManager.shared.stopPolling()
+        let finished = alertState.finish()
+        alertPhase = nil
+        WatchAlertNotificationService.shared.clearAlert()
+        applyDetectionMode(for: SystemFallDetectionService.shared.authorizationStatus)
+        return finished
+    }
+
+    /// Apple detection is the only production source because it can wake the
+    /// app in the background. If it is unavailable or denied, say so instead of
+    /// implying background protection.
     private func applyDetectionMode(for status: CMAuthorizationStatus) {
-        FallDetectionManager.shared.stop()
         switch status {
         case .authorized:
-            monitoringStatusText = "Apple background fall detection active"
+            monitoringStatusText = String(localized: "Apple background fall detection active")
         case .notDetermined:
-            monitoringStatusText = "Allow Apple fall detection for background alerts"
+            monitoringStatusText = String(localized: "Allow Apple fall detection for background alerts")
         default:
-            monitoringStatusText = "Apple fall detection unavailable — monitoring inactive"
+            monitoringStatusText = String(localized: "Apple fall detection unavailable — monitoring inactive")
         }
     }
 }

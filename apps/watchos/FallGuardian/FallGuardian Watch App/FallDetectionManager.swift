@@ -17,6 +17,14 @@
 //   ContentViewModel.alertDidFire()  →  shows UI countdown
 //   WatchSessionManager.sendFallEvent()  →  notifies iPhone
 
+// DEBUG ONLY. The custom raw-accelerometer detector is not part of release
+// builds: Apple's CMFallDetectionManager is the only production fall source
+// (see SystemFallDetectionService). Nothing in the app currently starts this
+// detector; it is kept compiled in DEBUG for physical tuning experiments and
+// its unit tests. Delete it (and its Runner.xcodeproj file references) if
+// tuning is abandoned.
+#if DEBUG
+
 import Foundation  // Date, NotificationCenter, UserDefaults, NSObjectProtocol
 import CoreMotion  // CMMotionManager and CMAccelerometerData — Apple's accelerometer API
 
@@ -253,7 +261,7 @@ class FallDetectionManager: NSObject {
             let timestamp = Int64(nowMs)  // Int64 matches the phone's Long type exactly.
 
             // Tell the phone.  WatchSessionManager handles the real/simulator split.
-            WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)
+            WatchSessionManager.shared.sendFallEvent(WatchIncident.make(timestamp: timestamp))
 
             // Tell the UI.  The `?` means "only call if someone has registered a closure".
             // ContentViewModel registers its closure in startIfNeeded().
@@ -261,3 +269,5 @@ class FallDetectionManager: NSObject {
         }
     }
 }
+
+#endif
