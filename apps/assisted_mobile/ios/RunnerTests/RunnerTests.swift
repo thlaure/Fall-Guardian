@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Runner
 
@@ -66,7 +67,7 @@ final class RelayQueueLogicTests: XCTestCase {
         let retrigger = RelayQueueLogic.enqueue(first.items, timestamp: now + 10_000, requestedID: nil, source: RelayQueueItem.appleWatchSource, now: now)
         XCTAssertEqual(retrigger.clientAlertID, "apple-watch-\(now)")
 
-        let cancelled = RelayQueueLogic.requestCancel(first.items, incidentID: nil, fallTimestamp: nil)
+        let cancelled = RelayQueueLogic.requestCancel(first.items, incidentID: nil, fallTimestamp: nil).items
         let afterCancel = RelayQueueLogic.enqueue(cancelled, timestamp: now + 10_000, requestedID: nil, source: RelayQueueItem.appleWatchSource, now: now)
         XCTAssertEqual(afterCancel.clientAlertID, "apple-watch-\(now + 10_000)")
     }
@@ -88,16 +89,16 @@ final class RelayQueueLogicTests: XCTestCase {
     func testCancelTargetsOnlyMatchingIncident() {
         let items = [item(uuidA, now), item(uuidB, now + 1), item("apple-watch-9", 9)]
 
-        let byID = RelayQueueLogic.requestCancel(items, incidentID: uuidA, fallTimestamp: nil)
+        let byID = RelayQueueLogic.requestCancel(items, incidentID: uuidA, fallTimestamp: nil).items
         XCTAssertEqual(byID.filter(\.cancelRequested).map(\.clientAlertID), [uuidA])
 
-        let byTimestamp = RelayQueueLogic.requestCancel(items, incidentID: nil, fallTimestamp: 9)
+        let byTimestamp = RelayQueueLogic.requestCancel(items, incidentID: nil, fallTimestamp: 9).items
         XCTAssertEqual(byTimestamp.filter(\.cancelRequested).map(\.clientAlertID), ["apple-watch-9"])
 
-        let unknown = RelayQueueLogic.requestCancel(items, incidentID: "nope", fallTimestamp: 42)
+        let unknown = RelayQueueLogic.requestCancel(items, incidentID: "nope", fallTimestamp: 42).items
         XCTAssertEqual(unknown, items)
 
-        let legacy = RelayQueueLogic.requestCancel(items, incidentID: nil, fallTimestamp: nil)
+        let legacy = RelayQueueLogic.requestCancel(items, incidentID: nil, fallTimestamp: nil).items
         XCTAssertEqual(legacy.filter(\.cancelRequested).map(\.clientAlertID), [uuidB])
     }
 
@@ -109,7 +110,7 @@ final class RelayQueueLogicTests: XCTestCase {
         let result = RelayQueueLogic.prune([oldSubmitted, recent, expired], now: now)
 
         XCTAssertEqual(result.kept, [recent])
-        XCTAssertEqual(result.expired, [expired])
+        XCTAssertEqual(result.outcomes, [RelayOutcome(clientAlertID: expired.clientAlertID, timestamp: expired.timestamp, outcome: RelayOutcome.dropped)])
     }
 
     func testIncidentIDValidation() {
@@ -124,7 +125,7 @@ final class RelayQueueLogicTests: XCTestCase {
     func testHTTPStatusPolicy() {
         XCTAssertEqual(RelayQueueLogic.outcome(for: .create, status: 201), .success)
         XCTAssertEqual(RelayQueueLogic.outcome(for: .create, status: 401), .reauthRequired)
-        XCTAssertEqual(RelayQueueLogic.outcome(for: .cancel, status: 403), .reauthRequired)
+        XCTAssertEqual(RelayQueueLogic.outcome(for: .cancel, status: 403), .retry, "403 must be retried, never trigger re-pairing")
         for status in [0, 408, 429, 500, 503] {
             XCTAssertEqual(RelayQueueLogic.outcome(for: .create, status: status), .retry)
         }
@@ -143,4 +144,115 @@ final class RelayQueueLogicTests: XCTestCase {
         XCTAssertEqual(RelayQueueLogic.retryDelay(attempt: 99), 300)
         XCTAssertEqual(RelayQueueLogic.retryDelay(attempt: -1), 5)
     }
+    func testExpiredCancelRequestedIncidentsNeverVanishSilently() {
+        let old = now - RelayQueueLogic.undeliveredRetentionMilliseconds - 1
+        let result = RelayQueueLogic.prune(
+            [item("a", old, submitted: true, cancelRequested: true), item("b", old, cancelRequested: true)],
+            now: now
+        )
+
+        XCTAssertTrue(result.kept.isEmpty)
+        XCTAssertEqual(result.outcomes.map(\.outcome), [RelayOutcome.cancelUnconfirmed, RelayOutcome.cancelledUnsent])
+    }
+
+    func testCancelBeforeFallLeavesTombstoneThatCancelsTheFall() {
+        let cancel = RelayQueueLogic.requestCancel([], incidentID: uuidA, fallTimestamp: nil, now: now)
+        XCTAssertTrue(cancel.items.isEmpty)
+        XCTAssertEqual(cancel.tombstones.count, 1)
+
+        let fall = RelayQueueLogic.enqueue(
+            cancel.items, timestamp: now + 1_000, requestedID: uuidA,
+            source: RelayQueueItem.appleWatchSource, now: now + 1_000, tombstones: cancel.tombstones
+        )
+
+        XCTAssertEqual(fall.items.first?.cancelRequested, true)
+        XCTAssertTrue(fall.tombstones.isEmpty)
+    }
+
+    func testTimestampTombstoneCancelsLegacyFallAndExpires() {
+        let cancel = RelayQueueLogic.requestCancel([], incidentID: nil, fallTimestamp: now, now: now)
+
+        let fall = RelayQueueLogic.enqueue(
+            [], timestamp: now, requestedID: nil, source: RelayQueueItem.appleWatchSource,
+            now: now + 500, tombstones: cancel.tombstones
+        )
+        XCTAssertEqual(fall.items.first?.cancelRequested, true)
+
+        let late = RelayQueueLogic.enqueue(
+            [], timestamp: now, requestedID: nil, source: RelayQueueItem.appleWatchSource,
+            now: now + RelayQueueLogic.tombstoneTTLMilliseconds + 1, tombstones: cancel.tombstones
+        )
+        XCTAssertEqual(late.items.first?.cancelRequested, false)
+    }
+
+    func testUntargetedCancelNeverLeavesTombstone() {
+        let cancel = RelayQueueLogic.requestCancel([], incidentID: nil, fallTimestamp: nil, now: now)
+
+        XCTAssertTrue(cancel.tombstones.isEmpty)
+    }
+
+    func testLaterUUIDForLegacyIncidentIsStoredAsAlias() throws {
+        let legacy = RelayQueueLogic.enqueue([], timestamp: now, requestedID: nil, source: RelayQueueItem.appleWatchSource, now: now)
+        let withUUID = RelayQueueLogic.enqueue(legacy.items, timestamp: now, requestedID: uuidA, source: RelayQueueItem.appleWatchSource, now: now)
+
+        XCTAssertEqual(withUUID.clientAlertID, "apple-watch-\(now)")
+        XCTAssertEqual(withUUID.items.first?.aliases, [uuidA])
+        let cancelled = RelayQueueLogic.requestCancel(withUUID.items, incidentID: uuidA, fallTimestamp: nil, now: now)
+        XCTAssertEqual(cancelled.items.first?.cancelRequested, true)
+
+        // Entries stored before aliases existed still decode.
+        let oldJSON = #"[{"clientAlertID":"a","timestamp":1,"source":"apple_watch","submitted":false,"cancelRequested":false,"enqueuedAt":1}]"#
+        let decoded = try JSONDecoder().decode([RelayQueueItem].self, from: Data(oldJSON.utf8))
+        XCTAssertNil(decoded.first?.aliases)
+    }
+
+    func testRepairReportsQueuedIncidentsInsteadOfSendingThem() {
+        let outcomes = RelayQueueLogic.discardForRepair([
+            item("a", 1),
+            item("b", 2, submitted: true, cancelRequested: true),
+            item("c", 3, cancelRequested: true),
+            item("d", 4, submitted: true),
+        ])
+
+        XCTAssertEqual(outcomes.map(\.outcome), [
+            RelayOutcome.repairNotDelivered, RelayOutcome.cancelUnconfirmed, RelayOutcome.cancelledUnsent,
+        ])
+    }
+
+    func testPendingCancelListNeverOverwritesAndMigrates() {
+        let targeted = PendingCancelEntry(entryID: "1", incidentID: uuidA, fallTimestamp: 5)
+        let legacy = PendingCancelEntry(entryID: "2", incidentID: nil, fallTimestamp: nil)
+        let entries = PendingCancelList.add(PendingCancelList.add([], targeted), legacy)
+
+        XCTAssertEqual(entries, [targeted, legacy])
+        XCTAssertEqual(PendingCancelList.add(entries, PendingCancelEntry(entryID: "3", incidentID: uuidA, fallTimestamp: 5)), entries)
+        XCTAssertEqual(PendingCancelList.remove(entries, entryID: "1"), [legacy])
+        XCTAssertEqual(PendingCancelList.migrateLegacy(pending: true, incidentID: uuidA, fallTimestamp: 5).count, 1)
+        XCTAssertTrue(PendingCancelList.migrateLegacy(pending: false, incidentID: nil, fallTimestamp: nil).isEmpty)
+    }
+
+    func testBackgroundTaskTokenEndsExactlyOnce() {
+        let token = BackgroundTaskToken()
+        token.set(UIBackgroundTaskIdentifier(rawValue: 42))
+        var ended: [UIBackgroundTaskIdentifier] = []
+        // Completion and expiration both try to end the task: only one wins.
+        XCTAssertTrue(token.end { ended.append($0) })
+        XCTAssertFalse(token.end { ended.append($0) })
+        XCTAssertEqual(ended, [UIBackgroundTaskIdentifier(rawValue: 42)])
+    }
+
+    func testDelayedCancelForAnotherIncidentKeepsTheDisplayedNotification() {
+        let showingB = DisplayedFallNotification(clientAlertID: uuidB, watchIncidentID: uuidB, timestamp: 2_000)
+
+        XCTAssertFalse(FallNotificationMatch.shouldDismiss(displayed: showingB, incidentID: uuidA, fallTimestamp: 1_000))
+        XCTAssertFalse(FallNotificationMatch.shouldDismiss(displayed: showingB, incidentID: nil, fallTimestamp: 1_000))
+        XCTAssertTrue(FallNotificationMatch.shouldDismiss(displayed: showingB, incidentID: uuidB, fallTimestamp: nil))
+        XCTAssertTrue(FallNotificationMatch.shouldDismiss(displayed: showingB, incidentID: nil, fallTimestamp: 2_000))
+        // Legacy untargeted cancels always dismiss; unknown display is kept.
+        XCTAssertTrue(FallNotificationMatch.shouldDismiss(displayed: showingB, incidentID: nil, fallTimestamp: nil))
+        XCTAssertFalse(FallNotificationMatch.shouldDismiss(displayed: nil, incidentID: uuidA, fallTimestamp: nil))
+        let legacyShown = DisplayedFallNotification(clientAlertID: "apple-watch-5", watchIncidentID: uuidA, timestamp: 5)
+        XCTAssertTrue(FallNotificationMatch.shouldDismiss(displayed: legacyShown, incidentID: uuidA, fallTimestamp: nil))
+    }
 }
+

@@ -234,8 +234,24 @@ import WatchConnectivity
                 result(queuedID)
                 return
 
+            // Peek: outcomes stay stored until Flutter acknowledges them
+            // after persisting them in history.
             case "takeRelayOutcomes":
-                result(NativeAppleWatchAlertRelay.shared.takeOutcomes())
+                result(NativeAppleWatchAlertRelay.shared.peekOutcomes())
+                return
+
+            case "acknowledgeRelayOutcomes":
+                let keys = ((call.arguments as? [String: Any])?["keys"] as? [String]) ?? []
+                NativeAppleWatchAlertRelay.shared.acknowledgeOutcomes(keys: keys)
+
+            // Dart registered its handlers: redeliver a fall/cancels that
+            // arrived (or failed) before it was ready.
+            case "deliverPendingWatchEvents":
+                self?.watchSession?.drainPendingFallEvent()
+                self?.watchSession?.drainPendingAlertCancel()
+
+            case "discardQueuedAlertsForRepair":
+                result(NativeAppleWatchAlertRelay.shared.discardForRepair())
                 return
 
             case "configureNativeAlertRelay":

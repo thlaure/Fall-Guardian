@@ -7,6 +7,10 @@ import UIKit
 // MARK: - Pure queue rules (unit-tested in RunnerTests)
 
 /// One incident waiting for (or tracked after) backend delivery.
+///
+/// `aliases` holds other ids the same physical incident is known by (e.g. a
+/// watch UUID that arrived after the incident was queued under its legacy
+/// `apple-watch-<ts>` id). Optional so entries stored before it decode.
 struct RelayQueueItem: Codable, Equatable {
     static let appleWatchSource = "apple_watch"
     static let assistedPhoneSource = "assisted_phone"
@@ -17,6 +21,25 @@ struct RelayQueueItem: Codable, Equatable {
     var submitted: Bool
     var cancelRequested: Bool
     let enqueuedAt: Int64
+    var aliases: [String]?
+
+    func isKnownAs(_ id: String) -> Bool {
+        clientAlertID == id || (aliases ?? []).contains(id)
+    }
+}
+
+/// A targeted cancel that arrived before its fall was queued. Kept briefly
+/// so the late fall is queued already cancelled instead of escalating.
+struct CancelTombstone: Codable, Equatable {
+    let incidentID: String?
+    let fallTimestamp: Int64?
+    let createdAt: Int64
+
+    func matches(_ item: RelayQueueItem) -> Bool {
+        if let incidentID, item.isKnownAs(incidentID) { return true }
+        if let fallTimestamp, item.timestamp == fallTimestamp { return true }
+        return false
+    }
 }
 
 /// Terminal relay result Flutter imports into the local history screen.
@@ -24,11 +47,21 @@ struct RelayOutcome: Codable, Equatable {
     static let createRejected = "create_rejected"
     static let cancelTooLate = "cancel_too_late"
     static let cancelRejected = "cancel_rejected"
+    static let cancelUnconfirmed = "cancel_unconfirmed"
+    static let cancelledUnsent = "cancelled_unsent"
     static let dropped = "dropped"
+    static let repairNotDelivered = "repair_not_delivered"
+    /// Success: the backend accepted the incident (grace period running).
+    static let created = "created"
+    /// Success: the backend confirmed the cancellation (or never had it).
+    static let cancelled = "cancelled"
 
     let clientAlertID: String
     let timestamp: Int64
     let outcome: String
+
+    /// Stable key Flutter echoes back to acknowledge a persisted outcome.
+    var key: String { "\(clientAlertID)|\(timestamp)|\(outcome)" }
 }
 
 enum RelayOperation {
@@ -43,7 +76,7 @@ enum RelayHTTPOutcome: Equatable {
     case alreadyDone
     /// Server grace period is over; caregivers are being notified.
     case tooLate
-    /// Device credentials were revoked/unknown: the user must re-pair.
+    /// Device credentials were revoked/unknown (401): the user must re-pair.
     case reauthRequired
     case retry
     /// Permanent client error; retrying can never succeed.
@@ -55,7 +88,9 @@ enum RelayHTTPOutcome: Equatable {
 enum RelayQueueLogic {
     static let maxItems = 20
     static let maxOutcomes = 50
+    static let maxTombstones = 20
     static let legacyDedupWindowMilliseconds: Int64 = 30_000
+    static let tombstoneTTLMilliseconds: Int64 = 2 * 60_000
     static let submittedRetentionMilliseconds: Int64 = 10 * 60_000
     static let undeliveredRetentionMilliseconds: Int64 = 24 * 60 * 60_000
 
@@ -110,19 +145,31 @@ enum RelayQueueLogic {
         )]
     }
 
-    /// Adds an incident unless it duplicates a queued one. Returns the new
-    /// queue, the clientAlertId to use, and incidents dropped by the bound.
+    static func pruneTombstones(_ tombstones: [CancelTombstone], now: Int64) -> [CancelTombstone] {
+        tombstones.filter { now - $0.createdAt >= 0 && now - $0.createdAt <= tombstoneTTLMilliseconds }
+    }
+
+    /// Adds an incident unless it duplicates a queued one (then a new id is
+    /// remembered as an alias). A matching cancel tombstone queues it
+    /// already cancelled. Returns the new queue, the clientAlertId to use,
+    /// incidents dropped by the bound, and the remaining tombstones.
     static func enqueue(
         _ items: [RelayQueueItem],
         timestamp: Int64,
         requestedID: String?,
         source: String,
-        now: Int64
-    ) -> (items: [RelayQueueItem], clientAlertID: String, dropped: [RelayQueueItem]) {
-        if let duplicate = items.first(where: {
-            ($0.clientAlertID == requestedID) || ($0.source == source && $0.timestamp == timestamp)
+        now: Int64,
+        tombstones: [CancelTombstone] = []
+    ) -> (items: [RelayQueueItem], clientAlertID: String, dropped: [RelayQueueItem], tombstones: [CancelTombstone]) {
+        var live = pruneTombstones(tombstones, now: now)
+        if let index = items.firstIndex(where: {
+            (requestedID.map($0.isKnownAs) ?? false) || ($0.source == source && $0.timestamp == timestamp)
         }) {
-            return (items, duplicate.clientAlertID, [])
+            var updated = items
+            if let requestedID, !updated[index].isKnownAs(requestedID) {
+                updated[index].aliases = (updated[index].aliases ?? []) + [requestedID]
+            }
+            return (updated, items[index].clientAlertID, [], live)
         }
 
         if requestedID == nil,
@@ -131,19 +178,24 @@ enum RelayQueueLogic {
                .max(by: { $0.timestamp < $1.timestamp }),
            timestamp >= active.timestamp,
            timestamp - active.timestamp <= legacyDedupWindowMilliseconds {
-            return (items, active.clientAlertID, [])
+            return (items, active.clientAlertID, [], live)
         }
 
         let clientAlertID = requestedID ?? derivedClientAlertID(timestamp: timestamp, source: source)
-        var updated = items
-        updated.append(RelayQueueItem(
+        var newItem = RelayQueueItem(
             clientAlertID: clientAlertID,
             timestamp: timestamp,
             source: source,
             submitted: false,
             cancelRequested: false,
             enqueuedAt: now
-        ))
+        )
+        if let tombstoneIndex = live.firstIndex(where: { $0.matches(newItem) }) {
+            newItem.cancelRequested = true
+            live.remove(at: tombstoneIndex)
+        }
+        var updated = items
+        updated.append(newItem)
 
         var dropped: [RelayQueueItem] = []
         while updated.count > maxItems {
@@ -153,68 +205,105 @@ enum RelayQueueLogic {
                 dropped.append(updated.remove(at: index))
             }
         }
-        return (updated, clientAlertID, dropped)
+        return (updated, clientAlertID, dropped, live)
     }
 
     /// With an incident id and/or fall timestamp only the matching incident is
-    /// cancelled; without either (legacy) the most recent open incident is.
+    /// cancelled; if none is queued yet a short-lived tombstone is kept.
+    /// Without either (legacy) the most recent open incident is cancelled, and
+    /// never a tombstone: it could cancel an unrelated genuine fall.
     static func requestCancel(
         _ items: [RelayQueueItem],
         incidentID: String?,
-        fallTimestamp: Int64?
-    ) -> [RelayQueueItem] {
+        fallTimestamp: Int64?,
+        now: Int64 = 0,
+        tombstones: [CancelTombstone] = []
+    ) -> (items: [RelayQueueItem], tombstones: [CancelTombstone]) {
+        let live = pruneTombstones(tombstones, now: now)
         let id = incidentID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedID = (id?.isEmpty ?? true) ? nil : id
         if normalizedID != nil || fallTimestamp != nil {
-            return items.map { item in
+            var matched = false
+            let updated = items.map { item -> RelayQueueItem in
                 var copy = item
                 let idMatches = normalizedID.map {
-                    item.clientAlertID == $0 || item.clientAlertID == $0.lowercased()
+                    item.isKnownAs($0) || item.isKnownAs($0.lowercased())
                 } ?? false
                 if idMatches || item.timestamp == fallTimestamp {
                     copy.cancelRequested = true
+                    matched = true
                 }
                 return copy
             }
+            if matched { return (updated, live) }
+            let tombstone = CancelTombstone(
+                incidentID: normalizedID.map { normalizedIncidentID($0) ?? $0 },
+                fallTimestamp: fallTimestamp,
+                createdAt: now
+            )
+            return (items, Array((live + [tombstone]).suffix(maxTombstones)))
         }
 
         guard let latest = items
             .filter({ !$0.cancelRequested })
-            .max(by: { $0.timestamp < $1.timestamp }) else { return items }
-        return items.map { item in
+            .max(by: { $0.timestamp < $1.timestamp }) else { return (items, live) }
+        return (items.map { item in
             var copy = item
             if item.clientAlertID == latest.clientAlertID { copy.cancelRequested = true }
             return copy
-        }
+        }, live)
     }
 
-    /// Returns kept items and the undelivered ones that expired.
+    /// Returns kept items and outcomes for everything that expired: nothing
+    /// leaves the queue silently except a submitted, uncancelled incident.
     static func prune(
         _ items: [RelayQueueItem],
         now: Int64
-    ) -> (kept: [RelayQueueItem], expired: [RelayQueueItem]) {
-        var expired: [RelayQueueItem] = []
+    ) -> (kept: [RelayQueueItem], outcomes: [RelayOutcome]) {
+        var outcomes: [RelayOutcome] = []
         let kept = items.filter { item in
             let age = now - item.enqueuedAt
             if item.submitted && !item.cancelRequested && age > submittedRetentionMilliseconds {
                 return false
             }
             if age > undeliveredRetentionMilliseconds {
-                if !item.submitted && !item.cancelRequested { expired.append(item) }
+                let outcome = item.submitted
+                    ? RelayOutcome.cancelUnconfirmed
+                    : (item.cancelRequested ? RelayOutcome.cancelledUnsent : RelayOutcome.dropped)
+                outcomes.append(RelayOutcome(clientAlertID: item.clientAlertID, timestamp: item.timestamp, outcome: outcome))
                 return false
             }
             return true
         }
-        return (kept, expired)
+        return (kept, outcomes)
+    }
+
+    /// Re-pairing registers a new, caregiver-less device: queued incidents
+    /// are reported instead of being sent silently under it.
+    static func discardForRepair(_ items: [RelayQueueItem]) -> [RelayOutcome] {
+        items.compactMap { item in
+            let outcome: String?
+            switch (item.submitted, item.cancelRequested) {
+            case (false, false): outcome = RelayOutcome.repairNotDelivered
+            case (true, true): outcome = RelayOutcome.cancelUnconfirmed
+            case (false, true): outcome = RelayOutcome.cancelledUnsent
+            case (true, false): outcome = nil // the old backend owns it
+            }
+            return outcome.map {
+                RelayOutcome(clientAlertID: item.clientAlertID, timestamp: item.timestamp, outcome: $0)
+            }
+        }
     }
 
     static func outcome(for operation: RelayOperation, status: Int) -> RelayHTTPOutcome {
         switch status {
         case 200...299:
             return .success
-        case 401, 403:
+        // Only 401 means the token is unknown. 403 can be transient
+        // (edge/WAF policy) and must never stop delivery: retry it.
+        case 401:
             return .reauthRequired
-        case ...0, 408, 429, 500...:
+        case ...0, 403, 408, 429, 500...:
             return .retry
         case 409:
             return operation == .create ? .alreadyDone : .tooLate
@@ -232,6 +321,101 @@ enum RelayQueueLogic {
         items.indices
             .filter { predicate(items[$0]) }
             .min(by: { items[$0].timestamp < items[$1].timestamp })
+    }
+}
+
+/// One watch cancel waiting to be delivered to Flutter.
+struct PendingCancelEntry: Codable, Equatable {
+    let entryID: String
+    let incidentID: String?
+    let fallTimestamp: Int64?
+}
+
+/// Small persistent list of watch cancels not yet confirmed delivered to
+/// Flutter. A list (not a single slot) so a legacy untargeted cancel can
+/// never overwrite a targeted one; entries are removed only once Flutter's
+/// handler succeeded.
+enum PendingCancelList {
+    static let maxEntries = 20
+
+    static func add(_ entries: [PendingCancelEntry], _ entry: PendingCancelEntry) -> [PendingCancelEntry] {
+        let duplicate = entries.contains {
+            $0.incidentID == entry.incidentID && $0.fallTimestamp == entry.fallTimestamp
+        }
+        return duplicate ? entries : Array((entries + [entry]).suffix(maxEntries))
+    }
+
+    static func remove(_ entries: [PendingCancelEntry], entryID: String) -> [PendingCancelEntry] {
+        entries.filter { $0.entryID != entryID }
+    }
+
+    /// Pre-list builds stored one flag plus an optional target.
+    static func migrateLegacy(pending: Bool, incidentID: String?, fallTimestamp: Int64?) -> [PendingCancelEntry] {
+        pending ? [PendingCancelEntry(entryID: "legacy", incidentID: incidentID, fallTimestamp: fallTimestamp)] : []
+    }
+}
+
+/// Which incident the native wake-up notification currently shows.
+struct DisplayedFallNotification: Codable, Equatable {
+    let clientAlertID: String?
+    let watchIncidentID: String?
+    let timestamp: Int64
+}
+
+/// A delayed, targeted cancel for incident A must never remove the
+/// notification of a newer incident B; only legacy untargeted cancels
+/// dismiss unconditionally.
+enum FallNotificationMatch {
+    static func shouldDismiss(
+        displayed: DisplayedFallNotification?,
+        incidentID: String?,
+        fallTimestamp: Int64?
+    ) -> Bool {
+        if incidentID == nil && fallTimestamp == nil { return true }
+        // Unknown displayed incident: keep it rather than risk hiding a
+        // different, still-active fall.
+        guard let displayed else { return false }
+        if let id = incidentID?.lowercased(),
+           id == displayed.clientAlertID?.lowercased() || id == displayed.watchIncidentID {
+            return true
+        }
+        if let fallTimestamp, fallTimestamp == displayed.timestamp { return true }
+        return false
+    }
+}
+
+/// Guards a UIKit background task so it is ended exactly once, whether by
+/// the normal completion path or by the expiration handler.
+final class BackgroundTaskToken {
+    private let lock = NSLock()
+    private var identifier: UIBackgroundTaskIdentifier = .invalid
+    private var ended = false
+
+    func set(_ identifier: UIBackgroundTaskIdentifier) {
+        lock.lock()
+        defer { lock.unlock() }
+        if ended {
+            // Expired before begin returned: end it right away.
+            if identifier != .invalid { endTask(identifier) }
+            return
+        }
+        self.identifier = identifier
+    }
+
+    /// Returns true only for the first call.
+    @discardableResult
+    func end(_ endTask: (UIBackgroundTaskIdentifier) -> Void = { UIApplication.shared.endBackgroundTask($0) }) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !ended else { return false }
+        ended = true
+        if identifier != .invalid { endTask(identifier) }
+        identifier = .invalid
+        return true
+    }
+
+    private func endTask(_ identifier: UIBackgroundTaskIdentifier) {
+        UIApplication.shared.endBackgroundTask(identifier)
     }
 }
 
@@ -271,6 +455,7 @@ final class NativeAppleWatchAlertRelay {
     private let baseURLKey = "native_apple_watch_alert_relay_base_url"
     private let queueKey = "native_apple_watch_alert_queue_v2"
     private let outcomesKey = "native_apple_watch_alert_outcomes_v1"
+    private let tombstonesKey = "native_apple_watch_alert_cancel_tombstones_v1"
 
     // Legacy single-slot keys (pre-queue). Read once, migrated, then removed.
     private let legacyTimestampKey = "native_apple_watch_alert_timestamp"
@@ -337,25 +522,57 @@ final class NativeAppleWatchAlertRelay {
         return enqueue(timestamp: timestamp, requestedID: id, source: RelayQueueItem.assistedPhoneSource)
     }
 
-    /// A cancellation can arrive before the create request completes. Keeping it
-    /// durable lets the relay submit first and then cancel the same backend record.
+    /// A cancellation can arrive before the create request completes, or even
+    /// before the fall itself (targeted cancels then leave a short-lived
+    /// tombstone so the late fall is queued already cancelled).
     func requestCancel(incidentID: String? = nil, fallTimestamp: Int64? = nil) {
         stateQueue.sync {
-            let items = readQueue()
-            guard !items.isEmpty else { return }
-            writeQueue(RelayQueueLogic.requestCancel(items, incidentID: incidentID, fallTimestamp: fallTimestamp))
+            let result = RelayQueueLogic.requestCancel(
+                readQueue(),
+                incidentID: incidentID,
+                fallTimestamp: fallTimestamp,
+                now: nowMilliseconds(),
+                tombstones: readTombstones()
+            )
+            writeQueue(result.items)
+            writeTombstones(result.tombstones)
         }
         relayPendingIncidents()
     }
 
-    /// Hands terminal outcomes to Flutter (history) and forgets them.
-    func takeOutcomes() -> [[String: Any]] {
+    /// Terminal outcomes for Flutter's history. They stay stored until
+    /// Flutter acknowledges them after persisting ([acknowledgeOutcomes]).
+    func peekOutcomes() -> [[String: Any]] {
         stateQueue.sync {
-            let outcomes = readOutcomes()
-            preferences.removeObject(forKey: outcomesKey)
-            return outcomes.map {
-                ["clientAlertId": $0.clientAlertID, "timestamp": $0.timestamp, "outcome": $0.outcome]
+            readOutcomes().map {
+                [
+                    "clientAlertId": $0.clientAlertID,
+                    "timestamp": $0.timestamp,
+                    "outcome": $0.outcome,
+                    "key": $0.key,
+                ]
             }
+        }
+    }
+
+    func acknowledgeOutcomes(keys: [String]) {
+        stateQueue.sync {
+            let remaining = readOutcomes().filter { !keys.contains($0.key) }
+            writeOutcomes(remaining)
+        }
+    }
+
+    /// Called before the phone re-registers as a new device: queued incidents
+    /// must not be sent under the new, caregiver-less registration. They are
+    /// reported instead (history: caregivers may not have been reached).
+    @discardableResult
+    func discardForRepair() -> Int {
+        stateQueue.sync {
+            let items = readQueue()
+            RelayQueueLogic.discardForRepair(items).forEach(recordOutcome)
+            writeQueue([])
+            writeTombstones([])
+            return items.count
         }
     }
 
@@ -368,9 +585,11 @@ final class NativeAppleWatchAlertRelay {
                 timestamp: timestamp,
                 requestedID: requestedID,
                 source: source,
-                now: nowMilliseconds()
+                now: nowMilliseconds(),
+                tombstones: readTombstones()
             )
             writeQueue(result.items)
+            writeTombstones(result.tombstones)
             result.dropped.forEach {
                 recordOutcome(RelayOutcome(clientAlertID: $0.clientAlertID, timestamp: $0.timestamp, outcome: RelayOutcome.dropped))
             }
@@ -411,9 +630,22 @@ final class NativeAppleWatchAlertRelay {
     }
 
     private func recordOutcome(_ outcome: RelayOutcome) {
-        let outcomes = Array((readOutcomes() + [outcome]).suffix(RelayQueueLogic.maxOutcomes))
+        writeOutcomes(Array((readOutcomes() + [outcome]).suffix(RelayQueueLogic.maxOutcomes)))
+    }
+
+    private func writeOutcomes(_ outcomes: [RelayOutcome]) {
         guard let data = try? JSONEncoder().encode(outcomes) else { return }
         preferences.set(data, forKey: outcomesKey)
+    }
+
+    private func readTombstones() -> [CancelTombstone] {
+        guard let data = preferences.data(forKey: tombstonesKey) else { return [] }
+        return (try? JSONDecoder().decode([CancelTombstone].self, from: data)) ?? []
+    }
+
+    private func writeTombstones(_ tombstones: [CancelTombstone]) {
+        guard let data = try? JSONEncoder().encode(tombstones) else { return }
+        preferences.set(data, forKey: tombstonesKey)
     }
 
     private func updateItem(_ clientAlertID: String, _ change: (inout RelayQueueItem) -> Void) {
@@ -452,11 +684,9 @@ final class NativeAppleWatchAlertRelay {
     }
 
     private func runPass() {
-        let (kept, expired) = RelayQueueLogic.prune(readQueue(), now: nowMilliseconds())
+        let (kept, expiredOutcomes) = RelayQueueLogic.prune(readQueue(), now: nowMilliseconds())
         writeQueue(kept)
-        expired.forEach {
-            recordOutcome(RelayOutcome(clientAlertID: $0.clientAlertID, timestamp: $0.timestamp, outcome: RelayOutcome.dropped))
-        }
+        expiredOutcomes.forEach(recordOutcome)
         guard !kept.isEmpty else {
             finishPass(result: .done)
             return
@@ -474,7 +704,7 @@ final class NativeAppleWatchAlertRelay {
         let backgroundTask = beginBackgroundTask()
         processItems(kept.map(\.clientAlertID), baseURL: baseURL, token: token, needsRetry: false) { result in
             self.finishPass(result: result)
-            self.endBackgroundTask(backgroundTask)
+            backgroundTask.end()
         }
     }
 
@@ -528,10 +758,16 @@ final class NativeAppleWatchAlertRelay {
                 switch RelayQueueLogic.outcome(for: operation, status: status) {
                 case .success, .alreadyDone:
                     if operation == .createCancelled {
-                        self.complete(clientAlertID, outcome: nil)
+                        self.complete(clientAlertID, outcome: RelayOutcome.cancelled)
                         completion(.done)
                     } else {
                         self.updateItem(clientAlertID) { $0.submitted = true }
+                        // Lets Flutter upgrade a provisional "failed" history entry.
+                        self.recordOutcome(RelayOutcome(
+                            clientAlertID: clientAlertID,
+                            timestamp: item.timestamp,
+                            outcome: RelayOutcome.created
+                        ))
                         // A cancel may have arrived meanwhile; handle it now.
                         self.relayItem(clientAlertID, baseURL: baseURL, token: token, completion: completion)
                     }
@@ -540,7 +776,10 @@ final class NativeAppleWatchAlertRelay {
                     completion(.done)
                 case .rejected:
                     NSLog("[AlertRelay] fall alert rejected permanently (HTTP \(status))")
-                    self.complete(clientAlertID, outcome: RelayOutcome.createRejected)
+                    self.complete(
+                        clientAlertID,
+                        outcome: item.cancelRequested ? RelayOutcome.cancelRejected : RelayOutcome.createRejected
+                    )
                     completion(.done)
                 case .reauthRequired:
                     completion(.reauthRequired)
@@ -565,7 +804,8 @@ final class NativeAppleWatchAlertRelay {
         ) { status in
             switch RelayQueueLogic.outcome(for: .cancel, status: status) {
             case .success, .alreadyDone:
-                self.complete(clientAlertID, outcome: nil)
+                // Lets Flutter upgrade a provisional "cancellation pending" entry.
+                self.complete(clientAlertID, outcome: RelayOutcome.cancelled)
                 completion(.done)
             case .tooLate:
                 self.complete(clientAlertID, outcome: RelayOutcome.cancelTooLate)
@@ -588,7 +828,8 @@ final class NativeAppleWatchAlertRelay {
         case .done:
             retryAttempt = 0
         case .reauthRequired:
-            // Never re-register silently: a new device has no caregiver links.
+            // 401 only (403 is retried). Never re-register silently: a new
+            // device has no caregiver links.
             // Flag it for the Flutter UI and keep the incidents queued; the
             // relay resumes when Flutter reconfigures after re-pairing.
             NSLog("[AlertRelay] device credentials rejected; re-pairing required")
@@ -779,19 +1020,16 @@ final class NativeAppleWatchAlertRelay {
     /// beginBackgroundTask/endBackgroundTask are documented as callable from
     /// any thread, so no main-thread hop (which could deadlock against a
     /// main-thread stateQueue.sync caller) is needed.
-    private func beginBackgroundTask() -> UIBackgroundTaskIdentifier {
-        var task = UIBackgroundTaskIdentifier.invalid
-        task = UIApplication.shared.beginBackgroundTask(withName: "FallAlertRelay") {
+    /// The returned token ends the task exactly once, whichever of the
+    /// expiration handler or the normal completion runs first.
+    private func beginBackgroundTask() -> BackgroundTaskToken {
+        let token = BackgroundTaskToken()
+        let identifier = UIApplication.shared.beginBackgroundTask(withName: "FallAlertRelay") { [weak self] in
             // Out of time: state is on disk, a scheduled BGTask resumes it.
-            self.scheduleBackgroundTasks()
-            UIApplication.shared.endBackgroundTask(task)
-            task = .invalid
+            self?.scheduleBackgroundTasks()
+            token.end()
         }
-        return task
-    }
-
-    private func endBackgroundTask(_ task: UIBackgroundTaskIdentifier) {
-        guard task != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(task)
+        token.set(identifier)
+        return token
     }
 }
