@@ -25,11 +25,26 @@ class PendingAlertStore {
   final FlutterSecureStorage _storage;
   final int maxAlerts;
 
+  /// Serialises read-modify-write cycles so two pushes arriving together do
+  /// not overwrite each other. Shared by every store instance in this
+  /// isolate. (The FCM background handler may run in another isolate; the
+  /// window there is one push at a time per isolate.)
+  static Future<void> _lock = Future<void>.value();
+
+  static Future<T> _synchronized<T>(Future<T> Function() action) {
+    final result = _lock.then((_) => action());
+    _lock = result.then<void>((_) {}, onError: (_) {});
+    return result;
+  }
+
   Future<void> save(Map<String, dynamic> data) async {
     if (!looksLikeFallAlert(data)) {
       return;
     }
+    await _synchronized(() => _save(data));
+  }
 
+  Future<void> _save(Map<String, dynamic> data) async {
     // Alerts may contain location and arrive while the phone is locked. On
     // iOS the selected keychain class permits background access after the
     // device has been unlocked once, without allowing migration to a new device.
@@ -44,7 +59,9 @@ class PendingAlertStore {
   }
 
   /// Returns every pending alert, oldest first, and clears the store.
-  Future<List<Map<String, dynamic>>> takeAll() async {
+  Future<List<Map<String, dynamic>>> takeAll() => _synchronized(_takeAll);
+
+  Future<List<Map<String, dynamic>>> _takeAll() async {
     final alerts = await _readAll();
     await _storage.delete(key: listKey);
     await _deleteLegacy();
@@ -53,7 +70,9 @@ class PendingAlertStore {
 
   /// Removes one alert, e.g. because the user opened its notification and
   /// the alert is being presented from the notification payload.
-  Future<void> remove(String alertId) async {
+  Future<void> remove(String alertId) => _synchronized(() => _remove(alertId));
+
+  Future<void> _remove(String alertId) async {
     final alerts = await _readAll();
     final before = alerts.length;
     alerts.removeWhere((alert) => alert['alertId'] == alertId);

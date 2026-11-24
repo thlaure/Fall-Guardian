@@ -284,17 +284,22 @@ class _AppRootState extends State<_AppRoot> with WidgetsBindingObserver {
           .push<void>(
             MaterialPageRoute<void>(
               fullscreenDialog: true,
-              builder: (_) => ActiveAlertScreen(
-                alertData: data,
-                liveAlert: liveAlert,
-                backend: _backend,
-                waitingCount: _activeAlertPresentation.waitingCount,
-                onDismiss: () {
-                  if (dismissed) return;
-                  dismissed = true;
-                  dismissShownAlert();
-                  Navigator.of(context, rootNavigator: true).maybePop();
-                },
+              builder: (_) => ValueListenableBuilder<int>(
+                // Alerts for other people can arrive while this one is open.
+                valueListenable:
+                    _activeAlertPresentation.waitingCountListenable,
+                builder: (_, waitingCount, _) => ActiveAlertScreen(
+                  alertData: data,
+                  liveAlert: liveAlert,
+                  backend: _backend,
+                  waitingCount: waitingCount,
+                  onDismiss: () {
+                    if (dismissed) return;
+                    dismissed = true;
+                    dismissShownAlert();
+                    Navigator.of(context, rootNavigator: true).maybePop();
+                  },
+                ),
               ),
             ),
           )

@@ -24,6 +24,12 @@ class ActiveAlertPresentationState {
   /// Number of queued alerts behind the active one.
   int get waitingCount => _queue.isEmpty ? 0 : _queue.length - 1;
 
+  /// Live [waitingCount], so an open alert screen shows new arrivals.
+  ValueListenable<int> get waitingCountListenable => _waitingCount;
+  final ValueNotifier<int> _waitingCount = ValueNotifier(0);
+
+  void _publishWaitingCount() => _waitingCount.value = waitingCount;
+
   /// Queues [data]. Returns true only for an alert not seen before, so the
   /// caller reports receipt once. Newer data for a queued alert is merged.
   bool show(Map<String, dynamic> data) {
@@ -47,6 +53,7 @@ class ActiveAlertPresentationState {
 
     _queue.add(incomingAlertId);
     _alerts[incomingAlertId] = ValueNotifier(Map<String, dynamic>.of(data));
+    _publishWaitingCount();
     return true;
   }
 
@@ -57,6 +64,7 @@ class ActiveAlertPresentationState {
     _alerts.remove(currentAlertId);
     _dismissedAlertIds.add(currentAlertId);
     _pruneDismissedAlerts();
+    _publishWaitingCount();
   }
 
   /// Drops every queued alert without dismissing them (the backend reports
@@ -68,6 +76,7 @@ class ActiveAlertPresentationState {
 
     _queue.clear();
     _alerts.clear();
+    _publishWaitingCount();
     return true;
   }
 

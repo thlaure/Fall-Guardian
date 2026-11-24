@@ -161,4 +161,28 @@ void main() {
     });
     expect((await store.takeAll()).single['alertId'], 'alert-ok');
   });
+
+  test('concurrent saves from several pushes are all kept', () async {
+    await Future.wait([
+      for (var i = 0; i < 6; i++) PendingAlertStore().save(_alert('alert-$i')),
+    ]);
+
+    final alerts = await store.takeAll();
+
+    expect(alerts.map((a) => a['alertId']).toSet(), {
+      for (var i = 0; i < 6; i++) 'alert-$i',
+    });
+  });
+
+  test('a save racing with takeAll is not lost', () async {
+    await store.save(_alert('alert-1'));
+
+    final taken = store.takeAll();
+    final saved = store.save(_alert('alert-2'));
+    final first = await taken;
+    await saved;
+
+    expect(first.map((a) => a['alertId']), ['alert-1']);
+    expect((await store.takeAll()).map((a) => a['alertId']), ['alert-2']);
+  });
 }

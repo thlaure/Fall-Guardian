@@ -118,4 +118,20 @@ void main() {
     expect(state.activeAlertListenable, isNull);
     expect(state.waitingCount, 0);
   });
+
+  test('waiting count is published live for the open screen', () {
+    final state = ActiveAlertPresentationState();
+    final counts = <int>[];
+    state.waitingCountListenable.addListener(
+      () => counts.add(state.waitingCountListenable.value),
+    );
+
+    state.show({'alertId': 'alert-1'});
+    state.show({'alertId': 'alert-2'});
+    state.show({'alertId': 'alert-3'});
+    state.dismissActive();
+    state.clearActive();
+
+    expect(counts, [1, 2, 1, 0]);
+  });
 }
