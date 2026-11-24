@@ -1,0 +1,22 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSFallDetectionUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fall Guardian uses Apple Watch fall detection to alert linked caregivers when a fall occurs."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fall Guardian utilise la détection des chutes de l’Apple Watch pour prévenir les aidants associés en cas de chute."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
