@@ -43,7 +43,11 @@ e2e: e2e-up ## Start an isolated test backend, run the app workflow E2E, then st
 		$(MAKE) e2e-down; exit $$status
 
 e2e-up: ## Start the isolated E2E backend (test env, fake push) and migrate its database
-	cd $(API_DIR) && $(E2E_COMPOSE) up -d --build
+	cd $(API_DIR) && $(E2E_COMPOSE) build
+	@# The test stack bind-mounts backend/api; sync vendor/ with composer.lock
+	@# (the entrypoint only installs when vendor/ is missing).
+	cd $(API_DIR) && $(E2E_COMPOSE) run --rm --no-deps app composer install --no-interaction --no-progress --prefer-dist
+	cd $(API_DIR) && $(E2E_COMPOSE) up -d
 	@# The entrypoint waits (60s max) for the test-suffixed database, so create
 	@# it as soon as the container can run console commands.
 	@echo "Creating E2E test database"
