@@ -144,9 +144,9 @@ Core source files include:
   detector.
 - `Localizable.xcstrings`, `InfoPlist.xcstrings`: English and French strings.
 
-Note: `Runner.xcodeproj` (the production build) does not yet reference the
-two string catalogs or the `fr` region; until it does, that build falls back to
-English text.
+`Runner.xcodeproj` (the production build) references the same two string
+catalogs in its watch target resources and lists the `fr` region; add any new
+watch resource or Swift file to both projects.
 
 ## Requirements
 
