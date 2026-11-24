@@ -1,0 +1,113 @@
+# Dependency update policy.
+#
+# Dependabot version updates were removed in PR #72 because one PR per
+# dependency created alert and review noise. This configuration keeps updates
+# flowing while bounding that noise:
+#   - one grouped PR per ecosystem per week for minor/patch updates;
+#   - semver-major updates are ignored (except GitHub Actions) and stay
+#     intentional, planned upgrade work;
+#   - at most 2 open PRs per ecosystem;
+#   - a 7-day cooldown so freshly published (possibly compromised) releases
+#     are not proposed immediately.
+# GitHub security updates are unaffected and still open immediately.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(monorepo)
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: composer
+    directory: /backend/api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(api)
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      composer-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /backend/api/.docker/api
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(api)
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /apps/assisted_mobile
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(assisted)
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /apps/caregiver_mobile
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(caregiver)
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gradle
+    directory: /apps/wear_os
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(wear-os)
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+    groups:
+      gradle-minor-patch:
+        update-types: [minor, patch]
