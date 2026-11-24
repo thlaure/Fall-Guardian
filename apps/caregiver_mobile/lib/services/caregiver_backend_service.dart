@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import '../utils/api_date_time.dart';
+import 'caregiver_secure_storage.dart';
 
 class CaregiverBackendService {
   CaregiverBackendService({
@@ -17,7 +18,7 @@ class CaregiverBackendService {
     bool? releaseMode,
     Duration? requestTimeout,
     bool? isIOSPlatform,
-  }) : _storage = storage ?? const FlutterSecureStorage(),
+  }) : _storage = storage ?? caregiverSecureStorage,
        _client = client ?? http.Client(),
        _baseUrlOverride = baseUrl,
        _releaseMode = releaseMode ?? kReleaseMode,
@@ -70,6 +71,21 @@ class CaregiverBackendService {
     return baseUrl;
   }
 
+  /// Keys holding caregiver credentials and link state. Losing them unlinks
+  /// the caregiver, so they are migrated rather than recreated.
+  static const secureKeys = [_deviceIdKey, _deviceTokenKey, _linkedKey];
+
+  /// Rewrites legacy keychain items so the background push handler can read
+  /// the device token while the iPhone is locked. iOS only; Android ignores
+  /// keychain accessibility. Safe to call on every foreground launch.
+  Future<bool> migrateSecureStorage() {
+    return SecureStorageAccessibilityMigration(
+      keys: secureKeys,
+      storage: _storage,
+      enabled: _isIOSPlatform,
+    ).run();
+  }
+
   Future<void> ensureRegistered() async {
     await _credentials();
   }
@@ -106,9 +122,9 @@ class CaregiverBackendService {
       );
     }
 
-    final protectedPersons = _decodeCollection(
-      jsonDecode(response.body),
-    ).map(LinkedProtectedPerson.fromJson).toList();
+    final protectedPersons = _decodeCollection(jsonDecode(response.body))
+        .map(LinkedProtectedPerson.fromJson)
+        .toList();
 
     protectedPersons.sort(_namedProtectedPersonsFirst);
 
@@ -300,17 +316,36 @@ class CaregiverBackendService {
   }
 
   Future<Map<String, dynamic>?> getLatestActiveAlertData() async {
-    final activeAlerts =
-        (await getCaregiverAlerts())
-            .where(_isActiveUnacknowledgedAlert)
-            .toList()
-          ..sort(_newestAlertFirst);
+    final activeAlerts = await getActiveAlertsData();
+    return activeAlerts.isEmpty ? null : activeAlerts.first;
+  }
 
-    if (activeAlerts.isEmpty) {
-      return null;
-    }
+  /// All alerts still waiting for this caregiver, newest first, in the same
+  /// string-valued shape as FCM `data` so push and recovery share one parser.
+  Future<List<Map<String, dynamic>>> getActiveAlertsData() async =>
+      (await getPresentableAlertsData()).active;
 
-    return _toPushAlertData(activeAlerts.first);
+  /// Alerts the emergency screen cares about, from one API call:
+  /// - `active`: still waiting for this caregiver (presented if new);
+  /// - `handledByOthers`: another caregiver already acknowledged them (the
+  ///   backend status becomes `acknowledged`). They are not presented anew,
+  ///   but an open or queued screen must learn that someone is handling it.
+  Future<
+    ({
+      List<Map<String, dynamic>> active,
+      List<Map<String, dynamic>> handledByOthers,
+    })
+  >
+  getPresentableAlertsData() async {
+    final alerts = await getCaregiverAlerts();
+    final active = alerts.where(_isActiveUnacknowledgedAlert).toList()
+      ..sort(_newestAlertFirst);
+    final handledByOthers = alerts.where(_isHandledByAnotherCaregiver);
+
+    return (
+      active: active.map(toPushAlertData).toList(),
+      handledByOthers: handledByOthers.map(toPushAlertData).toList(),
+    );
   }
 
   Future<void> registerPushToken(String fcmToken) async {
@@ -348,8 +383,15 @@ class CaregiverBackendService {
     bool forceRefresh = false,
   }) async {
     if (!forceRefresh) {
-      final deviceId = await _storage.read(key: _deviceIdKey);
-      final deviceToken = await _storage.read(key: _deviceTokenKey);
+      // Throws SecureStorageUnavailableException when a credential exists
+      // but is locked (iPhone locked, legacy keychain class). Registering a
+      // new device in that case would orphan the caregiver's links: fail
+      // this call instead; it is retried once the phone is unlocked.
+      final deviceId = await readExistingSecureValue(_storage, _deviceIdKey);
+      final deviceToken = await readExistingSecureValue(
+        _storage,
+        _deviceTokenKey,
+      );
 
       if (deviceId != null &&
           deviceId.isNotEmpty &&
@@ -444,8 +486,18 @@ class CaregiverBackendService {
     }
   }
 
+  /// `acknowledged` means "acknowledged by this caregiver" on the current
+  /// API; newer APIs also expose the explicit `acknowledgedByMe`.
+  static bool _isAcknowledgedByMe(Map<String, dynamic> alert) =>
+      alert['acknowledgedByMe'] is bool
+      ? alert['acknowledgedByMe'] as bool
+      : alert['acknowledged'] == true;
+
+  bool _isHandledByAnotherCaregiver(Map<String, dynamic> alert) =>
+      !_isAcknowledgedByMe(alert) && alert['status'] == 'acknowledged';
+
   bool _isActiveUnacknowledgedAlert(Map<String, dynamic> alert) {
-    if (alert['acknowledged'] == true) {
+    if (_isAcknowledgedByMe(alert)) {
       return false;
     }
 
@@ -464,12 +516,45 @@ class CaregiverBackendService {
     return rightDate.compareTo(leftDate);
   }
 
-  Map<String, dynamic> _toPushAlertData(Map<String, dynamic> alert) {
+  /// Converts a `GET /api/v1/caregiver/alerts` item to push-data shape.
+  ///
+  /// `status` lets the screen tell that another caregiver acknowledged the
+  /// alert on the current API (legacy `acknowledged` maps to
+  /// `acknowledgedByMe`). `protectedPersonName`, `cancelDeadlineAt`,
+  /// `acknowledgedAt`, `acknowledgedByMe` and `acknowledgementCount` are
+  /// optional: older API
+  /// versions omit some of them, and absent keys are simply not copied.
+  @visibleForTesting
+  static Map<String, dynamic> toPushAlertData(Map<String, dynamic> alert) {
+    String? optional(String key) {
+      final value = alert[key];
+      if (value == null) return null;
+      final text = '$value'.trim();
+      return text.isEmpty ? null : text;
+    }
+
+    final protectedPersonName = optional('protectedPersonName');
+    final cancelDeadlineAt = optional('cancelDeadlineAt');
+    final acknowledgedAt = optional('acknowledgedAt');
+    final status = optional('status');
+    final acknowledgedByMe = alert['acknowledgedByMe'] is bool
+        ? alert['acknowledgedByMe']
+        : alert['acknowledged'];
+    final acknowledgementCount = alert['acknowledgementCount'];
+
     return {
+      'type': 'fall_alert',
       'alertId': '${alert['id']}',
+      'status': ?status,
       'fallTimestamp': '${alert['fallDetectedAt']}',
       if (alert['latitude'] != null) 'latitude': '${alert['latitude']}',
       if (alert['longitude'] != null) 'longitude': '${alert['longitude']}',
+      'protectedPersonName': ?protectedPersonName,
+      'cancelDeadlineAt': ?cancelDeadlineAt,
+      'acknowledgedAt': ?acknowledgedAt,
+      if (acknowledgedByMe is bool) 'acknowledgedByMe': '$acknowledgedByMe',
+      if (acknowledgementCount is int)
+        'acknowledgementCount': '$acknowledgementCount',
     };
   }
 

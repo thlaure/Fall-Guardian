@@ -44,9 +44,9 @@ void main() {
     test('getCurrentPosition_returnsNull_whenServiceDisabled', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'isLocationServiceEnabled') return false;
-        return null;
-      });
+            if (call.method == 'isLocationServiceEnabled') return false;
+            return null;
+          });
 
       final service = LocationService();
       final position = await service.getCurrentPosition();
@@ -62,11 +62,11 @@ void main() {
       () async {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(geolocatorChannel, (call) async {
-          if (call.method == 'isLocationServiceEnabled') return true;
-          // LocationPermission.deniedForever has index 3 in geolocator v10.
-          if (call.method == 'checkPermission') return 3;
-          return null;
-        });
+              if (call.method == 'isLocationServiceEnabled') return true;
+              // LocationPermission.deniedForever has index 3 in geolocator v10.
+              if (call.method == 'checkPermission') return 3;
+              return null;
+            });
 
         final service = LocationService();
         final position = await service.getCurrentPosition();
@@ -81,15 +81,15 @@ void main() {
     test('getCurrentPosition_returnsNull_whenGetPositionThrows', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'isLocationServiceEnabled') return true;
-        // LocationPermission.whileInUse has index 2 in geolocator v10.
-        if (call.method == 'checkPermission') return 2;
-        // Simulate getCurrentPosition throwing (e.g. timeout).
-        throw PlatformException(
-          code: 'TIMEOUT',
-          message: 'Position request timed out.',
-        );
-      });
+            if (call.method == 'isLocationServiceEnabled') return true;
+            // LocationPermission.whileInUse has index 2 in geolocator v10.
+            if (call.method == 'checkPermission') return 2;
+            // Simulate getCurrentPosition throwing (e.g. timeout).
+            throw PlatformException(
+              code: 'TIMEOUT',
+              message: 'Position request timed out.',
+            );
+          });
 
       final service = LocationService();
       final position = await service.getCurrentPosition();
@@ -100,33 +100,35 @@ void main() {
       );
     });
 
-    test('requestPermissionIfNeeded_returnsUnableToDetermine_whenCheckThrows',
-        () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'checkPermission') {
-          throw PlatformException(code: 'ERROR', message: 'boom');
-        }
-        return null;
-      });
+    test(
+      'requestPermissionIfNeeded_returnsUnableToDetermine_whenCheckThrows',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(geolocatorChannel, (call) async {
+              if (call.method == 'checkPermission') {
+                throw PlatformException(code: 'ERROR', message: 'boom');
+              }
+              return null;
+            });
 
-      final service = LocationService();
-      final permission = await service.requestPermissionIfNeeded();
+        final service = LocationService();
+        final permission = await service.requestPermissionIfNeeded();
 
-      expect(permission, LocationPermission.unableToDetermine);
-    });
+        expect(permission, LocationPermission.unableToDetermine);
+      },
+    );
 
     test('requestPermissionIfNeeded_requestsWhenDenied', () async {
       var requestCalled = false;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'checkPermission') return 0;
-        if (call.method == 'requestPermission') {
-          requestCalled = true;
-          return 2;
-        }
-        return null;
-      });
+            if (call.method == 'checkPermission') return 0;
+            if (call.method == 'requestPermission') {
+              requestCalled = true;
+              return 2;
+            }
+            return null;
+          });
 
       final service = LocationService();
       final permission = await service.requestPermissionIfNeeded();
@@ -135,23 +137,25 @@ void main() {
       expect(permission, isNot(LocationPermission.denied));
     });
 
-    test('requestPermissionIfNeeded_doesNotRequestWhenAlreadyGranted',
-        () async {
-      var requestCalled = false;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(geolocatorChannel, (call) async {
-        if (call.method == 'checkPermission') return 2;
-        if (call.method == 'requestPermission') {
-          requestCalled = true;
-        }
-        return null;
-      });
+    test(
+      'requestPermissionIfNeeded_doesNotRequestWhenAlreadyGranted',
+      () async {
+        var requestCalled = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(geolocatorChannel, (call) async {
+              if (call.method == 'checkPermission') return 2;
+              if (call.method == 'requestPermission') {
+                requestCalled = true;
+              }
+              return null;
+            });
 
-      final service = LocationService();
-      final permission = await service.requestPermissionIfNeeded();
+        final service = LocationService();
+        final permission = await service.requestPermissionIfNeeded();
 
-      expect(requestCalled, isFalse);
-      expect(permission, LocationPermission.whileInUse);
-    });
+        expect(requestCalled, isFalse);
+        expect(permission, LocationPermission.whileInUse);
+      },
+    );
   });
 }

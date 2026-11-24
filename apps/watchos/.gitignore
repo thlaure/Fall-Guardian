@@ -14,3 +14,7 @@ build/
 # Swift Package Manager generated shared data
 *.xcworkspace/xcshareddata/swiftpm/
 *.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# Swift Package Manager (host unit tests)
+.build/
+.swiftpm/

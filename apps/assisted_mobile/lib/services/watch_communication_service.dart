@@ -11,16 +11,46 @@ import 'package:flutter/services.dart';
 
 /// A function that is called when the watch reports a fall.
 /// [timestamp] is the Unix epoch in milliseconds at the moment of detection.
-/// [clientAlertId] is supplied by Android's durable native relay so Dart and
-/// Kotlin submit and cancel the same idempotent backend incident.
+/// [clientAlertId] is supplied by the durable native relay so Dart and
+/// native code submit and cancel the same idempotent backend incident.
+/// [incidentId] is the watch-generated UUID when the incident is known under
+/// another clientAlertId (alias for matching watch cancels).
 typedef FallDetectedCallback = void Function(
   int timestamp,
-  String? clientAlertId,
-);
+  String? clientAlertId, {
+  String? incidentId,
+});
 
 /// A function that is called when the watch (or any other device) cancels
-/// the current alert.
-typedef CancelAlertCallback = void Function();
+/// an alert. Newer watches name the incident ([incidentId] and/or
+/// [fallTimestamp]) so only the matching alert is cancelled; both are null
+/// for legacy watches, meaning "the current alert".
+typedef CancelAlertCallback = void Function({
+  String? incidentId,
+  int? fallTimestamp,
+});
+
+/// A terminal result reported by the native relay for an incident it handled
+/// while Flutter may not have been running (see [takeRelayOutcomes]).
+class RelayOutcomeRecord {
+  const RelayOutcomeRecord({
+    required this.clientAlertId,
+    required this.fallTimestamp,
+    required this.outcome,
+    String? key,
+  }) : key = key ?? '$clientAlertId|$fallTimestamp|$outcome';
+
+  final String clientAlertId;
+  final int fallTimestamp;
+
+  /// e.g. `create_rejected`, `cancel_too_late`, `cancel_rejected`,
+  /// `cancel_unconfirmed`, `cancelled_unsent`, `dropped`,
+  /// `repair_not_delivered` (see RelayOutcomeImporter.statusFor).
+  final String outcome;
+
+  /// Native acknowledgement key (see acknowledgeRelayOutcomes).
+  final String key;
+}
 
 // ─── Why a MethodChannel? ────────────────────────────────────────────────────
 // Flutter runs inside a sandboxed Dart VM. To talk to Android or iOS APIs
@@ -103,15 +133,26 @@ class WatchCommunicationService {
         final ts =
             args?['timestamp'] as int? ?? DateTime.now().millisecondsSinceEpoch;
         final clientAlertId = args?['clientAlertId'] as String?;
+        final incidentId = args?['incidentId'];
         // The `?.call(ts)` syntax means: invoke the function only if the
         // callback has been registered; otherwise do nothing silently.
-        _onFallDetected?.call(ts, clientAlertId);
+        _onFallDetected?.call(
+          ts,
+          clientAlertId,
+          incidentId: incidentId is String ? incidentId : null,
+        );
         return null;
 
       // Native code calls 'onAlertCancelled' with no payload when the user
       // cancels the alert on the watch.
       case 'onAlertCancelled':
-        _onCancelAlert?.call();
+        final args = call.arguments as Map<Object?, Object?>?;
+        final incidentId = args?['incidentId'];
+        final fallTimestamp = args?['fallTimestamp'];
+        _onCancelAlert?.call(
+          incidentId: incidentId is String ? incidentId : null,
+          fallTimestamp: fallTimestamp is int ? fallTimestamp : null,
+        );
         return null;
 
       default:
@@ -146,9 +187,17 @@ class WatchCommunicationService {
   /// Silently no-ops if the watch is not connected or the platform rejects
   /// the call — a failed cancel is better than a crash, and the 30-second
   /// timeout is a safety net.
-  static Future<void> sendCancelAlert() async {
+  static Future<void> sendCancelAlert({
+    String? incidentId,
+    int? fallTimestamp,
+  }) async {
     try {
-      await _channel.invokeMethod('sendCancelAlert');
+      // The native side persists the backend cancellation for this incident
+      // in its durable relay queue and forwards the target to the watch.
+      await _channel.invokeMethod('sendCancelAlert', {
+        'incidentId': ?incidentId,
+        'fallTimestamp': ?fallTimestamp,
+      });
     } catch (error, stackTrace) {
       developer.log(
         'sendCancelAlert failed',
@@ -156,6 +205,80 @@ class WatchCommunicationService {
         error: error,
         stackTrace: stackTrace,
       );
+    }
+  }
+
+  /// Persists an incident in the native relay queue (Android JobScheduler /
+  /// iOS BGTaskScheduler) so it is retried even after the app process dies.
+  /// Idempotent per [clientAlertId]. Throws if the platform rejects it; the
+  /// caller still submits in-process.
+  static Future<void> enqueuePendingAlert({
+    required String clientAlertId,
+    required int fallTimestamp,
+  }) async {
+    await _channel.invokeMethod<Object?>('enqueuePendingAlert', {
+      'clientAlertId': clientAlertId,
+      'timestamp': fallTimestamp,
+    });
+  }
+
+  /// Reads terminal outcomes recorded by the native relay. They stay stored
+  /// natively until [acknowledgeRelayOutcomes] confirms Flutter persisted
+  /// them, so a crash in between never loses one.
+  static Future<List<RelayOutcomeRecord>> takeRelayOutcomes() async {
+    final raw = await _channel.invokeMethod<List<Object?>>('takeRelayOutcomes');
+    final records = <RelayOutcomeRecord>[];
+    for (final entry in raw ?? const <Object?>[]) {
+      if (entry is! Map) continue;
+      final id = entry['clientAlertId'];
+      final timestamp = entry['timestamp'];
+      final outcome = entry['outcome'];
+      final key = entry['key'];
+      if (id is String && timestamp is int && outcome is String) {
+        records.add(
+          RelayOutcomeRecord(
+            clientAlertId: id,
+            fallTimestamp: timestamp,
+            outcome: outcome,
+            key: key is String ? key : null,
+          ),
+        );
+      }
+    }
+    return records;
+  }
+
+  /// Asks the native layer to redeliver watch events that arrived before the
+  /// Dart handlers were registered. Native code keeps them until Flutter
+  /// acknowledged them, so calling this is always safe.
+  static Future<void> requestPendingWatchEvents() async {
+    try {
+      await _channel.invokeMethod<void>('deliverPendingWatchEvents');
+    } catch (error, stackTrace) {
+      developer.log(
+        'deliverPendingWatchEvents failed',
+        name: 'WatchCommunicationService',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  /// Removes outcomes Flutter has persisted (see [takeRelayOutcomes]).
+  static Future<void> acknowledgeRelayOutcomes(List<String> keys) async {
+    if (keys.isEmpty) return;
+    await _channel.invokeMethod<void>('acknowledgeRelayOutcomes', {
+      'keys': keys,
+    });
+  }
+
+  /// Before re-pairing: the native relay reports queued incidents as "not
+  /// delivered" instead of sending them under the new registration.
+  static Future<void> discardQueuedAlertsForRepair() async {
+    try {
+      await _channel.invokeMethod<Object?>('discardQueuedAlertsForRepair');
+    } on MissingPluginException {
+      // No native relay on this platform.
     }
   }
 
@@ -168,7 +291,7 @@ class WatchCommunicationService {
         'baseUrl': baseUrl,
       });
     } on MissingPluginException {
-      // iOS has no Android native relay and intentionally ignores this call.
+      // Platforms without a native relay ignore this call.
     }
   }
 

@@ -21,8 +21,8 @@ final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
     func applicationDidFinishLaunching() {
         let notificationService = WatchAlertNotificationService.shared
         notificationService.configure()
-        if let timestamp = notificationService.activeFallTimestamp() {
-            WatchSessionManager.shared.restoreActiveFall(timestamp: timestamp)
+        if let active = notificationService.activeAlert() {
+            WatchSessionManager.shared.restoreActiveFall(active.incident)
         }
         WatchSessionManager.shared.startSession()
         // Must be configured before SwiftUI exists: watchOS can launch this
@@ -41,13 +41,20 @@ final class WatchApplicationDelegate: NSObject, WKApplicationDelegate {
 final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = WatchAlertNotificationService()
 
+    /// An alert persisted across process launches: the incident plus the time
+    /// the watch first presented it (drives the minimum display window).
+    struct ActiveAlert: Equatable {
+        let incident: WatchIncident
+        let presentedAt: Int64
+    }
+
     private let notificationIdentifier = "fall-guardian-active-fall"
     private let categoryIdentifier = "FALL_GUARDIAN_FALL_ALERT"
-    private let cancelActionIdentifier = "FALL_GUARDIAN_CANCEL_ALERT"
-    private let activeFallTimestampKey = "active_watch_fall_timestamp"
+    private let openActionIdentifier = "FALL_GUARDIAN_OPEN_ALERT"
+    private let activeFallTimestampKey = WatchIncidentStorageKey.activeTimestamp
+    private let activeFallIncidentIdKey = WatchIncidentStorageKey.activeIncidentId
+    private let activeFallPresentedAtKey = "active_watch_fall_presented_at"
     private var expiryWorkItem: DispatchWorkItem?
-
-    var onCancelRequested: (() -> Void)?
 
     private override init() {
         super.init()
@@ -57,15 +64,18 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
         let center = UNUserNotificationCenter.current()
         center.delegate = self
 
-        let cancelAction = UNNotificationAction(
-            identifier: cancelActionIdentifier,
-            title: "I'm OK — Cancel Alert",
-            options: []
+        // `.foreground` launches the app on its alert screen instead of
+        // cancelling from a single tap: cancelling a safety alert always goes
+        // through the deliberate 1.5 s hold in ContentView.
+        let openAction = UNNotificationAction(
+            identifier: openActionIdentifier,
+            title: String(localized: "I'm OK — Open to cancel"),
+            options: [.foreground]
         )
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: categoryIdentifier,
-                actions: [cancelAction],
+                actions: [openAction],
                 intentIdentifiers: [],
                 options: []
             ),
@@ -86,21 +96,33 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
         }
     }
 
-    func presentFallAlert(timestamp: Int64) {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
-        guard WatchAlertDeadline.isActive(timestamp: timestamp, now: now) else {
+    func presentFallAlert(_ incident: WatchIncident) {
+        let now = Self.nowMilliseconds()
+        // Apple may deliver the event after its own check-in flow, so the
+        // fall-time window can already be over: the alert is still shown for
+        // the minimum display window (in the "notifying caregivers" state).
+        guard WatchAlertDeadline.isDisplayable(
+            timestamp: incident.timestamp,
+            presentedAt: now,
+            now: now
+        ) else {
             clearAlert()
             return
         }
 
-        UserDefaults.standard.set(Double(timestamp), forKey: activeFallTimestampKey)
-        scheduleExpiry(timestamp: timestamp, now: now)
+        let defaults = UserDefaults.standard
+        defaults.set(Double(incident.timestamp), forKey: activeFallTimestampKey)
+        defaults.set(incident.id, forKey: activeFallIncidentIdKey)
+        defaults.set(Double(now), forKey: activeFallPresentedAtKey)
+        scheduleExpiry(ActiveAlert(incident: incident, presentedAt: now), now: now)
 
         let content = UNMutableNotificationContent()
-        content.title = "Fall detected"
-        content.body = "Tap “I'm OK” to cancel the alert."
+        content.title = String(localized: "Fall detected")
+        content.body = String(localized: "Open Fall Guardian and hold “I'm OK” to cancel the alert.")
         content.categoryIdentifier = categoryIdentifier
         content.sound = .default
+        // Time-sensitive delivery lets the alert break through Focus. It needs
+        // the com.apple.developer.usernotifications.time-sensitive entitlement.
         content.interruptionLevel = .timeSensitive
 
         let request = UNNotificationRequest(
@@ -117,24 +139,40 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
 
     /// Lets ContentView restore the same incident when the wearer taps the
     /// notification and watchOS launches the app after background detection.
-    func activeFallTimestamp(
-        now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
-    ) -> Int64? {
-        let timestamp = Int64(
-            UserDefaults.standard.double(forKey: activeFallTimestampKey)
-        )
-        guard WatchAlertDeadline.isActive(timestamp: timestamp, now: now) else {
+    func activeAlert(now: Int64 = WatchAlertNotificationService.nowMilliseconds()) -> ActiveAlert? {
+        let defaults = UserDefaults.standard
+        let timestamp = Int64(defaults.double(forKey: activeFallTimestampKey))
+        let storedPresentedAt = Int64(defaults.double(forKey: activeFallPresentedAtKey))
+        // Alerts persisted by an older build have no presentation time.
+        let presentedAt = storedPresentedAt > 0 ? storedPresentedAt : timestamp
+        guard WatchAlertDeadline.isDisplayable(
+            timestamp: timestamp,
+            presentedAt: presentedAt,
+            now: now
+        ) else {
             clearAlert()
             return nil
         }
-        scheduleExpiry(timestamp: timestamp, now: now)
-        return timestamp
+
+        // Same id as the pending phone delivery, even for an alert stored by
+        // a build that predates incident ids.
+        let incidentId = WatchIncidentIdentity.resolve(timestamp: timestamp, store: defaults)
+
+        let alert = ActiveAlert(
+            incident: WatchIncident(id: incidentId, timestamp: timestamp),
+            presentedAt: presentedAt
+        )
+        scheduleExpiry(alert, now: now)
+        return alert
     }
 
     func clearAlert() {
         expiryWorkItem?.cancel()
         expiryWorkItem = nil
-        UserDefaults.standard.removeObject(forKey: activeFallTimestampKey)
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: activeFallTimestampKey)
+        defaults.removeObject(forKey: activeFallIncidentIdKey)
+        defaults.removeObject(forKey: activeFallPresentedAtKey)
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(
             withIdentifiers: [notificationIdentifier]
@@ -153,32 +191,27 @@ final class WatchAlertNotificationService: NSObject, UNUserNotificationCenterDel
         completionHandler([.banner, .sound])
     }
 
+    /// Both the notification tap and the "Open to cancel" action launch the
+    /// app; ContentViewModel restores the alert from `activeAlert()`. Nothing
+    /// is cancelled here.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.actionIdentifier == cancelActionIdentifier {
-            guard activeFallTimestamp() != nil else {
-                clearAlert()
-                completionHandler()
-                return
-            }
-            clearAlert()
-            WatchSessionManager.shared.sendCancelAlert()
-            DispatchQueue.main.async { [weak self] in
-                self?.onCancelRequested?()
-            }
-        }
         completionHandler()
     }
 
-    private func scheduleExpiry(timestamp: Int64, now: Int64) {
+    static func nowMilliseconds() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private func scheduleExpiry(_ alert: ActiveAlert, now: Int64) {
         expiryWorkItem?.cancel()
-        let remainingMs = WatchAlertDeadline.remainingMilliseconds(
-            timestamp: timestamp,
-            now: now
-        )
+        let remainingMs = WatchAlertDeadline.displayEnd(
+            timestamp: alert.incident.timestamp,
+            presentedAt: alert.presentedAt
+        ) - now
         guard remainingMs > 0 else {
             clearAlert()
             return
@@ -206,7 +239,7 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
     private let lastProcessedEventKey = "last_processed_system_fall_timestamp"
     private var manager: CMFallDetectionManager?
 
-    var onFallDetected: ((Int64) -> Void)?
+    var onFallDetected: ((WatchIncident) -> Void)?
     var onAuthorizationChanged: ((CMAuthorizationStatus) -> Void)?
 
     var isAvailable: Bool {
@@ -261,7 +294,23 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
         defer { completionHandler() }
 
         let timestamp = Int64(event.date.timeIntervalSince1970 * 1000)
-        processDetectedFall(timestamp: timestamp, resolution: event.resolution)
+        processDetectedFall(
+            timestamp: timestamp,
+            resolution: Self.resolution(from: event.resolution)
+        )
+    }
+
+    /// Maps Apple's resolution onto the testable policy enum.
+    private static func resolution(
+        from resolution: CMFallDetectionEvent.UserResolution
+    ) -> SystemFallResolution {
+        switch resolution {
+        case .confirmed: return .confirmed
+        case .dismissed: return .dismissed
+        case .rejected: return .rejected
+        case .unresponsive: return .unresponsive
+        @unknown default: return .unknown
+        }
     }
 
     /// Sends a system-detection-style event through the same WatchConnectivity
@@ -277,24 +326,33 @@ final class SystemFallDetectionService: NSObject, CMFallDetectionDelegate {
 
     private func processDetectedFall(
         timestamp: Int64,
-        resolution: CMFallDetectionEvent.UserResolution
+        resolution: SystemFallResolution
     ) {
         let defaults = UserDefaults.standard
         let lastTimestamp = Int64(defaults.double(forKey: lastProcessedEventKey))
+        let decision = SystemFallPolicy.decide(
+            timestamp: timestamp,
+            resolution: resolution,
+            lastProcessedTimestamp: lastTimestamp
+        )
+        NSLog("[SystemFall] resolution=\(resolution) decision=\(decision)")
 
         // Apple may redeliver the same event across process launches.
-        guard timestamp > lastTimestamp else { return }
+        guard decision != .ignoreDuplicate else { return }
         defaults.set(Double(timestamp), forKey: lastProcessedEventKey)
 
-        // "Rejected" explicitly means the wearer told watchOS they did not fall.
-        guard resolution != .rejected else { return }
+        // Only `rejected` stops here; `dismissed` escalates (see SystemFallPolicy).
+        guard decision == .escalate else { return }
+
+        // Identity generated once, at detection, and shared with the phone.
+        let incident = WatchIncident.make(timestamp: timestamp)
 
         // Queue phone delivery before touching UI: background launches may never
         // construct ContentView, but the incident must still leave the Watch.
-        WatchAlertNotificationService.shared.presentFallAlert(timestamp: timestamp)
-        WatchSessionManager.shared.sendFallEvent(timestamp: timestamp)
+        WatchAlertNotificationService.shared.presentFallAlert(incident)
+        WatchSessionManager.shared.sendFallEvent(incident)
         DispatchQueue.main.async { [weak self] in
-            self?.onFallDetected?(timestamp)
+            self?.onFallDetected?(incident)
         }
     }
 

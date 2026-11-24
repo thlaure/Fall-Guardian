@@ -2,6 +2,7 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
+    id 'org.jetbrains.kotlinx.kover'
 }
 
 def releaseSigningProperties = new Properties()
@@ -92,6 +93,44 @@ if (explicitReleaseArtifactRequested && !releaseSigningConfigured) {
             "ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD. Phone and Wear OS " +
             "must use the same signing key."
     )
+}
+
+// Line coverage of the JVM-testable logic (detection, diagnostics storage,
+// alert contract/persistence, alert UI policy). Android framework glue that
+// needs a device or Robolectric is excluded: Activity/Compose UI, services,
+// receivers, the content provider, and the Handler/Data Layer/SharedPreferences
+// singletons. Their decisions are delegated to the covered pure classes.
+// `make check` runs koverVerifyDebug with the project-standard 90 % line
+// bound (measured coverage of this scope was 100 % when introduced).
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "com.fallguardian.BuildConfig",
+                    "com.fallguardian.MainActivity*",
+                    "com.fallguardian.ComposableSingletons*",
+                    "com.fallguardian.FallDetectionService*",
+                    "com.fallguardian.PhoneMessageListenerService*",
+                    "com.fallguardian.BootReceiver*",
+                    "com.fallguardian.DebugAutomationReceiver*",
+                    "com.fallguardian.DiagnosticProvider*",
+                    // Case-sensitive: does not match FallDiagnosticStore/Sample/Snapshot.
+                    'com.fallguardian.FallDiagnostics*',
+                    "com.fallguardian.WearDataSender*",
+                    "com.fallguardian.SharedPreferencesAlertStorage*"
+                )
+            }
+        }
+        verify {
+            rule("JVM-testable logic line coverage") {
+                bound {
+                    minValue = 90
+                    coverageUnits = kotlinx.kover.gradle.plugin.dsl.CoverageUnit.LINE
+                }
+            }
+        }
+    }
 }
 
 dependencies {

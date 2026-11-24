@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
+
 import '../l10n/app_localizations.dart';
 import '../models/fall_event.dart';
 import '../repositories/fall_events_repository.dart';
@@ -33,9 +34,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       setState(() => _loading = false);
       if (mounted) {
         final l10n = AppLocalizations.of(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.historyLoadFailed)),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.historyLoadFailed)));
       }
     }
   }
@@ -83,34 +83,32 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _events.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.history,
-                        size: 72,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.historyEmpty,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.history,
+                    size: 72,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.4),
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _events.length,
-                  itemBuilder: (_, i) =>
-                      _EventTile(event: _events[i], l10n: l10n),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.historyEmpty,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _events.length,
+              itemBuilder: (_, i) => _EventTile(event: _events[i], l10n: l10n),
+            ),
     );
   }
 }
@@ -126,30 +124,30 @@ class _EventTile extends StatelessWidget {
     final fmt = DateFormat('MMM d, yyyy — h:mm a');
     final (icon, color, label) = switch (event.status) {
       FallEventStatus.alertSent => (
-          Icons.send,
-          Colors.redAccent,
-          l10n.statusAlertSent,
-        ),
+        Icons.send,
+        Colors.redAccent,
+        l10n.statusAlertSent,
+      ),
       FallEventStatus.alertFailed => (
-          Icons.error_outline,
-          Colors.deepOrange,
-          l10n.statusAlertFailed,
-        ),
+        Icons.error_outline,
+        Colors.deepOrange,
+        l10n.statusAlertFailed,
+      ),
       FallEventStatus.cancelled => (
-          Icons.cancel,
-          Colors.green,
-          l10n.statusCancelled,
-        ),
+        Icons.cancel,
+        Colors.green,
+        l10n.statusCancelled,
+      ),
       FallEventStatus.cancellationPending => (
-          Icons.sync,
-          Colors.orange,
-          l10n.statusCancellationPending,
-        ),
+        Icons.sync,
+        Colors.orange,
+        l10n.statusCancellationPending,
+      ),
       FallEventStatus.timedOutNoSms => (
-          Icons.timer_off,
-          Colors.orangeAccent,
-          l10n.statusTimedOut,
-        ),
+        Icons.timer_off,
+        Colors.orangeAccent,
+        l10n.statusTimedOut,
+      ),
     };
 
     return Card(

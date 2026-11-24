@@ -9,13 +9,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -28,9 +28,27 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -84,7 +102,7 @@ class MainActivity : ComponentActivity() {
     private val cancelAlertListener = MessageClient.OnMessageReceivedListener { messageEvent ->
         if (messageEvent.path == "/cancel_alert") {
             Log.d("MainActivity", "cancelAlertListener: received /cancel_alert")
-            WearDataSender.cancelAlertFromPhone()
+            WearDataSender.cancelAlertFromPhone(this@MainActivity, messageEvent.data)
         }
     }
 
@@ -112,6 +130,9 @@ class MainActivity : ComponentActivity() {
 
         // Start fall detection immediately — no permission required for the accelerometer.
         startForegroundService(Intent(this, FallDetectionService::class.java))
+
+        // Re-open an alert that was still counting down when the process died.
+        WearDataSender.restore(this)
 
         // setContent replaces the Activity's view with a Compose UI tree.
         setContent { WearApp() }
@@ -178,40 +199,20 @@ fun WearApp() {
 /**
  * Screen shown during an active fall alert (alertActive == true).
  *
- * Displays the 30-second countdown in large text, haptic-vibrates the watch
- * every second (more intensely under 10 s), and flashes red as time runs out.
- * A single tap on the green control cancels the alert immediately.
- *
- * --- Why vibrate here instead of in FallDetectionService? ---
- * Haptic feedback is a UI concern — it signals urgency to the user. Keeping it
- * in the composable makes it easy to tie the pattern to the remaining time
- * and to stop it automatically when the screen is dismissed.
- *
- * --- LaunchedEffect ---
- * LaunchedEffect(key) is a Compose side-effect that launches a coroutine scoped
- * to the composable's lifetime. The coroutine re-runs whenever `key` changes.
- * Here, key = `remaining`, so the vibration fires once per countdown second.
+ * Displays the 30-second countdown in large text and flashes red as time runs
+ * out. Cancelling requires a deliberate 1.5-second press-and-hold on the green
+ * control (same as watchOS) so a fallen wearer cannot cancel by an accidental
+ * brush. Per-second haptics are played by FallDetectionService so they also
+ * work with the screen off.
  */
 @Composable
 private fun AlertScreen(context: Context) {
     val remaining = WearDataSender.remainingSeconds  // Read the countdown from shared state.
-    val vibrator = context.getSystemService(Vibrator::class.java)
-
-    // Haptic every second — stronger under 10 s to convey increasing urgency.
-    LaunchedEffect(remaining) {
-        if (remaining in 1..29) {
-            val effect = if (remaining <= 10)
-                VibrationEffect.createOneShot(150, VibrationEffect.DEFAULT_AMPLITUDE) // Long, full-strength buzz.
-            else
-                VibrationEffect.createOneShot(40, 80) // Short, moderate buzz.
-            vibrator?.vibrate(effect)
-        }
-    }
+    val fontScale = LocalDensity.current.fontScale
 
     // Flash overlay: under 10 s, a red overlay pulses between transparent and
     // semi-opaque. rememberInfiniteTransition + animateFloat produce the animation.
     // Above 10 s, flashAlpha is always 0 (fully transparent — no flash).
-    // Flash overlay pulses between 0 and 0.4 opacity under 10 s
     val flashAlpha by if (remaining <= 10) {
         rememberInfiniteTransition(label = "flash").animateFloat(
             initialValue = 0f,
@@ -223,10 +224,16 @@ private fun AlertScreen(context: Context) {
         )
     } else {
         // No animation needed above 10 s — use a static 0 value.
-        androidx.compose.runtime.remember {
-            androidx.compose.runtime.mutableFloatStateOf(0f)
-        }
+        remember { mutableFloatStateOf(0f) }
     }
+
+    // TalkBack announces the countdown through a polite live region; the
+    // announced value changes only at milestones (see AlertUiPolicy).
+    val announcement = pluralStringResource(
+        R.plurals.alert_seconds_remaining,
+        AlertUiPolicy.countdownAnnouncementSeconds(remaining),
+        AlertUiPolicy.countdownAnnouncementSeconds(remaining)
+    )
 
     Box(
         modifier = Modifier
@@ -243,29 +250,153 @@ private fun AlertScreen(context: Context) {
             Text(
                 text = "$remaining",
                 color = Color.White,
-                fontSize = 56.sp,
-                fontWeight = FontWeight.Bold
+                fontSize = AlertUiPolicy.cappedSp(56f, fontScale).sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    contentDescription = announcement
+                }
             )
             Spacer(modifier = Modifier.height(6.dp))
-            Box(
-                modifier = Modifier
-                    .width(132.dp)
-                    .height(42.dp)
-                    .background(Color(0xFF2E7D32), RoundedCornerShape(21.dp))
-                    .clickable {
-                        WearDataSender.sendCancelAlert(context)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.alert_cancel_button),
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
+            HoldToCancelButton(
+                fontScale = fontScale,
+                onConfirmed = { WearDataSender.sendCancelAlert(context) }
+            )
+        }
+    }
+}
+
+/**
+ * Press-and-hold cancel control.
+ *
+ * Touch: the green fill grows over 1.5 s while the finger stays down; on
+ * completion a haptic tick confirms and the alert is cancelled. Releasing
+ * earlier aborts and the fill drains back.
+ *
+ * Accessibility: screen-reader users get a click action labelled "Hold to
+ * cancel". Activating it does not cancel; it opens an explicit confirmation
+ * ("Yes, I'm OK" / "No") so the cancel is still a deliberate two-step act.
+ */
+@Composable
+private fun HoldToCancelButton(fontScale: Float, onConfirmed: () -> Unit) {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var confirming by remember { mutableStateOf(false) }
+    var completed by remember { mutableStateOf(false) }
+    val holdDescription = stringResource(R.string.alert_hold_to_cancel_description)
+    val confirmActionLabel = stringResource(R.string.alert_hold_to_cancel_a11y_action)
+
+    fun complete() {
+        if (completed) return
+        completed = true
+        // The confirmation buzz is played by FallDetectionService after it
+        // stops the alarm vibration (playing it here would be cancelled).
+        onConfirmed()
+    }
+
+    if (confirming) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = stringResource(R.string.alert_confirm_cancel_question),
+                color = Color.White,
+                fontSize = AlertUiPolicy.cappedSp(12f, fontScale).sp,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AlertChoice(
+                    text = stringResource(R.string.alert_confirm_cancel_yes),
+                    color = Color(0xFF2E7D32),
+                    fontScale = fontScale,
+                    onClick = ::complete
+                )
+                AlertChoice(
+                    text = stringResource(R.string.alert_confirm_cancel_no),
+                    color = Color(0xFF424242),
+                    fontScale = fontScale,
+                    onClick = { confirming = false }
                 )
             }
         }
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .width(150.dp)
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(Color(0xFF1B4D1E))
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        val hold = scope.launch {
+                            progress.snapTo(0f)
+                            progress.animateTo(
+                                1f,
+                                tween(AlertUiPolicy.HOLD_TO_CANCEL_MS, easing = LinearEasing)
+                            )
+                            complete()
+                        }
+                        tryAwaitRelease()
+                        if (!completed) {
+                            // Released (or gesture cancelled) before 1.5 s: abort.
+                            hold.cancel()
+                            scope.launch { progress.animateTo(0f, tween(150)) }
+                        }
+                    }
+                )
+            }
+            // Replace the merged text with one clear spoken label and a
+            // confirmation-gated action for TalkBack / switch access.
+            .clearAndSetSemantics {
+                contentDescription = holdDescription
+                role = Role.Button
+                onClick(label = confirmActionLabel) {
+                    confirming = true
+                    true
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // Progress fill grows left-to-right during the hold.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .wrapContentWidth(Alignment.Start)
+                .fillMaxWidth(progress.value)
+                .background(Color(0xFF43A047))
+        )
+        Text(
+            text = stringResource(R.string.alert_cancel_button),
+            color = Color.White,
+            fontSize = AlertUiPolicy.cappedSp(11f, fontScale).sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun AlertChoice(text: String, color: Color, fontScale: Float, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .heightIn(min = 44.dp)
+            .widthIn(min = 64.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(color)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = AlertUiPolicy.cappedSp(11f, fontScale).sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
     }
 }
 

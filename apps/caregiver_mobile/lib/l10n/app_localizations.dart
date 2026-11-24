@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import 'app_localizations_en.dart';
 import 'app_localizations_fr.dart';
 
@@ -41,7 +42,27 @@ abstract class AppLocalizations {
   String detectedAt(String time);
   String get locationTitle;
   String get alertIdTitle;
-  String get acknowledge;
+  String get imHandlingIt;
+  String fallDetectedFor(String name);
+  String get yourContact;
+  String detectedOn(String date, String time);
+  String get justNow;
+  String minutesAgo(int minutes);
+  String hoursAgo(int hours);
+  String daysAgo(int days);
+  String get openInMaps;
+  String get mapsUnavailable;
+  String callEmergencyServices(String number);
+  String get dialerUnavailable;
+  String get alertDetailsTitle;
+  String coordinatesLabel(String latitude, String longitude);
+  String get reminderBanner;
+  String get handlingByMe;
+  String get handlingByOther;
+  String handlingByOtherSince(String time);
+  String get closeAlert;
+  String moreAlertsWaiting(int count);
+  String fallAlertSemantics(String name);
   String get activeAlertGuidanceWithLocation;
   String get activeAlertGuidanceWithoutLocation;
   String get activeAlertEmergencyTitle;

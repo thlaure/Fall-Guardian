@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../l10n/app_localizations.dart';
 import '../services/watch_communication_service.dart';
 
@@ -97,9 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(l10n.settingsSaved)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.settingsSaved)));
     }
   }
 
@@ -196,25 +196,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _sectionHeader(String title, ColorScheme cs) => Text(
-        title,
-        style: TextStyle(
-          color: cs.onSurface,
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-        ),
-      );
+    title,
+    style: TextStyle(
+      color: cs.onSurface,
+      fontSize: 18,
+      fontWeight: FontWeight.bold,
+    ),
+  );
 
   Widget _infoCard(String text, ColorScheme cs) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-        ),
-      );
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: cs.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+    ),
+  );
 
   Widget _sliderTile({
     required String label,

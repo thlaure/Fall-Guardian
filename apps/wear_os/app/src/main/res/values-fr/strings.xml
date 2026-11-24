@@ -3,7 +3,7 @@
     <string name="app_name">Fall Guardian</string>
     <string name="diagnostics_on">Diagnostic actif\nAppuyer pour arrêter</string>
     <string name="diagnostics_off">Diagnostic arrêté\nAppuyer pour démarrer</string>
-    <string name="alert_cancel_button">Je vais bien\nAnnuler l’alerte</string>
+    <string name="alert_cancel_button">Je vais bien\nMaintenir pour annuler</string>
     <string name="notifications_disabled">Notifications désactivées\nAppuyer pour activer</string>
     <string name="full_screen_disabled">Alertes simplifiées\nAppuyer pour vérifier</string>
     <string name="monitoring_active">Surveillance active</string>
@@ -15,6 +15,16 @@
     <string name="monitoring_notification_title">Fall Guardian actif</string>
     <string name="monitoring_notification_text">La détection de chute fonctionne</string>
     <string name="fall_detected_title">Chute détectée</string>
-    <string name="fall_detected_text">Appuyez sur « Je vais bien » pour annuler l’alerte</string>
-    <string name="fall_cancel_action">Je vais bien — Annuler</string>
+    <string name="fall_detected_text">Ouvrez, puis maintenez « Je vais bien » pour annuler</string>
+    <string name="fall_cancel_action">Ouvrir pour annuler</string>
+    <string name="alert_hold_to_cancel_description">Je vais bien. Maintenez appuyé pour annuler l’alerte</string>
+    <string name="alert_hold_to_cancel_a11y_action">annuler l’alerte, avec confirmation</string>
+    <string name="alert_confirm_cancel_question">Annuler l’alerte ?</string>
+    <string name="alert_confirm_cancel_yes">Oui, je vais bien</string>
+    <string name="alert_confirm_cancel_no">Non</string>
+    <plurals name="alert_seconds_remaining">
+        <item quantity="one">%d seconde avant l’alerte des aidants</item>
+        <item quantity="many">%d secondes avant l’alerte des aidants</item>
+        <item quantity="other">%d secondes avant l’alerte des aidants</item>
+    </plurals>
 </resources>

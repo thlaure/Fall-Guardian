@@ -1,7 +1,7 @@
 import 'package:fall_guardian/l10n/app_localizations.dart';
 import 'package:fall_guardian/screens/contacts_screen.dart';
 import 'package:fall_guardian/services/backend_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -58,7 +58,9 @@ void main() {
 
     expect(api.invitesCreated, 1);
     expect(
-        find.text('ABCD 1234 EFGH 5678 IJKL 9012 MNOP 3456'), findsOneWidget);
+      find.text('ABCD 1234 EFGH 5678 IJKL 9012 MNOP 3456'),
+      findsOneWidget,
+    );
     expect(find.text('Generate Invite Code'), findsNothing);
   });
 }

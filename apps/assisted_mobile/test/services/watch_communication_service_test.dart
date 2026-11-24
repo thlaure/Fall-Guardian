@@ -11,10 +11,10 @@ void main() {
   Future<void> simulateNativeCall(String method, [Object? arguments]) async {
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
-      'fall_guardian/watch',
-      codec.encodeMethodCall(MethodCall(method, arguments)),
-      (_) {},
-    );
+          'fall_guardian/watch',
+          codec.encodeMethodCall(MethodCall(method, arguments)),
+          (_) {},
+        );
   }
 
   tearDown(() {
@@ -23,24 +23,28 @@ void main() {
   });
 
   group('WatchCommunicationService', () {
-    test('onFallDetected delivers the native timestamp to the callback',
-        () async {
-      final service = WatchCommunicationService();
-      int? receivedTimestamp;
-      service.setFallDetectedCallback((timestamp, _) {
-        receivedTimestamp = timestamp;
-      });
+    test(
+      'onFallDetected delivers the native timestamp to the callback',
+      () async {
+        final service = WatchCommunicationService();
+        int? receivedTimestamp;
+        service.setFallDetectedCallback((timestamp, _, {incidentId}) {
+          receivedTimestamp = timestamp;
+        });
 
-      await simulateNativeCall('onFallDetected', {'timestamp': 1710000000000});
+        await simulateNativeCall('onFallDetected', {
+          'timestamp': 1710000000000,
+        });
 
-      expect(receivedTimestamp, 1710000000000);
-      service.dispose();
-    });
+        expect(receivedTimestamp, 1710000000000);
+        service.dispose();
+      },
+    );
 
     test('onFallDetected forwards the native idempotency key', () async {
       final service = WatchCommunicationService();
       String? receivedClientAlertId;
-      service.setFallDetectedCallback((_, clientAlertId) {
+      service.setFallDetectedCallback((_, clientAlertId, {incidentId}) {
         receivedClientAlertId = clientAlertId;
       });
 
@@ -53,28 +57,34 @@ void main() {
       service.dispose();
     });
 
-    test('onFallDetected falls back to now() when timestamp is missing',
-        () async {
-      final service = WatchCommunicationService();
-      int? receivedTimestamp;
-      service.setFallDetectedCallback((timestamp, _) {
-        receivedTimestamp = timestamp;
-      });
+    test(
+      'onFallDetected falls back to now() when timestamp is missing',
+      () async {
+        final service = WatchCommunicationService();
+        int? receivedTimestamp;
+        service.setFallDetectedCallback((timestamp, _, {incidentId}) {
+          receivedTimestamp = timestamp;
+        });
 
-      final before = DateTime.now().millisecondsSinceEpoch;
-      await simulateNativeCall('onFallDetected', <Object?, Object?>{});
-      final after = DateTime.now().millisecondsSinceEpoch;
+        final before = DateTime.now().millisecondsSinceEpoch;
+        await simulateNativeCall('onFallDetected', <Object?, Object?>{});
+        final after = DateTime.now().millisecondsSinceEpoch;
 
-      expect(receivedTimestamp, isNotNull);
-      expect(
-          receivedTimestamp! >= before && receivedTimestamp! <= after, isTrue);
-      service.dispose();
-    });
+        expect(receivedTimestamp, isNotNull);
+        expect(
+          receivedTimestamp! >= before && receivedTimestamp! <= after,
+          isTrue,
+        );
+        service.dispose();
+      },
+    );
 
     test('onAlertCancelled invokes the cancel callback', () async {
       final service = WatchCommunicationService();
       var cancelled = false;
-      service.setCancelAlertCallback(() => cancelled = true);
+      service.setCancelAlertCallback(({incidentId, fallTimestamp}) {
+        cancelled = true;
+      });
 
       await simulateNativeCall('onAlertCancelled');
 
@@ -94,7 +104,9 @@ void main() {
     test('dispose clears the channel handler', () async {
       final service = WatchCommunicationService();
       var fallDetected = false;
-      service.setFallDetectedCallback((_, __) => fallDetected = true);
+      service.setFallDetectedCallback(
+        (_, _, {incidentId}) => fallDetected = true,
+      );
 
       service.dispose();
 
@@ -108,9 +120,9 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return null;
-      });
+            captured = call;
+            return null;
+          });
 
       await WatchCommunicationService.sendCancelAlert();
 
@@ -121,25 +133,26 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return null;
-      });
+            captured = call;
+            return null;
+          });
 
       await WatchCommunicationService.configureNativeAlertRelay(
         'https://api.example.test',
       );
 
       expect(captured?.method, 'configureNativeAlertRelay');
-      expect(captured?.arguments, {
-        'baseUrl': 'https://api.example.test',
-      });
+      expect(captured?.arguments, {'baseUrl': 'https://api.example.test'});
     });
 
     test('sendCancelAlert swallows platform errors', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'ERROR', message: 'watch unreachable');
-      });
+            throw PlatformException(
+              code: 'ERROR',
+              message: 'watch unreachable',
+            );
+          });
 
       // Must not throw.
       await WatchCommunicationService.sendCancelAlert();
@@ -149,9 +162,9 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return null;
-      });
+            captured = call;
+            return null;
+          });
 
       await WatchCommunicationService.pushThresholds(
         freeFall: 0.6,
@@ -172,8 +185,11 @@ void main() {
     test('pushThresholds swallows platform errors', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'ERROR', message: 'watch unreachable');
-      });
+            throw PlatformException(
+              code: 'ERROR',
+              message: 'watch unreachable',
+            );
+          });
 
       // Must not throw.
       await WatchCommunicationService.pushThresholds(
@@ -183,5 +199,212 @@ void main() {
         freeFallMs: 400,
       );
     });
+  });
+  group('incident targeting and durable queue', () {
+    test('onAlertCancelled forwards the optional incident target', () async {
+      final service = WatchCommunicationService();
+      String? receivedId;
+      int? receivedTimestamp;
+      service.setCancelAlertCallback(({incidentId, fallTimestamp}) {
+        receivedId = incidentId;
+        receivedTimestamp = fallTimestamp;
+      });
+
+      await simulateNativeCall('onAlertCancelled', {
+        'incidentId': '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f',
+        'fallTimestamp': 1710000000123,
+      });
+
+      expect(receivedId, '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f');
+      expect(receivedTimestamp, 1710000000123);
+      service.dispose();
+    });
+
+    test('legacy onAlertCancelled without payload has no target', () async {
+      final service = WatchCommunicationService();
+      var called = false;
+      String? receivedId = 'unset';
+      service.setCancelAlertCallback(({incidentId, fallTimestamp}) {
+        called = true;
+        receivedId = incidentId;
+      });
+
+      await simulateNativeCall('onAlertCancelled', {'incidentId': 42});
+
+      expect(called, isTrue);
+      expect(receivedId, isNull);
+      service.dispose();
+    });
+
+    test('sendCancelAlert includes the incident target when known', () async {
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            captured = call;
+            return null;
+          });
+
+      await WatchCommunicationService.sendCancelAlert(
+        incidentId: 'incident-a',
+        fallTimestamp: 5,
+      );
+
+      expect(captured?.arguments, {
+        'incidentId': 'incident-a',
+        'fallTimestamp': 5,
+      });
+    });
+
+    test('enqueuePendingAlert persists through the native relay', () async {
+      MethodCall? captured;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            captured = call;
+            return 'incident-a';
+          });
+
+      await WatchCommunicationService.enqueuePendingAlert(
+        clientAlertId: 'incident-a',
+        fallTimestamp: 7,
+      );
+
+      expect(captured?.method, 'enqueuePendingAlert');
+      expect(captured?.arguments, {
+        'clientAlertId': 'incident-a',
+        'timestamp': 7,
+      });
+    });
+
+    test(
+      'enqueuePendingAlert surfaces native rejection to the caller',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              throw PlatformException(code: 'INVALID_ARGS');
+            });
+
+        await expectLater(
+          WatchCommunicationService.enqueuePendingAlert(
+            clientAlertId: 'bad|id',
+            fallTimestamp: 7,
+          ),
+          throwsA(isA<PlatformException>()),
+        );
+      },
+    );
+
+    test(
+      'takeRelayOutcomes parses valid entries and skips malformed ones',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              expect(call.method, 'takeRelayOutcomes');
+              return [
+                {'clientAlertId': 'a', 'timestamp': 1, 'outcome': 'dropped'},
+                {'clientAlertId': 'b', 'timestamp': 'x', 'outcome': 'dropped'},
+                'garbage',
+              ];
+            });
+
+        final outcomes = await WatchCommunicationService.takeRelayOutcomes();
+
+        expect(outcomes, hasLength(1));
+        expect(outcomes.single.clientAlertId, 'a');
+        expect(outcomes.single.fallTimestamp, 1);
+        expect(outcomes.single.outcome, 'dropped');
+      },
+    );
+
+    test('takeRelayOutcomes tolerates a null native answer', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async => null);
+
+      expect(await WatchCommunicationService.takeRelayOutcomes(), isEmpty);
+    });
+  });
+  group('review fixes', () {
+    test('onFallDetected forwards the watch incident alias', () async {
+      final service = WatchCommunicationService();
+      String? alias;
+      service.setFallDetectedCallback(
+        (_, _, {incidentId}) => alias = incidentId,
+      );
+
+      await simulateNativeCall('onFallDetected', {
+        'timestamp': 1,
+        'clientAlertId': 'wear-os-1',
+        'incidentId': '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f',
+      });
+
+      expect(alias, '3f2b8c1e-9d4a-4c6b-8e2f-1a2b3c4d5e6f');
+      service.dispose();
+    });
+
+    test('acknowledgeRelayOutcomes sends keys and skips empty lists', () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return null;
+          });
+
+      await WatchCommunicationService.acknowledgeRelayOutcomes(const []);
+      await WatchCommunicationService.acknowledgeRelayOutcomes(const ['k1']);
+
+      expect(calls.single.method, 'acknowledgeRelayOutcomes');
+      expect(calls.single.arguments, {
+        'keys': ['k1'],
+      });
+    });
+
+    test('takeRelayOutcomes keeps the native acknowledgement key', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            channel,
+            (call) async => [
+              {
+                'clientAlertId': 'a',
+                'timestamp': 1,
+                'outcome': 'dropped',
+                'key': 'k',
+              },
+            ],
+          );
+
+      final outcomes = await WatchCommunicationService.takeRelayOutcomes();
+
+      expect(outcomes.single.key, 'k');
+    });
+
+    test(
+      'discardQueuedAlertsForRepair calls native and tolerates no relay',
+      () async {
+        MethodCall? captured;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              captured = call;
+              return 2;
+            });
+        await WatchCommunicationService.discardQueuedAlertsForRepair();
+        expect(captured?.method, 'discardQueuedAlertsForRepair');
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        await WatchCommunicationService.discardQueuedAlertsForRepair();
+      },
+    );
+  });
+
+  test('requestPendingWatchEvents asks native and swallows errors', () async {
+    MethodCall? captured;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          captured = call;
+          throw PlatformException(code: 'ERR');
+        });
+
+    await WatchCommunicationService.requestPendingWatchEvents();
+
+    expect(captured?.method, 'deliverPendingWatchEvents');
   });
 }

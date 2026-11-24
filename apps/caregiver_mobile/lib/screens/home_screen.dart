@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 import 'alert_history_screen.dart';
@@ -64,9 +65,8 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
     widget.onLinked?.call();
     _loadProtectedPersonsCount();
     final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(l10n.linkedSnackbar)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.linkedSnackbar)));
   }
 
   void _onLinksChanged(bool linked) {
@@ -114,6 +114,7 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => ProtectedPersonsScreen(
+                      backend: widget.backend,
                       onLinked: _onLinked,
                       onLinksChanged: _onLinksChanged,
                     ),
@@ -130,7 +131,8 @@ class _CaregiverHomeScreenState extends State<CaregiverHomeScreen> {
                   ? () => Navigator.push(
                       context,
                       MaterialPageRoute<void>(
-                        builder: (_) => const AlertHistoryScreen(),
+                        builder: (_) =>
+                            AlertHistoryScreen(backend: widget.backend),
                       ),
                     )
                   : null,

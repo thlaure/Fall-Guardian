@@ -1,0 +1,14 @@
+# Override for backend/api/compose.test.yaml used by `make e2e` and API CI.
+#
+# Serves the test-environment API over plain HTTP on the host so
+# tools/e2e/fall_guardian_workflow_e2e.dart can reach it. The test environment
+# uses PUSH_PROVIDER=fake and the no-op endpoint rate limiter
+# (config/services_test.yaml), so runs are deterministic and never call FCM.
+services:
+    app:
+        environment:
+            SERVER_NAME: ":80"
+        ports:
+            - target: 80
+              published: ${E2E_PORT:-8003}
+              protocol: tcp

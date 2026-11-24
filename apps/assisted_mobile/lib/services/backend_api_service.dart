@@ -8,7 +8,10 @@ import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
 import 'alert_ports.dart';
+import 'device_pairing_state.dart';
+import 'device_registration_marker.dart';
 import 'secure_store.dart';
+import 'watch_communication_service.dart';
 
 class BackendApiService implements AlertBackendGateway {
   BackendApiService({
@@ -20,21 +23,40 @@ class BackendApiService implements AlertBackendGateway {
     bool? isIOSPlatform,
     List<Duration>? submitRetryDelays,
     List<Duration>? cancellationRetryDelays,
-  })  : _store = store ?? SecureKeyValueStore(),
-        _client = client ?? http.Client(),
-        _baseUrlOverride = baseUrl,
-        _releaseMode = releaseMode ?? kReleaseMode,
-        _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
-        _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
-        _submitRetryDelays = submitRetryDelays ??
-            const [Duration(milliseconds: 500), Duration(seconds: 2)],
-        _cancellationRetryDelays = cancellationRetryDelays ??
-            const [Duration(milliseconds: 200), Duration(milliseconds: 500)];
+    DevicePairingState? pairingState,
+    DeviceRegistrationMarker? registrationMarker,
+    Future<void> Function()? discardQueuedAlertsForRepair,
+  }) : _store = store ?? SecureKeyValueStore(),
+       _discardQueuedAlertsForRepair =
+           discardQueuedAlertsForRepair ??
+           WatchCommunicationService.discardQueuedAlertsForRepair,
+       _registrationMarker =
+           registrationMarker ?? const SharedPreferencesRegistrationMarker(),
+       _pairingState = pairingState ?? DevicePairingState.shared,
+       _client = client ?? http.Client(),
+       _baseUrlOverride = baseUrl,
+       _releaseMode = releaseMode ?? kReleaseMode,
+       _requestTimeout = requestTimeout ?? const Duration(seconds: 10),
+       _isIOSPlatform = isIOSPlatform ?? Platform.isIOS,
+       _submitRetryDelays =
+           submitRetryDelays ??
+           const [Duration(milliseconds: 500), Duration(seconds: 2)],
+       _cancellationRetryDelays =
+           cancellationRetryDelays ??
+           const [Duration(milliseconds: 200), Duration(milliseconds: 500)];
 
   static const _deviceIdKey = 'backend_device_id';
   static const _deviceTokenKey = 'backend_device_token';
 
+  /// Set (by Dart or the native relays) when the API rejected this phone's
+  /// credentials. Shared secure-store key — must match NativeAlertRelay.kt
+  /// and NativeAppleWatchAlertRelay.swift.
+  static const reauthRequiredKey = 'backend_reauth_required';
+
   final KeyValueStore _store;
+  final DevicePairingState _pairingState;
+  final DeviceRegistrationMarker _registrationMarker;
+  final Future<void> Function() _discardQueuedAlertsForRepair;
   final http.Client _client;
   final String? _baseUrlOverride;
   final bool _releaseMode;
@@ -44,7 +66,7 @@ class BackendApiService implements AlertBackendGateway {
   // The initial fall-alert submission is now the single safety-critical
   // call (the backend owns the cancel/grace timer once it lands) — retry a
   // couple of times on transient failure instead of giving up on the first
-  // blip, same idea as the existing 401-refresh-and-retry pattern below.
+  // blip.
   final List<Duration> _submitRetryDelays;
   final List<Duration> _cancellationRetryDelays;
 
@@ -85,21 +107,21 @@ class BackendApiService implements AlertBackendGateway {
     return baseUrl;
   }
 
+  /// Validates the stored credentials against the API.
+  ///
+  /// A 401/403 means the backend no longer knows this phone. Registering a
+  /// fresh device silently would create an orphan with no caregiver links —
+  /// alerts would then reach nobody while the UI claimed success — so this
+  /// instead enters the explicit re-pairing state ([repairDevice]).
   @override
   Future<void> ensureReady() async {
-    var credentials = await _credentials();
+    final credentials = await _credentials();
     final response = await _getLinkedCaregivers(credentials);
-    if (response.statusCode == HttpStatus.unauthorized ||
-        response.statusCode == HttpStatus.forbidden) {
-      credentials = await _credentials(forceRefresh: true);
-      final refreshedResponse = await _getLinkedCaregivers(credentials);
-      if (!_isSuccess(refreshedResponse.statusCode)) {
-        throw BackendApiException(
-          'Failed to validate refreshed device credentials',
-          statusCode: refreshedResponse.statusCode,
-          body: refreshedResponse.body,
-        );
-      }
+    await _throwIfCredentialsRejected(response);
+
+    if (_isSuccess(response.statusCode)) {
+      // The server accepts the stored token again: clear any stale flag.
+      await _clearRepairRequired();
       return;
     }
 
@@ -118,16 +140,16 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   @override
-  Future<void> submitFallAlert({
+  Future<FallAlertReceipt?> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
     required double? latitude,
     required double? longitude,
   }) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
-        await _submitFallAlertOnce(
+        return await _submitFallAlertOnce(
           clientAlertId: clientAlertId,
           fallTimestamp: fallTimestamp,
           locale: locale,
@@ -136,7 +158,6 @@ class BackendApiService implements AlertBackendGateway {
         );
         // The API acknowledges the alert was accepted; the backend now owns
         // the grace/cancel window and dispatches the caregiver push itself.
-        return;
       } catch (error) {
         final canRetry =
             attempt < _submitRetryDelays.length && _isRetryableFailure(error);
@@ -146,24 +167,30 @@ class BackendApiService implements AlertBackendGateway {
     }
   }
 
-  // A 4xx (other than 401, already handled by the credential refresh above)
-  // is a permanent client error that retrying will never fix. Only timeouts
-  // (no status code at all) and 5xx server errors are worth retrying.
+  // A 4xx is a permanent client error that retrying will never fix (401/403
+  // surface as [DeviceRepairRequiredException]). Timeouts (no status code),
+  // 408, 429 and 5xx server errors are worth retrying.
   bool _isRetryableFailure(Object error) {
+    if (error is DeviceRepairRequiredException) return false;
     if (error is! BackendApiException) return true;
     final statusCode = error.statusCode;
-    return statusCode == null || statusCode >= 500;
+    return statusCode == null ||
+        statusCode == HttpStatus.forbidden ||
+        statusCode == HttpStatus.requestTimeout ||
+        statusCode == HttpStatus.tooManyRequests ||
+        statusCode >= 500;
   }
 
-  Future<void> _submitFallAlertOnce({
+  Future<FallAlertReceipt?> _submitFallAlertOnce({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
     required double? latitude,
     required double? longitude,
   }) async {
-    var credentials = await _credentials();
-    var response = await _submitFallAlert(
+    final credentials = await _credentials();
+    final roundTrip = Stopwatch()..start();
+    final response = await _submitFallAlert(
       credentials: credentials,
       clientAlertId: clientAlertId,
       fallTimestamp: fallTimestamp,
@@ -171,17 +198,8 @@ class BackendApiService implements AlertBackendGateway {
       latitude: latitude,
       longitude: longitude,
     );
-    if (response.statusCode == HttpStatus.unauthorized) {
-      credentials = await _credentials(forceRefresh: true);
-      response = await _submitFallAlert(
-        credentials: credentials,
-        clientAlertId: clientAlertId,
-        fallTimestamp: fallTimestamp,
-        locale: locale,
-        latitude: latitude,
-        longitude: longitude,
-      );
-    }
+    roundTrip.stop();
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -189,6 +207,50 @@ class BackendApiService implements AlertBackendGateway {
         statusCode: response.statusCode,
         body: response.body,
       );
+    }
+
+    return fallAlertReceiptFrom(response, roundTrip: roundTrip.elapsed);
+  }
+
+  /// Derives the remaining server-owned grace period from a create response.
+  ///
+  /// remaining = cancelDeadlineAt − serverNow − roundTrip, all from server
+  /// timestamps, so the phone's wall clock (which may be skewed) is never
+  /// compared with server time. serverNow is the later of `receivedAt` and
+  /// the HTTP `Date` header: for an idempotent replay of an older alert
+  /// `receivedAt` is in the past and `Date` is the better "now". Subtracting
+  /// the full round trip errs on the side of showing less time, never more.
+  @visibleForTesting
+  static FallAlertReceipt? fallAlertReceiptFrom(
+    http.Response response, {
+    required Duration roundTrip,
+  }) {
+    try {
+      final payload = jsonDecode(response.body);
+      if (payload is! Map<String, dynamic>) return null;
+      final deadline = DateTime.tryParse('${payload['cancelDeadlineAt']}');
+      final receivedAt = DateTime.tryParse('${payload['receivedAt']}');
+      if (deadline == null || receivedAt == null) return null;
+
+      var serverNow = receivedAt;
+      final dateHeader = response.headers['date'];
+      if (dateHeader != null) {
+        try {
+          final headerNow = HttpDate.parse(dateHeader);
+          if (headerNow.isAfter(serverNow)) serverNow = headerNow;
+        } on FormatException {
+          // Keep receivedAt.
+        } on HttpException {
+          // Keep receivedAt.
+        }
+      }
+
+      final remaining = deadline.difference(serverNow) - roundTrip;
+      return FallAlertReceipt(
+        remainingGrace: remaining.isNegative ? Duration.zero : remaining,
+      );
+    } on FormatException {
+      return null;
     }
   }
 
@@ -204,13 +266,15 @@ class BackendApiService implements AlertBackendGateway {
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode(_fallAlertPayload(
-          clientAlertId: clientAlertId,
-          fallTimestamp: fallTimestamp,
-          locale: locale,
-          latitude: latitude,
-          longitude: longitude,
-        )),
+        body: jsonEncode(
+          _fallAlertPayload(
+            clientAlertId: clientAlertId,
+            fallTimestamp: fallTimestamp,
+            locale: locale,
+            latitude: latitude,
+            longitude: longitude,
+          ),
+        ),
       ),
       'Fall alert submission timed out',
     );
@@ -224,7 +288,7 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         await _recordCancelledFallAlertOnce(
           clientAlertId: clientAlertId,
@@ -235,7 +299,8 @@ class BackendApiService implements AlertBackendGateway {
         );
         return;
       } catch (error) {
-        final canRetry = attempt < _cancellationRetryDelays.length &&
+        final canRetry =
+            attempt < _cancellationRetryDelays.length &&
             _isRetryableFailure(error);
         if (!canRetry) rethrow;
         await Future<void>.delayed(_cancellationRetryDelays[attempt]);
@@ -250,8 +315,8 @@ class BackendApiService implements AlertBackendGateway {
     required double? latitude,
     required double? longitude,
   }) async {
-    var credentials = await _credentials();
-    var response = await _recordCancelledFallAlert(
+    final credentials = await _credentials();
+    final response = await _recordCancelledFallAlert(
       credentials: credentials,
       clientAlertId: clientAlertId,
       fallTimestamp: fallTimestamp,
@@ -259,17 +324,7 @@ class BackendApiService implements AlertBackendGateway {
       latitude: latitude,
       longitude: longitude,
     );
-    if (response.statusCode == HttpStatus.unauthorized) {
-      credentials = await _credentials(forceRefresh: true);
-      response = await _recordCancelledFallAlert(
-        credentials: credentials,
-        clientAlertId: clientAlertId,
-        fallTimestamp: fallTimestamp,
-        locale: locale,
-        latitude: latitude,
-        longitude: longitude,
-      );
-    }
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -297,26 +352,25 @@ class BackendApiService implements AlertBackendGateway {
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts'),
         headers: _jsonHeaders(token: credentials.deviceToken),
-        body: jsonEncode(_fallAlertPayload(
-          clientAlertId: clientAlertId,
-          fallTimestamp: fallTimestamp,
-          locale: locale,
-          latitude: latitude,
-          longitude: longitude,
-          cancelled: true,
-        )),
+        body: jsonEncode(
+          _fallAlertPayload(
+            clientAlertId: clientAlertId,
+            fallTimestamp: fallTimestamp,
+            locale: locale,
+            latitude: latitude,
+            longitude: longitude,
+            cancelled: true,
+          ),
+        ),
       ),
       'Cancelled fall alert recording timed out',
     );
   }
 
   Future<Map<String, dynamic>> createInvite() async {
-    var credentials = await _credentials();
-    var response = await _createInvite(credentials);
-    if (response.statusCode == HttpStatus.unauthorized) {
-      credentials = await _credentials(forceRefresh: true);
-      response = await _createInvite(credentials);
-    }
+    final credentials = await _credentials();
+    final response = await _createInvite(credentials);
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -341,12 +395,13 @@ class BackendApiService implements AlertBackendGateway {
 
   @override
   Future<void> cancelFallAlert({required String clientAlertId}) async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         await _cancelFallAlertOnce(clientAlertId);
         return;
       } catch (error) {
-        final canRetry = attempt < _cancellationRetryDelays.length &&
+        final canRetry =
+            attempt < _cancellationRetryDelays.length &&
             _isRetryableFailure(error);
         if (!canRetry) rethrow;
         await Future<void>.delayed(_cancellationRetryDelays[attempt]);
@@ -355,24 +410,15 @@ class BackendApiService implements AlertBackendGateway {
   }
 
   Future<void> _cancelFallAlertOnce(String clientAlertId) async {
-    var credentials = await _credentials();
-    var response = await _send(
+    final credentials = await _credentials();
+    final response = await _send(
       _client.post(
         Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
         headers: _jsonHeaders(token: credentials.deviceToken),
       ),
       'Fall alert cancellation timed out',
     );
-    if (response.statusCode == HttpStatus.unauthorized) {
-      credentials = await _credentials(forceRefresh: true);
-      response = await _send(
-        _client.post(
-          Uri.parse('$_baseUrl/api/v1/fall-alerts/$clientAlertId/cancel'),
-          headers: _jsonHeaders(token: credentials.deviceToken),
-        ),
-        'Fall alert cancellation timed out',
-      );
-    }
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -411,6 +457,7 @@ class BackendApiService implements AlertBackendGateway {
     if (response.statusCode == 404) {
       return;
     }
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -424,6 +471,7 @@ class BackendApiService implements AlertBackendGateway {
   Future<List<Map<String, dynamic>>> getLinkedCaregivers() async {
     final credentials = await _credentials();
     final response = await _getLinkedCaregivers(credentials);
+    await _throwIfCredentialsRejected(response);
 
     if (!_isSuccess(response.statusCode)) {
       throw BackendApiException(
@@ -433,17 +481,15 @@ class BackendApiService implements AlertBackendGateway {
       );
     }
 
-    final caregivers =
-        (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
+    final caregivers = (jsonDecode(response.body) as List)
+        .cast<Map<String, dynamic>>();
 
     caregivers.sort(_namedCaregiversFirst);
 
     return caregivers;
   }
 
-  Future<http.Response> _getLinkedCaregivers(
-    _BackendCredentials credentials,
-  ) {
+  Future<http.Response> _getLinkedCaregivers(_BackendCredentials credentials) {
     return _send(
       _client.get(
         Uri.parse('$_baseUrl/api/v1/protected/linked-caregivers'),
@@ -453,21 +499,77 @@ class BackendApiService implements AlertBackendGateway {
     );
   }
 
-  Future<_BackendCredentials> _credentials({bool forceRefresh = false}) async {
-    if (!forceRefresh) {
-      final deviceId = await _store.read(_deviceIdKey);
-      final deviceToken = await _store.read(_deviceTokenKey);
-      if (deviceId != null &&
-          deviceId.isNotEmpty &&
-          deviceToken != null &&
-          deviceToken.isNotEmpty) {
-        return _BackendCredentials(
-          deviceId: deviceId,
-          deviceToken: deviceToken,
-        );
+  /// Whether this phone must be re-paired (persisted flag). Also refreshes
+  /// the shared UI notifier.
+  Future<bool> isRepairRequired() async {
+    final required = await _store.read(reauthRequiredKey) == 'true';
+    _pairingState.repairRequired.value = required;
+    return required;
+  }
+
+  /// Explicit, user-initiated re-pairing: drops the rejected credentials and
+  /// registers this phone again. The new registration has no caregiver
+  /// links yet, so the user must send new invitations afterwards (the UI
+  /// says so). Never called automatically.
+  Future<void> repairDevice() async {
+    await _store.delete(_deviceIdKey);
+    await _store.delete(_deviceTokenKey);
+    // Queued incidents belong to the old registration. The new device has no
+    // caregiver links, so they must not be sent silently under it: the native
+    // relay reports them in history (caregivers may not have been reached).
+    // Done after deleting the old token (the relay cannot send meanwhile)
+    // and before registering (the new token must never pick them up).
+    await _discardQueuedAlertsForRepair();
+    await _register();
+    await _clearRepairRequired();
+  }
+
+  Future<void> _throwIfCredentialsRejected(http.Response response) async {
+    // Only 401 means the backend no longer knows this token. 403 can be
+    // transient (edge/WAF policy) and is retried like other server-side
+    // refusals instead of forcing the user to re-pair.
+    if (response.statusCode != HttpStatus.unauthorized) return;
+    await _store.write(reauthRequiredKey, 'true');
+    _pairingState.repairRequired.value = true;
+    throw DeviceRepairRequiredException(statusCode: response.statusCode);
+  }
+
+  Future<void> _clearRepairRequired() async {
+    if (await _store.read(reauthRequiredKey) != null) {
+      await _store.delete(reauthRequiredKey);
+    }
+    _pairingState.repairRequired.value = false;
+  }
+
+  Future<_BackendCredentials> _credentials() async {
+    final deviceId = await _store.read(_deviceIdKey);
+    final deviceToken = await _store.read(_deviceTokenKey);
+    if (deviceId != null &&
+        deviceId.isNotEmpty &&
+        deviceToken != null &&
+        deviceToken.isNotEmpty) {
+      // Migration: installs registered before the marker existed (or iOS
+      // reinstalls, where the Keychain outlives UserDefaults) get it now.
+      if (!await _registrationMarker.isSet()) {
+        await _registrationMarker.set();
       }
+      return _BackendCredentials(deviceId: deviceId, deviceToken: deviceToken);
     }
 
+    // Only a true first launch registers automatically. After a rejection,
+    // or when credentials vanished from secure storage on a phone that had
+    // registered (marker present), registering would create an orphan device
+    // that no caregiver is linked to; re-pairing must be explicit.
+    if (await _store.read(reauthRequiredKey) == 'true' ||
+        await _registrationMarker.isSet()) {
+      await _store.write(reauthRequiredKey, 'true');
+      _pairingState.repairRequired.value = true;
+      throw DeviceRepairRequiredException();
+    }
+    return _register();
+  }
+
+  Future<_BackendCredentials> _register() async {
     final response = await _send(
       _client.post(
         Uri.parse('$_baseUrl/api/v1/devices/register'),
@@ -497,10 +599,9 @@ class BackendApiService implements AlertBackendGateway {
 
     await _store.write(_deviceIdKey, credentials.deviceId);
     await _store.write(_deviceTokenKey, credentials.deviceToken);
-    developer.log(
-      'Registered device with backend ${credentials.deviceId}',
-      name: 'BackendApiService',
-    );
+    await _registrationMarker.set();
+    // Never log the device id or token.
+    developer.log('Registered device with backend', name: 'BackendApiService');
     return credentials;
   }
 
@@ -514,9 +615,10 @@ class BackendApiService implements AlertBackendGateway {
   }) {
     return {
       'clientAlertId': clientAlertId,
-      'fallTimestamp':
-          DateTime.fromMillisecondsSinceEpoch(fallTimestamp, isUtc: true)
-              .toIso8601String(),
+      'fallTimestamp': DateTime.fromMillisecondsSinceEpoch(
+        fallTimestamp,
+        isUtc: true,
+      ).toIso8601String(),
       'locale': locale,
       'latitude': latitude,
       'longitude': longitude,
@@ -583,6 +685,13 @@ class BackendApiException implements Exception {
 
   @override
   String toString() => 'BackendApiException($message, $statusCode, $body)';
+}
+
+/// The API rejected this phone's credentials (401/403). Caregivers cannot be
+/// notified until the user explicitly re-pairs the phone.
+class DeviceRepairRequiredException extends BackendApiException {
+  DeviceRepairRequiredException({super.statusCode})
+    : super('Device re-pairing required');
 }
 
 class _BackendCredentials {

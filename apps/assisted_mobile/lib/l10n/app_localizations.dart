@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import 'app_localizations_en.dart';
 import 'app_localizations_fr.dart';
 
@@ -37,6 +38,11 @@ abstract class AppLocalizations {
   String homeCaregiverCount(int count);
   String get homeHistoryTitle;
   String get homeFootnote;
+  String get repairRequiredTitle;
+  String get repairRequiredBody;
+  String get repairAction;
+  String get repairSucceeded;
+  String get repairFailed;
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   String get contactsScreenTitle;
@@ -60,6 +66,8 @@ abstract class AppLocalizations {
   String get confirmingCancellation;
   String get cancellationUnconfirmed;
   String get cancelAlert;
+  String get alertRepairRequired;
+  String get caregiversBeingNotified;
 
   // ── History ──────────────────────────────────────────────────────────────
   String get historyTitle;
@@ -102,8 +110,8 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) => AppLocalizations.supportedLocales.any(
-        (l) => l.languageCode == locale.languageCode,
-      );
+    (l) => l.languageCode == locale.languageCode,
+  );
 
   @override
   Future<AppLocalizations> load(Locale locale) async {

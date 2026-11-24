@@ -1,5 +1,5 @@
 import XCTest
-@testable import FallGuardian_Watch_App
+@testable import FallGuardianWatchLogic
 
 final class FallAlgorithmTests: XCTestCase {
     private var algorithm: FallAlgorithm!
@@ -109,6 +109,27 @@ final class FallAlgorithmTests: XCTestCase {
                 startMs: 700,
                 durationMs: 4_000
             )
+        )
+    }
+
+    func testStaleLowAccelerationCannotCombineWithLaterImpact() {
+        baseline(algorithm)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 500, durationMs: 100)
+        _ = samples(algorithm, x: 0, y: 0, z: 1, startMs: 620, durationMs: 2_000)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 2_640)
+
+        XCTAssertFalse(
+            samples(algorithm, x: 0, y: 0, z: 1, startMs: 2_660, durationMs: 3_000)
+        )
+    }
+
+    func testPostImpactLowAccelerationCannotQualifyFall() {
+        baseline(algorithm)
+        _ = algorithm.processSample(ax: 0, ay: 0, az: 3.1, nowMs: 500)
+        _ = samples(algorithm, x: 0, y: 0, z: 0, startMs: 520, durationMs: 100)
+
+        XCTAssertFalse(
+            samples(algorithm, x: 0, y: 0, z: 1, startMs: 640, durationMs: 3_500)
         )
     }
 

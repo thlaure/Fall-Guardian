@@ -7,43 +7,47 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 
 void main() {
-  test('bootstrap requests location permission before contacting the backend',
-      () async {
-    final calls = <String>[];
-    final contacts = [
-      const Contact(id: '1', name: 'Alice', phone: '+33600000001'),
-    ];
+  test(
+    'bootstrap requests location permission before contacting the backend',
+    () async {
+      final calls = <String>[];
+      final contacts = [
+        const Contact(id: '1', name: 'Alice', phone: '+33600000001'),
+      ];
 
-    final service = AppBootstrapService(
-      locationService: _FakeLocationService(calls),
-      backendApi: _FakeBackendApiService(calls),
-      contactsRepository: _FakeContactsRepository(calls, contacts),
-    );
+      final service = AppBootstrapService(
+        locationService: _FakeLocationService(calls),
+        backendApi: _FakeBackendApiService(calls),
+        contactsRepository: _FakeContactsRepository(calls, contacts),
+      );
 
-    await service.bootstrap();
+      await service.bootstrap();
 
-    expect(calls, [
-      'location.requestPermissionIfNeeded',
-      'backend.ensureReady',
-      'contacts.getAll',
-      'backend.syncContacts:1',
-    ]);
-  });
+      expect(calls, [
+        'location.requestPermissionIfNeeded',
+        'backend.ensureReady',
+        'contacts.getAll',
+        'backend.syncContacts:1',
+      ]);
+    },
+  );
 
-  test('a backend failure does not prevent the location permission request',
-      () async {
-    final calls = <String>[];
+  test(
+    'a backend failure does not prevent the location permission request',
+    () async {
+      final calls = <String>[];
 
-    final service = AppBootstrapService(
-      locationService: _FakeLocationService(calls),
-      backendApi: _FailingBackendApiService(calls),
-      contactsRepository: _FakeContactsRepository(calls, const []),
-    );
+      final service = AppBootstrapService(
+        locationService: _FakeLocationService(calls),
+        backendApi: _FailingBackendApiService(calls),
+        contactsRepository: _FakeContactsRepository(calls, const []),
+      );
 
-    await expectLater(service.bootstrap(), throwsException);
+      await expectLater(service.bootstrap(), throwsException);
 
-    expect(calls, ['location.requestPermissionIfNeeded']);
-  });
+      expect(calls, ['location.requestPermissionIfNeeded']);
+    },
+  );
 }
 
 class _FakeLocationService extends LocationService {

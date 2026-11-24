@@ -10,10 +10,7 @@ void main() {
     expect(l10n.fallAlertBody, contains('saved in history'));
     expect(l10n.statusAlertSent, 'Alert sent to caregivers');
     expect(l10n.statusCancelled, 'Cancelled by protected person');
-    expect(
-      l10n.statusCancellationPending,
-      'Cancellation confirmation pending',
-    );
+    expect(l10n.statusCancellationPending, 'Cancellation confirmation pending');
   });
 
   test('French alert copy explains cancellation and history status', () {

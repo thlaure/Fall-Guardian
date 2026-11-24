@@ -29,9 +29,11 @@ fall_guardian_monorepo/
 │   └── watchos/             native Apple Watch app
 ├── backend/
 │   └── api/                 Symfony/API Platform backend
-├── packages/                reserved for shared contracts or generated assets
+├── packages/
+│   └── api_contract/        generated OpenAPI snapshot of the backend API
 ├── docs/                    workspace-level documentation
-└── scripts/                 workspace automation
+├── scripts/                 workspace automation (production deploy script)
+└── tools/e2e/               cross-app workflow E2E against the backend API
 ```
 
 Each project keeps its own build system, README, and agent instructions. The
@@ -56,7 +58,7 @@ root Makefile only orchestrates common checks.
 ## Local Requirements
 
 - Flutter SDK for the two mobile apps.
-- Android Studio, Android SDK, and JDK 17 for Android/Wear OS builds.
+- Android Studio, Android SDK, and JDK 21 for Android builds and lint (Wear OS still builds with JDK 17).
 - Xcode for iOS/watchOS builds.
 - Docker Compose or Podman Compose for the backend.
 - GitHub CLI if you need to create or inspect pull requests locally.
@@ -74,10 +76,38 @@ Show available root commands:
 make help
 ```
 
-Run all deterministic checks:
+Run lint/static quality checks for every project:
 
 ```sh
 make quality
+```
+
+Run every project's automated tests (API PHPUnit + Behat need `make up` first;
+Flutter, Wear OS, and watchOS tests run locally):
+
+```sh
+make test
+```
+
+Start or stop the local backend development stack (`http://localhost:8002`):
+
+```sh
+make up
+make down
+```
+
+Run the assisted/caregiver workflow E2E against an isolated test-environment
+backend (fake push provider, no FCM, port 8003), then tear it down:
+
+```sh
+make e2e
+```
+
+Regenerate the committed OpenAPI contract after an API change (API CI fails if
+`packages/api_contract/openapi.json` is stale):
+
+```sh
+make openapi-export
 ```
 
 Run checks for one project:

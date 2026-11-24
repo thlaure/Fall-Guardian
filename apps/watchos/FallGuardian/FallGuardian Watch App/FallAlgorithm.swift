@@ -1,3 +1,14 @@
+// FallAlgorithm.swift
+// Fall Guardian — watchOS
+//
+// DEBUG ONLY. The custom raw-accelerometer detector is not part of release
+// builds: Apple's CMFallDetectionManager is the only production fall source
+// (see SystemFallDetectionService). Nothing in the app currently starts this
+// detector; it is kept compiled in DEBUG for physical tuning experiments and
+// its unit tests. Delete it (and its Runner.xcodeproj file references) if
+// tuning is abandoned.
+#if DEBUG
+
 import Foundation
 
 /// Multi-phase wrist fall detector tuned for loss-of-balance scenarios.
@@ -206,3 +217,5 @@ private struct Vector3 {
         )
     }
 }
+
+#endif

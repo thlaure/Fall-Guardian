@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
 
 /// Screen where the caregiver enters the 32-character invite code generated
 /// by the protected-person's device.
 class LinkScreen extends StatefulWidget {
-  const LinkScreen({super.key, required this.onLinked});
+  const LinkScreen({super.key, required this.onLinked, this.backend});
 
   final VoidCallback onLinked;
+  final CaregiverBackendService? backend;
 
   @override
   State<LinkScreen> createState() => _LinkScreenState();
@@ -21,7 +23,8 @@ class _LinkScreenState extends State<LinkScreen> {
   final _protectedPersonNameController = TextEditingController();
   final _caregiverNameController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final _api = CaregiverBackendService();
+  late final CaregiverBackendService _api =
+      widget.backend ?? CaregiverBackendService();
   bool _loading = false;
   String? _errorMessage;
 

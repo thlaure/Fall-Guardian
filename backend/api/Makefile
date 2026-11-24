@@ -65,8 +65,8 @@ rector: ## Run Rector
 rector-dry: ## Run Rector in dry-run mode
 	$(COMPOSE) exec app vendor/bin/rector process --dry-run
 
-security-check: ## Check Composer dependencies for known vulnerabilities
-	$(COMPOSE) exec app vendor/bin/security-checker security:check composer.lock
+security-check: ## Check Composer dependencies for known vulnerabilities (same as CI; abandoned-only exit 2 tolerated)
+	$(COMPOSE) exec app composer audit || { code=$$?; [ "$$code" -eq 2 ] || exit "$$code"; }
 
 quality: lint-dry analyse rector-dry security-check ## Run deterministic quality tools
 

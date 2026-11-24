@@ -49,22 +49,16 @@ class AlertCoordinator {
   /// concrete repositories/plugins. That keeps this class focused on
   /// "what should happen next?" rather than "how do we talk to storage/push?".
   AlertCoordinator({
-    required FallEventRecorder eventRecorder,
-    required AlertLocationProvider locationProvider,
-    required AlertNotificationGateway notificationGateway,
-    required AlertBackendGateway backendGateway,
-    required WatchCommandGateway watchGateway,
-    required AlertLocaleResolver localeResolver,
-    required Clock clock,
-    required IdGenerator idGenerator,
-  })  : _eventRecorder = eventRecorder,
-        _locationProvider = locationProvider,
-        _notificationGateway = notificationGateway,
-        _backendGateway = backendGateway,
-        _watchGateway = watchGateway,
-        _localeResolver = localeResolver,
-        _clock = clock,
-        _idGenerator = idGenerator;
+    required this._eventRecorder,
+    required this._locationProvider,
+    required this._notificationGateway,
+    required this._backendGateway,
+    required this._watchGateway,
+    required this._localeResolver,
+    required this._clock,
+    required this._idGenerator,
+    DurableAlertQueue? durableQueue,
+  }) : _durableQueue = durableQueue ?? const _NoDurableAlertQueue();
 
   factory AlertCoordinator.live() {
     return AlertCoordinator(
@@ -76,10 +70,12 @@ class AlertCoordinator {
       localeResolver: const DeviceLocaleResolver(),
       clock: SystemClock(),
       idGenerator: const UuidGenerator(),
+      durableQueue: const MethodChannelDurableAlertQueue(),
     );
   }
 
   static const _countdownSeconds = 30;
+  static const _graceWindow = Duration(seconds: _countdownSeconds);
 
   final FallEventRecorder _eventRecorder;
   final AlertLocationProvider _locationProvider;
@@ -89,6 +85,7 @@ class AlertCoordinator {
   final AlertLocaleResolver _localeResolver;
   final Clock _clock;
   final IdGenerator _idGenerator;
+  final DurableAlertQueue _durableQueue;
 
   final _stateController = StreamController<AlertUiState>.broadcast();
   final _dismissController = StreamController<void>.broadcast();
@@ -97,8 +94,30 @@ class AlertCoordinator {
   Timer? _dismissTimer;
   AlertUiState? _currentState;
   int? _activeTimestamp;
-  Duration? _countdownStartedAt;
   String? _activeClientAlertId;
+
+  // Monotonic-clock instant (see [Clock.elapsed]) at which the cancellation
+  // window closes. Until the backend answers it is derived from the fall
+  // timestamp (fallTimestamp + 30 s); once the API accepted the alert it is
+  // replaced by the server-owned cancelDeadlineAt, which is what actually
+  // gates caregiver dispatch.
+  Duration? _deadline;
+
+  // Bumped whenever a running fallback escalation must stop (late
+  // registration reopened the countdown, or the alert was cancelled).
+  int _escalationGeneration = 0;
+
+  // Other ids the active incident is known by (watch UUID vs legacy id).
+  final Set<String> _activeAliases = {};
+
+  // Targeted watch cancels that arrived before their fall (see
+  // [cancelFromWatch]); consumed by [startAlert] within [_tombstoneTtl].
+  static const _tombstoneTtl = Duration(minutes: 2);
+  final List<_CancelTombstone> _cancelTombstones = [];
+
+  // Set when the backend rejected this phone's credentials: caregivers can
+  // NOT be notified until the user re-pairs. Never hidden behind "sent".
+  bool _repairRequired = false;
 
   // True once the immediate registration below has landed on the backend —
   // from that point the backend owns the cancel/grace window and will
@@ -114,52 +133,135 @@ class AlertCoordinator {
   Stream<void> get dismissStream => _dismissController.stream;
   AlertUiState? get currentState => _currentState;
 
+  /// [incidentId] is the watch-generated UUID when it differs from
+  /// [clientAlertId] (the incident was first known under a legacy id); it is
+  /// remembered as an alias so cancels naming it still match.
   Future<bool> startAlert(
     int timestamp, {
     String? clientAlertId,
+    String? incidentId,
   }) async {
     // One unresolved incident owns one fixed grace-window deadline. Sensor
     // re-triggers and duplicate watch transports must not replace it, restart
     // its timer, or create another backend alert.
-    if (_activeTimestamp != null) return false;
+    if (_activeTimestamp != null) {
+      if (timestamp == _activeTimestamp) _addAlias(incidentId);
+      return false;
+    }
 
     _cancelTimers();
     _activeTimestamp = timestamp;
-    _countdownStartedAt = _clock.elapsed();
     _activeClientAlertId = switch (clientAlertId?.trim()) {
       final value? when value.isNotEmpty => value,
       _ => _idGenerator.newId(),
     };
+    _activeAliases.clear();
+    _addAlias(incidentId);
     _registeredWithBackend = false;
+    _repairRequired = false;
     _lastKnownPosition = null;
     _transition(timestamp, AlertPhase.countdown);
 
-    final remainingMs = _countdownSeconds * 1000;
+    // Fallback deadline until the server answers: the window opened when the
+    // fall was detected, not when this phone heard about it.
+    _setDeadline(timestamp, _clock.elapsed() + _fallbackRemaining(timestamp));
 
-    // Fallback only: if the immediate registration below never lands (e.g.
-    // no network at all right now), fall back to the legacy local-timeout
-    // escalation once the grace window elapses.
-    _timeoutTimer = Timer(
-      Duration(milliseconds: remainingMs),
-      () => unawaited(_handleGraceWindowElapsed(timestamp)),
-    );
+    unawaited(_persistThenRegister(timestamp, _activeClientAlertId!));
 
-    // Register with the backend immediately — from here it owns the
-    // cancel/grace window, so escalation still fires even if this phone
-    // gets locked before the local timer above would have elapsed.
-    unawaited(_registerWithBackend(timestamp, _activeClientAlertId!));
+    // The watch cancel for this incident may have arrived before the fall
+    // (transports are not ordered): honour it now instead of escalating.
+    if (_takeMatchingTombstone()) {
+      developer.log(
+        'Fall matched an earlier watch cancel; cancelling',
+        name: 'AlertCoordinator',
+      );
+      unawaited(_cancel(notifyWatch: false));
+    }
     return true;
   }
 
-  Future<void> _registerWithBackend(int timestamp, String clientAlertId) async {
+  void _addAlias(String? incidentId) {
+    final alias = incidentId?.trim().toLowerCase();
+    if (alias == null || alias.isEmpty) return;
+    if (alias == _activeClientAlertId?.toLowerCase()) return;
+    _activeAliases.add(alias);
+  }
+
+  bool _takeMatchingTombstone() {
+    final now = _clock.elapsed();
+    _cancelTombstones.removeWhere(
+      (tombstone) => now - tombstone.createdAt > _tombstoneTtl,
+    );
+    final index = _cancelTombstones.indexWhere(
+      (tombstone) =>
+          _matchesActive(tombstone.incidentId, tombstone.fallTimestamp),
+    );
+    if (index < 0) return false;
+    _cancelTombstones.removeAt(index);
+    return true;
+  }
+
+  Duration _fallbackRemaining(int timestamp) {
+    final ageMs = _clock.now().millisecondsSinceEpoch - timestamp;
+    // A timestamp from the future (watch clock ahead) never extends the
+    // window beyond 30 s; a very old one never yields negative time.
+    final clampedAgeMs = ageMs.clamp(0, _graceWindow.inMilliseconds);
+    return _graceWindow - Duration(milliseconds: clampedAgeMs);
+  }
+
+  /// (Re)arms the local timer for [deadline]. When it fires either the
+  /// backend already owns escalation (UI just finalises) or the fallback
+  /// submission runs.
+  void _setDeadline(int timestamp, Duration deadline) {
+    _deadline = deadline;
+    _timeoutTimer?.cancel();
+    final delay = deadline - _clock.elapsed();
+    _timeoutTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_handleGraceWindowElapsed(timestamp)),
+    );
+  }
+
+  void _applyReceipt(int timestamp, FallAlertReceipt? receipt) {
+    if (receipt == null || !_isCurrentAlert(timestamp)) return;
+    // The receipt's remaining time is measured on the server clock and
+    // anchored here on the monotonic clock, so clock skew cannot shift it.
+    _setDeadline(timestamp, _clock.elapsed() + receipt.remainingGrace);
+  }
+
+  Future<void> _persistThenRegister(int timestamp, String clientAlertId) async {
+    // Persist before any network attempt so the native relay (JobScheduler /
+    // BGTaskScheduler) keeps retrying even if this process dies right now.
     try {
-      await _backendGateway.submitFallAlert(
+      await _durableQueue.enqueue(
+        clientAlertId: clientAlertId,
+        fallTimestamp: timestamp,
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Durable alert enqueue failed; relying on in-process submission',
+        name: 'AlertCoordinator',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    if (!_isCurrentAlert(timestamp)) return;
+    await _registerWithBackend(timestamp, clientAlertId);
+  }
+
+  Future<void> _registerWithBackend(int timestamp, String clientAlertId) async {
+    final FallAlertReceipt? receipt;
+    try {
+      receipt = await _backendGateway.submitFallAlert(
         clientAlertId: clientAlertId,
         fallTimestamp: timestamp,
         locale: _localeResolver.languageCode(),
         latitude: null,
         longitude: null,
       );
+    } on DeviceRepairRequiredException {
+      _flagRepairRequired(timestamp);
+      return;
     } catch (_) {
       // Stay unregistered — the fallback timer will retry at grace-window
       // end, exactly like before this immediate-registration existed.
@@ -168,7 +270,43 @@ class AlertCoordinator {
 
     if (!_isCurrentAlert(timestamp)) return;
     _registeredWithBackend = true;
+    _applyReceipt(timestamp, receipt);
+    _reopenCountdownIfServerWindowOpen(timestamp, receipt);
     unawaited(_attachLocationWhenAvailable(timestamp, clientAlertId));
+  }
+
+  /// A delayed watch event can hit the local fallback deadline before the
+  /// immediate registration answers, so the fallback already shows
+  /// "getting location / sending". If the server then reports its cancel
+  /// window is still open, give the user the cancel button back and stop the
+  /// now-redundant fallback from overriding that state.
+  void _reopenCountdownIfServerWindowOpen(
+    int timestamp,
+    FallAlertReceipt? receipt,
+  ) {
+    final remaining = receipt?.remainingGrace;
+    if (remaining == null || remaining <= Duration.zero) return;
+    final phase = _currentState?.phase;
+    if (phase != AlertPhase.gettingLocation &&
+        phase != AlertPhase.sendingAlert) {
+      return;
+    }
+    _escalationGeneration++;
+    _transition(timestamp, AlertPhase.countdown);
+  }
+
+  /// Keeps the countdown (the user may still cancel) but tells them right
+  /// away that caregivers will not be reached until the phone is re-paired.
+  void _flagRepairRequired(int timestamp) {
+    if (!_isCurrentAlert(timestamp)) return;
+    _repairRequired = true;
+    if (_currentState?.phase == AlertPhase.countdown) {
+      _transition(
+        timestamp,
+        AlertPhase.countdown,
+        statusMessage: _localeResolver.resolve().alertRepairRequired,
+      );
+    }
   }
 
   Future<void> _attachLocationWhenAvailable(
@@ -198,10 +336,8 @@ class AlertCoordinator {
     if (timestamp == null) return;
     if (_currentState?.phase != AlertPhase.countdown) return;
 
-    final startedAt = _countdownStartedAt;
-    if (startedAt == null) return;
-    final elapsedMs = (_clock.elapsed() - startedAt).inMilliseconds;
-    if (elapsedMs < _countdownSeconds * 1000) return;
+    final deadline = _deadline;
+    if (deadline == null || _clock.elapsed() < deadline) return;
 
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
@@ -210,11 +346,53 @@ class AlertCoordinator {
 
   Future<void> cancelFromPhone() => _cancel(notifyWatch: true);
 
-  Future<void> cancelFromWatch() => _cancel(notifyWatch: false);
+  /// A watch cancel may name its incident ([incidentId] and/or
+  /// [fallTimestamp]). Then only a matching active alert is cancelled; a
+  /// cancel for another (older) incident must never dismiss this one. Without
+  /// a target (legacy watches) the active alert is cancelled.
+  Future<void> cancelFromWatch({String? incidentId, int? fallTimestamp}) {
+    final targeted =
+        (incidentId?.trim().isNotEmpty ?? false) || fallTimestamp != null;
+    if (targeted &&
+        !(_activeTimestamp != null &&
+            _matchesActive(incidentId, fallTimestamp))) {
+      // Not (yet) the active incident: keep a short-lived tombstone in case
+      // its fall arrives after the cancel. Never for untargeted cancels,
+      // which could otherwise cancel an unrelated genuine fall.
+      _cancelTombstones.add(
+        _CancelTombstone(
+          incidentId: incidentId?.trim().toLowerCase(),
+          fallTimestamp: fallTimestamp,
+          createdAt: _clock.elapsed(),
+        ),
+      );
+      if (_cancelTombstones.length > 20) _cancelTombstones.removeAt(0);
+      if (_activeTimestamp != null) {
+        developer.log(
+          'Ignoring watch cancel for a different incident',
+          name: 'AlertCoordinator',
+        );
+        return Future<void>.value();
+      }
+    }
+    return _cancel(notifyWatch: false);
+  }
+
+  bool _matchesActive(String? incidentId, int? fallTimestamp) {
+    final id = incidentId?.trim().toLowerCase();
+    final activeId = _activeClientAlertId?.toLowerCase();
+    if (id != null &&
+        id.isNotEmpty &&
+        (id == activeId || _activeAliases.contains(id))) {
+      return true;
+    }
+    return fallTimestamp != null && fallTimestamp == _activeTimestamp;
+  }
 
   Future<void> _cancel({required bool notifyWatch}) async {
     final timestamp = _activeTimestamp;
     _cancelTimers();
+    _escalationGeneration++;
 
     if (timestamp == null) {
       await _notificationGateway.cancelAll();
@@ -222,11 +400,16 @@ class AlertCoordinator {
       return;
     }
 
+    final clientAlertId = _activeClientAlertId;
     if (notifyWatch) {
-      unawaited(_watchGateway.sendCancelAlert());
+      unawaited(
+        _watchGateway.sendCancelAlert(
+          incidentId: clientAlertId,
+          fallTimestamp: timestamp,
+        ),
+      );
     }
 
-    final clientAlertId = _activeClientAlertId;
     final wasRegistered = _registeredWithBackend;
     final l10n = _localeResolver.resolve();
     _transition(
@@ -241,10 +424,12 @@ class AlertCoordinator {
       // alert never actually landed server-side. When this phone doesn't
       // yet know registration succeeded, also record a cancelled event so
       // there's still a backend record if it truly never got through.
-      cancellationConfirmed =
-          await _cancelRegisteredFallAlert(clientAlertId: clientAlertId);
+      cancellationConfirmed = await _cancelRegisteredFallAlert(
+        clientAlertId: clientAlertId,
+      );
       if (!wasRegistered) {
-        cancellationConfirmed = await _recordCancelledFallAlert(
+        cancellationConfirmed =
+            await _recordCancelledFallAlert(
               clientAlertId: clientAlertId,
               timestamp: timestamp,
             ) ||
@@ -258,8 +443,10 @@ class AlertCoordinator {
         _AlertOutcome(
           event: FallEvent(
             id: _idGenerator.newId(),
-            timestamp:
-                DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              timestamp,
+              isUtc: true,
+            ),
             status: FallEventStatus.cancellationPending,
           ),
           phase: AlertPhase.cancellationUnconfirmed,
@@ -279,12 +466,7 @@ class AlertCoordinator {
     await _notificationGateway.cancelAll();
     if (!_isCurrentAlert(timestamp)) return;
     _transition(timestamp, AlertPhase.cancelled);
-    _activeTimestamp = null;
-    _countdownStartedAt = null;
-    _activeClientAlertId = null;
-    _registeredWithBackend = false;
-    _lastKnownPosition = null;
-    _currentState = null;
+    _clearActiveAlert();
     _dismissController.add(null);
   }
 
@@ -352,6 +534,10 @@ class AlertCoordinator {
     // Fallback: the immediate registration never landed (e.g. no network at
     // all when the fall was detected). Do exactly what the fully
     // client-owned flow used to do — fetch location and try one last time.
+    // The generation lets a late registration (or a cancel) supersede it.
+    final generation = ++_escalationGeneration;
+    bool superseded() =>
+        !_isCurrentAlert(timestamp) || generation != _escalationGeneration;
     final l10n = _localeResolver.resolve();
     final clientAlertId = _activeClientAlertId;
     _transition(
@@ -361,7 +547,7 @@ class AlertCoordinator {
     );
 
     final Position? position = await _locationProvider.getCurrentPosition();
-    if (!_isCurrentAlert(timestamp)) return;
+    if (superseded()) return;
 
     _transition(
       timestamp,
@@ -376,8 +562,18 @@ class AlertCoordinator {
       locale: _localeResolver.languageCode(),
       alertFailedMessage: l10n.alertSubmissionFailed,
       alertSubmittedMessage: l10n.alertSubmitted,
+      repairRequiredMessage: l10n.alertRepairRequired,
     );
-    if (outcome == null || !_isCurrentAlert(timestamp)) return;
+    if (outcome == null || superseded()) return;
+
+    final remaining = outcome.serverRemainingGrace;
+    if (remaining != null && remaining > Duration.zero) {
+      // The alert reached the server late (e.g. the phone was offline), so
+      // the server grace period is still open: the user can still cancel.
+      _transition(timestamp, AlertPhase.countdown);
+      _setDeadline(timestamp, _clock.elapsed() + remaining);
+      return;
+    }
 
     await _finishWithOutcome(timestamp, outcome);
   }
@@ -390,8 +586,10 @@ class AlertCoordinator {
       _AlertOutcome(
         event: FallEvent(
           id: _idGenerator.newId(),
-          timestamp:
-              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            timestamp,
+            isUtc: true,
+          ),
           status: FallEventStatus.alertSent,
           latitude: _lastKnownPosition?.latitude,
           longitude: _lastKnownPosition?.longitude,
@@ -412,14 +610,20 @@ class AlertCoordinator {
 
     _dismissTimer = Timer(outcome.dismissDelay, () {
       if (!_isCurrentAlert(timestamp)) return;
-      _activeTimestamp = null;
-      _countdownStartedAt = null;
-      _activeClientAlertId = null;
-      _registeredWithBackend = false;
-      _lastKnownPosition = null;
-      _currentState = null;
+      _clearActiveAlert();
       _dismissController.add(null);
     });
+  }
+
+  void _clearActiveAlert() {
+    _activeTimestamp = null;
+    _deadline = null;
+    _activeClientAlertId = null;
+    _activeAliases.clear();
+    _registeredWithBackend = false;
+    _repairRequired = false;
+    _lastKnownPosition = null;
+    _currentState = null;
   }
 
   Future<_AlertOutcome?> _backendEscalationOutcome({
@@ -429,39 +633,47 @@ class AlertCoordinator {
     required String locale,
     required String alertFailedMessage,
     required String alertSubmittedMessage,
+    required String repairRequiredMessage,
   }) async {
     if (clientAlertId == null) {
       return null;
     }
 
+    final FallAlertReceipt? receipt;
     try {
-      await _backendGateway.submitFallAlert(
+      receipt = await _backendGateway.submitFallAlert(
         clientAlertId: clientAlertId,
         fallTimestamp: timestamp,
         locale: locale,
         latitude: position?.latitude,
         longitude: position?.longitude,
       );
-    } catch (_) {
+    } catch (error) {
       if (!_isCurrentAlert(timestamp)) return null;
+      final repairRequired =
+          error is DeviceRepairRequiredException || _repairRequired;
 
       return _AlertOutcome(
         event: FallEvent(
           id: _idGenerator.newId(),
-          timestamp:
-              DateTime.fromMillisecondsSinceEpoch(timestamp, isUtc: true),
+          timestamp: DateTime.fromMillisecondsSinceEpoch(
+            timestamp,
+            isUtc: true,
+          ),
           status: FallEventStatus.alertFailed,
           latitude: position?.latitude,
           longitude: position?.longitude,
         ),
         phase: AlertPhase.alertFailed,
-        message: alertFailedMessage,
-        dismissDelay: const Duration(seconds: 5),
+        message: repairRequired ? repairRequiredMessage : alertFailedMessage,
+        // Leave the "caregivers were NOT notified" explanation up longer.
+        dismissDelay: Duration(seconds: repairRequired ? 15 : 5),
       );
     }
 
     if (!_isCurrentAlert(timestamp)) return null;
     _registeredWithBackend = true;
+    _repairRequired = false;
 
     return _AlertOutcome(
       event: FallEvent(
@@ -474,6 +686,7 @@ class AlertCoordinator {
       phase: AlertPhase.alertSent,
       message: alertSubmittedMessage,
       dismissDelay: const Duration(seconds: 2),
+      serverRemainingGrace: receipt?.remainingGrace,
     );
   }
 
@@ -484,19 +697,30 @@ class AlertCoordinator {
 
   bool _isCurrentAlert(int timestamp) => _activeTimestamp == timestamp;
 
+  /// Whole seconds left in the cancellation window, never negative.
   int get remainingCountdownSeconds {
-    final startedAt = _countdownStartedAt;
-    if (startedAt == null) return 0;
+    final deadline = _deadline;
+    if (deadline == null) return 0;
 
-    final elapsedSeconds = (_clock.elapsed() - startedAt).inSeconds;
-    return (_countdownSeconds - elapsedSeconds).clamp(0, _countdownSeconds);
+    final remainingMs = (deadline - _clock.elapsed()).inMilliseconds;
+    if (remainingMs <= 0) return 0;
+    return ((remainingMs + 999) ~/ 1000).clamp(0, _countdownSeconds);
   }
 
-  void _transition(
-    int timestamp,
-    AlertPhase phase, {
-    String? statusMessage,
-  }) {
+  /// True while the countdown UI is still up but the cancellation window has
+  /// closed — caregivers are being notified (or about to be).
+  bool get isPastDeadline {
+    final deadline = _deadline;
+    return deadline != null &&
+        _currentState?.phase == AlertPhase.countdown &&
+        _clock.elapsed() >= deadline;
+  }
+
+  /// True when the backend rejected this phone's credentials during the
+  /// active alert: caregivers cannot be reached until it is re-paired.
+  bool get repairRequired => _repairRequired;
+
+  void _transition(int timestamp, AlertPhase phase, {String? statusMessage}) {
     _emit(
       AlertUiState(
         fallTimestamp: timestamp,
@@ -525,10 +749,34 @@ class _AlertOutcome {
     required this.phase,
     required this.message,
     required this.dismissDelay,
+    this.serverRemainingGrace,
   });
 
   final FallEvent event;
   final AlertPhase phase;
   final String message;
   final Duration dismissDelay;
+  final Duration? serverRemainingGrace;
+}
+
+class _CancelTombstone {
+  const _CancelTombstone({
+    required this.incidentId,
+    required this.fallTimestamp,
+    required this.createdAt,
+  });
+
+  final String? incidentId;
+  final int? fallTimestamp;
+  final Duration createdAt;
+}
+
+class _NoDurableAlertQueue implements DurableAlertQueue {
+  const _NoDurableAlertQueue();
+
+  @override
+  Future<void> enqueue({
+    required String clientAlertId,
+    required int fallTimestamp,
+  }) async {}
 }

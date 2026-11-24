@@ -3,13 +3,17 @@ package com.fallguardian
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.net.Uri
+import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
-import java.nio.ByteBuffer
 
 /**
  * Central hub for all watch ↔ phone communication and UI state during an alert.
@@ -35,7 +39,11 @@ import java.nio.ByteBuffer
  * - PhoneMessageListenerService calls cancelAlertFromPhone() when the phone
  *   user taps "cancel".
  * - MainActivity's AlertScreen reads alertActive and remainingSeconds to render
- *   the countdown, and calls sendCancelAlert() when the watch user taps.
+ *   the countdown, and calls sendCancelAlert() when the watch user completes the hold.
+ *
+ * All alert decisions (start, cancel, expiry, restart recovery, Data Layer
+ * ordering) live in the pure, unit-tested AlertSession; this object only
+ * supplies clocks, runs it on the main thread and executes its effects.
  *
  * Sends fall/cancel messages to the paired phone via the Wearable MessageClient API.
  * MessageClient is node-based and works across different package names.
@@ -43,129 +51,84 @@ import java.nio.ByteBuffer
 object WearDataSender {
 
     /**
-     * Owned by FallDetectionService. The callback keeps alarm presentation
-     * synchronized with the single alert state machine: true starts the urgent
-     * notification and sound, false stops both on every cancellation path.
+     * Owned by FallDetectionService. Keeps alarm presentation (notification,
+     * sound, haptics) synchronized with the single alert state machine.
      */
-    var onAlertStateChanged: ((Boolean) -> Unit)? = null
+    var onAlertPresentation: ((AlertPresentation) -> Unit)? = null
 
     // --- Compose-observable UI state ---
     // `mutableStateOf` creates a Compose state holder. Any @Composable function
     // that reads these variables will automatically recompose (re-render) when
     // their value changes — similar to React's useState hook.
-    // `by` is Kotlin's property delegation syntax; it unwraps the state object
-    // so we can read/write alertActive directly instead of alertActive.value.
-    // `private set` means only code inside this object can change the value;
-    // external callers can only read it.
+    // `private set` means only code inside this object can change the value.
     var alertActive by mutableStateOf(false)
         private set
 
     // Counts down from 30 to 0 during an active alert. Drives the large number
-    // shown on AlertScreen. Updated by tickRunnable every second.
+    // shown on AlertScreen. Updated by tickRunnable.
     var remainingSeconds by mutableStateOf(30)
         private set
 
     var alertPresentationIssue by mutableStateOf<AlertPresentationIssue?>(null)
         private set
 
-    // Shared countdown origin used to keep the watch UI aligned with the phone.
-    private var fallTimestampMs: Long = 0L
+    // Created lazily with the first Context (needs SharedPreferences).
+    private var session: AlertSession? = null
+    private var appContext: Context? = null
 
     // --- Countdown timer ---
-    // Handler + Looper.getMainLooper() creates a timer that runs on the main
-    // (UI) thread. Composable state must only be written from the main thread,
-    // so this is the correct choice over a background Thread or coroutine here.
+    // Handler + Looper.getMainLooper() runs on the main (UI) thread. Compose
+    // state and AlertSession must only be touched from this thread.
     private val handler = Handler(Looper.getMainLooper())
 
-    // tickRunnable re-computes the remaining time from the original fall timestamp.
-    // This avoids drift and keeps the watch aligned with the phone countdown even
-    // if there was a delivery delay before either screen became visible.
-    // Using `object : Runnable` creates an anonymous class implementing Runnable
-    // so the Runnable can reference itself via `this` to reschedule.
+    // Re-computes the remaining time from the monotonic anchor of the fall
+    // (see ActiveAlert): no drift, and a wall-clock change cannot end it.
     private val tickRunnable = object : Runnable {
         override fun run() {
-            val remaining = alertRemainingSeconds(
-                fallTimestampMs,
-                System.currentTimeMillis()
-            )
-            remainingSeconds = remaining
-
-            if (remaining > 0) {
+            val context = appContext ?: return
+            val current = session ?: return
+            val now = clock(context)
+            val effects = current.onTick(now)
+            remainingSeconds = current.remainingSeconds(now)
+            if (effects.isEmpty() && current.active != null) {
                 handler.postDelayed(this, 500L)
             } else {
                 // Countdown expired without cancellation — time is up.
-                alertActive = false                     // Dismiss AlertScreen; return to IdleScreen.
-                onAlertStateChanged?.invoke(false)      // Stop sound and urgent notification.
-                // Backend escalation and caregiver notification continue
-                // independently after the local grace period expires.
+                // Backend escalation continues independently on the phone.
+                execute(context, effects)
             }
         }
     }
 
     /**
-     * Called by FallDetectionService when a fall is confirmed.
-     *
-     * Step 1 — Encode the timestamp into 8 raw bytes so the phone can parse it
-     *           as a Long (Int64). ByteBuffer is a Java utility that writes
-     *           primitive types into a byte array in big-endian order.
-     * Step 2 — Send the "/fall_event" message with the timestamp payload to
-     *           every connected phone node via sendToPhone().
-     * Step 3 — Reset and start the local 30-second countdown UI so the watch
-     *           shows AlertScreen in sync with the phone's countdown.
-     *
-     * @param context  Android context needed to reach Wearable APIs.
-     * @param timestamp  Wall-clock time in ms (System.currentTimeMillis()) when
-     *                   the fall was detected. Both watch and phone use this same
-     *                   origin to keep their countdowns in sync.
+     * Restores a persisted alert after process death (called by
+     * FallDetectionService and MainActivity on start) and re-sends its fall
+     * with the same incident id. If already active in memory, only
+     * re-announces it so a newly attached presenter shows notification/sound.
      */
-    fun sendFallEvent(context: Context, timestamp: Long) {
-        val applicationContext = context.applicationContext
-        handler.post {
-            // One incident owns one countdown. Repeated sensor signatures must
-            // not restart the 30-second grace period or replay the alarm.
-            val now = System.currentTimeMillis()
-            if (!shouldStartAlert(alertActive, timestamp, now)) return@post
-
-            // Encode the 8-byte Long timestamp into a raw byte array for the message payload.
-            val payload = ByteBuffer.allocate(8).putLong(timestamp).array()
-            sendToPhone(applicationContext, "/fall_event", payload, "fall event")
-            queueForPhone(applicationContext, "/fall_event", timestamp, "fall event")
-
-            handler.removeCallbacks(tickRunnable)
-            fallTimestampMs = timestamp
-            alertActive = true        // Tell Compose to switch to AlertScreen.
-            remainingSeconds = alertRemainingSeconds(timestamp, now)
-            onAlertStateChanged?.invoke(true)
-            handler.post(tickRunnable)
-        }
-    }
+    fun restore(context: Context) = run(context, "restore") { session, now -> session.restore(now) }
 
     /**
-     * Called when the watch user taps "cancel" on AlertScreen.
+     * Called by FallDetectionService when a fall is confirmed.
      *
-     * Stops the local countdown, dismisses AlertScreen, and sends "/cancel_alert"
-     * to the phone so the phone also dismisses its FallAlertScreen and push
-     * notification. This is the watch-originates-cancel path; the reverse path
-     * (phone originates cancel → watch) is handled by cancelAlertFromPhone().
-     *
-     * @param context  Android context needed to reach Wearable APIs.
+     * @param timestamp  Wall-clock time in ms (System.currentTimeMillis()) when
+     *                   the fall was detected; sent to the phone unchanged.
      */
-    fun sendCancelAlert(context: Context) {
-        val applicationContext = context.applicationContext
-        handler.post {
-            if (!alertActive) return@post
-            handler.removeCallbacks(tickRunnable)  // Stop the countdown timer.
-            alertActive = false                    // Return to IdleScreen immediately.
-            fallTimestampMs = 0L
-            remainingSeconds = 30                  // Reset for the next alert.
-            onAlertStateChanged?.invoke(false)
-            sendToPhone(applicationContext, "/cancel_alert", ByteArray(0), "cancel alert")
-            queueForPhone(
-                applicationContext,
-                "/cancel_alert",
-                System.currentTimeMillis(),
-                "cancel alert"
-            )
+    fun sendFallEvent(context: Context, timestamp: Long) =
+        run(context, "fall") { session, now -> session.onFallDetected(timestamp, now) }
+
+    /** Called when the watch user completes the 1.5-second hold on AlertScreen. */
+    fun sendCancelAlert(context: Context) =
+        run(context, "watch cancel") { session, now -> session.onWatchCancel(now) }
+
+    /**
+     * Called by PhoneMessageListenerService (or MainActivity's listener) when
+     * the phone sends "/cancel_alert". Never echoes back to the phone.
+     */
+    fun cancelAlertFromPhone(context: Context, payload: ByteArray?) {
+        val cancel = AlertContract.parsePhoneCancel(payload)
+        run(context, "phone cancel identified=${cancel.incidentId != null}") { session, now ->
+            session.onPhoneCancel(cancel, now)
         }
     }
 
@@ -173,26 +136,64 @@ object WearDataSender {
         handler.post { alertPresentationIssue = issue }
     }
 
-    /**
-     * Called by PhoneMessageListenerService (or MainActivity's cancelAlertListener)
-     * when the phone sends "/cancel_alert" to the watch.
-     *
-     * We do NOT call sendToPhone() here — that would echo the cancel back to the
-     * phone, causing an infinite ping-pong loop. We only update local state.
-     *
-     * handler.post() ensures the state write happens on the main thread, even
-     * though PhoneMessageListenerService may call this from a background thread.
-     */
-    fun cancelAlertFromPhone() {
-        Log.d("WearDataSender", "cancelAlertFromPhone: alertActive=$alertActive")
+    // handler.post() ensures every transition runs on the main thread, even
+    // when called from a Wearable listener or sensor callback.
+    private fun run(
+        context: Context,
+        label: String,
+        transition: (AlertSession, ClockReading) -> List<AlertEffect>
+    ) {
+        val applicationContext = context.applicationContext
         handler.post {
-            handler.removeCallbacks(tickRunnable) // Stop the countdown timer.
-            alertActive = false                   // Return to IdleScreen.
-            fallTimestampMs = 0L
-            remainingSeconds = 30                 // Reset for the next alert.
-            onAlertStateChanged?.invoke(false)
+            appContext = applicationContext
+            val current = session(applicationContext)
+            val effects = transition(current, clock(applicationContext))
+            Log.d("WearDataSender", "$label: effects=${effects.size} active=${current.active != null}")
+            execute(applicationContext, effects)
         }
     }
+
+    private fun execute(context: Context, effects: List<AlertEffect>) {
+        for (effect in effects) {
+            when (effect) {
+                is AlertEffect.SendMessage -> sendToPhone(context, effect.path, effect.payload, effect.path)
+                is AlertEffect.PutDataItem -> queueForPhone(context, effect.path, effect.fields, effect.path)
+                is AlertEffect.DeleteDataItem -> deleteQueued(context, effect.path)
+                is AlertEffect.Present -> present(context, effect.presentation)
+            }
+        }
+    }
+
+    private fun present(context: Context, presentation: AlertPresentation) {
+        val current = session(context)
+        handler.removeCallbacks(tickRunnable)
+        if (presentation == AlertPresentation.SHOW) {
+            alertActive = true        // Tell Compose to switch to AlertScreen.
+            remainingSeconds = current.remainingSeconds(clock(context))
+            onAlertPresentation?.invoke(presentation)
+            handler.post(tickRunnable)
+        } else {
+            alertActive = false       // Return to IdleScreen.
+            remainingSeconds = 30     // Reset for the next alert.
+            onAlertPresentation?.invoke(presentation)
+        }
+    }
+
+    private fun session(context: Context): AlertSession =
+        session ?: AlertSession(
+            ActiveAlertStore(
+                SharedPreferencesAlertStorage(
+                    context.getSharedPreferences("fall_guardian_alert", Context.MODE_PRIVATE)
+                )
+            )
+        ).also { session = it }
+
+    private fun clock(context: Context) = ClockReading(
+        wallMs = System.currentTimeMillis(),
+        elapsedMs = SystemClock.elapsedRealtime(),
+        bootCount = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
+            .takeIf { it >= 0 }
+    )
 
     /**
      * Low-level helper that sends a Wearable message to all connected phone nodes.
@@ -215,7 +216,7 @@ object WearDataSender {
      *
      * @param context  Android context for Play Services.
      * @param path     Message path (e.g. "/fall_event", "/cancel_alert").
-     * @param payload  Raw bytes to send. Max ~100 KB, but we send ≤ 8 bytes.
+     * @param payload  Raw bytes to send (see AlertContract; well under 1 KB).
      * @param label    Human-readable name used in log messages for debugging.
      */
     private fun sendToPhone(context: Context, path: String, payload: ByteArray, label: String) {
@@ -242,17 +243,54 @@ object WearDataSender {
             .addOnFailureListener { e -> Log.e("WearDataSender", "Failed to get connected nodes", e) }
     }
 
-    private fun queueForPhone(context: Context, path: String, timestamp: Long, label: String) {
+    private fun queueForPhone(
+        context: Context,
+        path: String,
+        fields: Map<String, Any>,
+        label: String
+    ) {
+        // DataClient keeps one item per path: a newer incident overwrites the
+        // older one instead of accumulating. `updatedAt` makes every write a
+        // distinct change so the phone is notified even for the same path.
         val request = PutDataMapRequest.create(path).apply {
-            dataMap.putLong("timestamp", timestamp)
-            // DataClient coalesces items by path; this marker makes every alert
-            // and cancel a distinct update even when the path is unchanged.
-            dataMap.putLong("updatedAt", System.currentTimeMillis())
+            fields.forEach { (key, value) ->
+                when (value) {
+                    is Long -> dataMap.putLong(key, value)
+                    is String -> dataMap.putString(key, value)
+                    else -> error("Unsupported Data Layer field type for $key")
+                }
+            }
         }.asPutDataRequest().setUrgent()
 
         Wearable.getDataClient(context)
             .putDataItem(request)
             .addOnSuccessListener { Log.d("WearDataSender", "Queued $label for phone") }
             .addOnFailureListener { e -> Log.e("WearDataSender", "Failed to queue $label", e) }
+    }
+
+    /** Deletes this watch's queued item at [path] (no host = every node's copy we own). */
+    private fun deleteQueued(context: Context, path: String) {
+        val uri = Uri.Builder().scheme(PutDataRequest.WEAR_URI_SCHEME).path(path).build()
+        Wearable.getDataClient(context)
+            .deleteDataItems(uri, DataClient.FILTER_LITERAL)
+            .addOnFailureListener { e -> Log.w("WearDataSender", "Failed to delete $path item", e) }
+    }
+}
+
+/** SharedPreferences adapter for ActiveAlertStore. commit() because this is safety state. */
+private class SharedPreferencesAlertStorage(
+    private val prefs: android.content.SharedPreferences
+) : AlertStateStorage {
+    override fun getString(key: String): String? = prefs.getString(key, null)
+    override fun getLong(key: String): Long? = if (prefs.contains(key)) prefs.getLong(key, 0L) else null
+    override fun write(values: Map<String, Any>?) {
+        val editor = prefs.edit().clear()
+        values?.forEach { (key, value) ->
+            when (value) {
+                is Long -> editor.putLong(key, value)
+                is String -> editor.putString(key, value)
+            }
+        }
+        editor.commit()
     }
 }

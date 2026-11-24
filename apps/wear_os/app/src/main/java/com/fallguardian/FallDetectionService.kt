@@ -21,6 +21,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.NotificationCompat
 /**
@@ -51,8 +53,9 @@ import androidx.core.app.NotificationCompat
  *    and writes them to SharedPreferences. This service's prefChangeListener
  *    detects those writes and rebuilds FallAlgorithm on the fly — no restart needed.
  *
- * Uses SensorManager with TYPE_ACCELEROMETER at 25 Hz and short hardware
- * batching windows to reduce CPU wake-ups while keeping fall alerts prompt.
+ * Uses SensorManager with TYPE_ACCELEROMETER at 25 Hz, preferring the wake-up
+ * variant with hardware FIFO batching so screen-off falls are still seen
+ * without holding a wake lock (see AccelerometerPlan).
  * On fall detection: sends Data Layer event to the phone and enforces
  * a 5-second cooldown before the next detection can fire.
  */
@@ -93,6 +96,12 @@ class FallDetectionService : Service(), SensorEventListener {
     // Keeping it in the foreground service means it continues while the watch
     // is locked and can be stopped by watch-, phone-, or timeout cancellation.
     private var alarmRingtone: Ringtone? = null
+
+    // Per-second alert haptics, owned here (not by the Activity) so the wearer
+    // feels the countdown even with the screen off or only the notification.
+    private var vibrator: Vibrator? = null
+
+    private lateinit var accelerometerPlan: AccelerometerPlan
 
     // Minimum gap between two successive fall alerts. 5 seconds prevents a
     // single tumble from firing the alarm multiple times (e.g. if the user
@@ -137,11 +146,7 @@ class FallDetectionService : Service(), SensorEventListener {
         const val NOTIF_ID = 1001
         const val ALERT_NOTIF_ID = 1002
 
-        // 25 Hz provides four samples for the default 160 ms free-fall window.
-        // A half-second batch cuts app CPU wake-ups without
-        // making the fall alert feel delayed.
-        const val ACCELEROMETER_SAMPLING_PERIOD_US = 40_000
-        const val ACCELEROMETER_BATCH_LATENCY_US = 500_000
+        // Sampling rate and batching are chosen by AccelerometerPlan.
         const val ALERT_WAKE_LOCK_TIMEOUT_MS = 35_000L
     }
 
@@ -162,7 +167,25 @@ class FallDetectionService : Service(), SensorEventListener {
 
         // Ask the OS for the SensorManager, then request the accelerometer sensor.
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        // Prefer the wake-up accelerometer variant: its samples are buffered in
+        // the sensor hub FIFO while the main CPU sleeps, and the hub wakes the
+        // CPU only to deliver a batch. The default (non-wake-up) sensor stops
+        // reporting — and drops samples — once the screen is off and the CPU
+        // sleeps, which is how falls were missed. Fall back when unavailable
+        // or when the FIFO space reserved for it is too small to batch
+        // efficiently (fifoMaxEventCount is shared with other sensors and
+        // guarantees nothing).
+        val wakeUpAccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
+        accelerometerPlan = AccelerometerPlan.choose(
+            wakeUpAvailable = wakeUpAccelerometer?.isWakeUpSensor == true,
+            wakeUpFifoReservedEvents = wakeUpAccelerometer?.fifoReservedEventCount ?: 0
+        )
+        accelerometer = if (accelerometerPlan.useWakeUpSensor) {
+            wakeUpAccelerometer
+        } else {
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        }
+        vibrator = getSystemService(Vibrator::class.java)
 
         // Do not acquire this at startup: monitoring must allow the watch to
         // enter deep sleep. It is used only for a confirmed alert below.
@@ -181,9 +204,20 @@ class FallDetectionService : Service(), SensorEventListener {
         createNotificationChannel() // Must exist before posting any notification.
         startForeground(NOTIF_ID, buildNotification())
 
-        WearDataSender.onAlertStateChanged = { active ->
-            if (active) showUrgentFallAlert() else dismissUrgentFallAlert()
+        WearDataSender.onAlertPresentation = { presentation ->
+            when (presentation) {
+                AlertPresentation.SHOW -> showUrgentFallAlert()
+                AlertPresentation.DISMISS -> dismissUrgentFallAlert()
+                AlertPresentation.DISMISS_CONFIRMED -> {
+                    dismissUrgentFallAlert()
+                    // After vibrator.cancel() in dismiss, so it is not swallowed.
+                    confirmCancelHaptic()
+                }
+            }
         }
+        // After a process restart (crash, OS kill, START_STICKY relaunch) the
+        // alert may still be inside its 30-second window: bring it back.
+        WearDataSender.restore(this)
 
         // --- Step 2: Begin reading the accelerometer ---
         registerSensors()
@@ -235,8 +269,8 @@ class FallDetectionService : Service(), SensorEventListener {
     }
 
     /**
-     * Subscribes to the accelerometer at 25 Hz. The sensor hardware can batch
-     * readings for up to 500 ms, so the CPU processes a small group at once
+     * Subscribes to the accelerometer at 25 Hz with hardware batching (see
+     * AccelerometerPlan): the CPU processes a group of readings at once
      * instead of waking for every sample. SensorEvent timestamps still preserve
      * the timing seen by FallAlgorithm.
      *
@@ -249,13 +283,14 @@ class FallDetectionService : Service(), SensorEventListener {
             FallDiagnostics.event("sensor_registration", "available=false")
             return
         }
+        val plan = accelerometerPlan
         val registered = sensorManager.registerListener(
             this,
             sensor,
-            ACCELEROMETER_SAMPLING_PERIOD_US,
-            ACCELEROMETER_BATCH_LATENCY_US
+            plan.samplingPeriodUs,
+            plan.maxReportLatencyUs
         )
-        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};period_us=$ACCELEROMETER_SAMPLING_PERIOD_US;batch_us=$ACCELEROMETER_BATCH_LATENCY_US")
+        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};fifo_reserved=${sensor.fifoReservedEventCount};fifo_max=${sensor.fifoMaxEventCount};period_us=${plan.samplingPeriodUs};batch_us=${plan.maxReportLatencyUs}")
     }
 
     // --- Step 3: Process each accelerometer reading ---
@@ -308,6 +343,10 @@ class FallDetectionService : Service(), SensorEventListener {
         // Only act on a positive detection if enough time has passed since the
         // last alert — this is the cooldown check.
         if (dispatched) {
+            // Wake-up sensor batches hold the CPU awake only until this
+            // callback returns. Take the time-limited alert wake lock now so
+            // the posted alert work cannot be deferred by the CPU sleeping.
+            if (!wakeLock.isHeld) wakeLock.acquire(ALERT_WAKE_LOCK_TIMEOUT_MS)
             lastFallMs = nowElapsed  // Record when this fall fired.
             algorithm.reset()        // Clear the state machine for the next event.
 
@@ -340,7 +379,7 @@ class FallDetectionService : Service(), SensorEventListener {
         diagnosticHandler.removeCallbacks(diagnosticHeartbeat)
         FallDiagnostics.flush()
         FallDiagnostics.event("service_stopped", "")
-        WearDataSender.onAlertStateChanged = null
+        WearDataSender.onAlertPresentation = null
         dismissUrgentFallAlert()
         prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener) // Stop threshold watching.
         sensorManager.unregisterListener(this)    // Stop receiving sensor events.
@@ -401,7 +440,9 @@ class FallDetectionService : Service(), SensorEventListener {
      * Posts the highest-priority Wear OS alert surface and asks SystemUI to open
      * MainActivity over the lock screen. Android 14 can deny full-screen intent
      * access; in that case the same notification remains as a persistent,
-     * expanded heads-up alert with a direct "I'm OK" cancellation action.
+     * expanded heads-up alert whose action opens the alert screen. The
+     * notification deliberately has no one-tap cancel: cancelling always goes
+     * through the 1.5-second hold on AlertScreen.
      */
     private fun showUrgentFallAlert() {
         Log.i("FallDetectionService", "Starting urgent fall presentation")
@@ -419,16 +460,6 @@ class FallDetectionService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val cancelIntent = Intent(this, AlertActionReceiver::class.java).apply {
-            action = AlertActionReceiver.ACTION_CANCEL_FALL_ALERT
-        }
-        val cancelPendingIntent = PendingIntent.getBroadcast(
-            this,
-            1,
-            cancelIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(getString(R.string.fall_detected_title))
@@ -441,9 +472,9 @@ class FallDetectionService : Service(), SensorEventListener {
             .setContentIntent(launchPendingIntent)
             .setFullScreenIntent(launchPendingIntent, true)
             .addAction(
-                android.R.drawable.ic_menu_close_clear_cancel,
+                android.R.drawable.ic_menu_view,
                 getString(R.string.fall_cancel_action),
-                cancelPendingIntent
+                launchPendingIntent
             )
             .build()
 
@@ -458,6 +489,21 @@ class FallDetectionService : Service(), SensorEventListener {
         }
         manager.notify(ALERT_NOTIF_ID, notification)
         playAlarmSound()
+        startAlertHaptics()
+    }
+
+    private fun startAlertHaptics() {
+        val pattern = AlertUiPolicy.alertVibrationPattern(WearDataSender.remainingSeconds)
+        if (pattern.isEmpty) return
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        // -1: play once (the pattern already spans the remaining countdown).
+        vibrator?.vibrate(
+            VibrationEffect.createWaveform(pattern.timingsMs, pattern.amplitudes, -1),
+            attributes
+        )
     }
 
     private fun playAlarmSound() {
@@ -476,11 +522,17 @@ class FallDetectionService : Service(), SensorEventListener {
         }
     }
 
+    /** Short, strong pulse confirming the wearer's hold-to-cancel completed. */
+    private fun confirmCancelHaptic() {
+        vibrator?.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE))
+    }
+
     private fun dismissUrgentFallAlert() {
         alarmRingtone?.run {
             if (isPlaying) stop()
         }
         alarmRingtone = null
+        vibrator?.cancel()
         if (wakeLock.isHeld) wakeLock.release()
         getSystemService(NotificationManager::class.java).cancel(ALERT_NOTIF_ID)
         Log.i("FallDetectionService", "Urgent fall presentation stopped")

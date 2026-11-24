@@ -17,9 +17,9 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return 'stored-value';
-      });
+            captured = call;
+            return 'stored-value';
+          });
 
       final store = SecureKeyValueStore();
       final value = await store.read('my-key');
@@ -33,9 +33,9 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return null;
-      });
+            captured = call;
+            return null;
+          });
 
       final store = SecureKeyValueStore();
       await store.write('my-key', 'my-value');
@@ -48,9 +48,9 @@ void main() {
       MethodCall? captured;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        captured = call;
-        return null;
-      });
+            captured = call;
+            return null;
+          });
 
       final store = SecureKeyValueStore();
       await store.delete('my-key');

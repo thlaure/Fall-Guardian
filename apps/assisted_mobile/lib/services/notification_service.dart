@@ -77,15 +77,18 @@ class NotificationService implements AlertNotificationGateway {
     if (!Platform.isIOS) {
       // The icon name '@mipmap/ic_launcher' refers to the app launcher icon
       // in android/app/src/main/res/mipmap-*/. It appears in the notification shade.
-      const androidSettings =
-          AndroidInitializationSettings('@mipmap/ic_launcher');
+      const androidSettings = AndroidInitializationSettings(
+        '@mipmap/ic_launcher',
+      );
       await _plugin.initialize(
         settings: const InitializationSettings(android: androidSettings),
       );
 
       // Android 13+ requires POST_NOTIFICATIONS at runtime.
-      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
       await androidPlugin?.requestNotificationsPermission();
     }
 
@@ -144,8 +147,10 @@ class NotificationService implements AlertNotificationGateway {
       id: 1, // notification ID
       title: title,
       body: body,
-      notificationDetails:
-          const NotificationDetails(android: androidDetails, iOS: iosDetails),
+      notificationDetails: const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
     );
   }
 

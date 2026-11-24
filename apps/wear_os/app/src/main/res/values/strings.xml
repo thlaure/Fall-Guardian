@@ -3,7 +3,7 @@
     <string name="app_name">Fall Guardian</string>
     <string name="diagnostics_on">Diagnostic recording on\nTap to stop</string>
     <string name="diagnostics_off">Diagnostic recording off\nTap to start</string>
-    <string name="alert_cancel_button">I’m OK\nCancel alert</string>
+    <string name="alert_cancel_button">I’m OK\nHold to cancel</string>
     <string name="notifications_disabled">Notifications off\nTap to enable</string>
     <string name="full_screen_disabled">Heads-up alerts only\nTap to review</string>
     <string name="monitoring_active">Monitoring active</string>
@@ -15,6 +15,15 @@
     <string name="monitoring_notification_title">Fall Guardian Active</string>
     <string name="monitoring_notification_text">Fall detection is running</string>
     <string name="fall_detected_title">Fall detected</string>
-    <string name="fall_detected_text">Tap I’m OK to cancel the alert</string>
-    <string name="fall_cancel_action">I’m OK — Cancel</string>
+    <string name="fall_detected_text">Open, then hold I’m OK to cancel</string>
+    <string name="fall_cancel_action">Open to cancel</string>
+    <string name="alert_hold_to_cancel_description">I’m OK. Hold to cancel the alert</string>
+    <string name="alert_hold_to_cancel_a11y_action">cancel the alert, asks for confirmation</string>
+    <string name="alert_confirm_cancel_question">Cancel the alert?</string>
+    <string name="alert_confirm_cancel_yes">Yes, I’m OK</string>
+    <string name="alert_confirm_cancel_no">No</string>
+    <plurals name="alert_seconds_remaining">
+        <item quantity="one">%d second before caregivers are alerted</item>
+        <item quantity="other">%d seconds before caregivers are alerted</item>
+    </plurals>
 </resources>

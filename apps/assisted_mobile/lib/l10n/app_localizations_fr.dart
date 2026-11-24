@@ -23,7 +23,8 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get homeStatusTitle => 'Protégé';
   @override
-  String get homeStatusBody => 'La détection de chutes est active.\n'
+  String get homeStatusBody =>
+      'La détection de chutes est active.\n'
       'Une alerte de 30 secondes apparaîtra si une chute est détectée.';
   @override
   String get homeStatusUnlinkedTitle => 'Aucun aidant lié';
@@ -38,8 +39,24 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get homeHistoryTitle => 'Historique des chutes';
   @override
-  String get homeFootnote => 'Surveillance active sur votre montre.\n'
+  String get homeFootnote =>
+      'Surveillance active sur votre montre.\n'
       'Gardez l\'application montre ouverte en arrière-plan.';
+  @override
+  String get repairRequiredTitle => 'Les aidants ne seront PAS prévenus';
+  @override
+  String get repairRequiredBody =>
+      'Fall Guardian ne reconnaît plus ce téléphone : les alertes de chute ne '
+      'peuvent pas atteindre vos aidants. Réassociez ce téléphone, puis '
+      'envoyez une nouvelle invitation à chaque aidant depuis Aidants.';
+  @override
+  String get repairAction => 'Réassocier ce téléphone';
+  @override
+  String get repairSucceeded =>
+      'Téléphone réassocié. Envoyez maintenant une nouvelle invitation à vos aidants.';
+  @override
+  String get repairFailed =>
+      'Échec de la réassociation. Vérifiez votre connexion et réessayez.';
 
   // ── Contacts ─────────────────────────────────────────────────────────────
   @override
@@ -89,6 +106,13 @@ class AppLocalizationsFr extends AppLocalizations {
       'Annulation non confirmée. Vos aidants peuvent encore être alertés.';
   @override
   String get cancelAlert => 'Je vais bien\nAnnuler l\'alerte';
+  @override
+  String get alertRepairRequired =>
+      'Les aidants n’ont PAS été prévenus : ce téléphone n’est plus associé '
+      'à Fall Guardian. Réassociez-le depuis l’écran d’accueil.';
+  @override
+  String get caregiversBeingNotified =>
+      'Délai d’annulation écoulé — les aidants sont en cours de notification.';
 
   // ── History ──────────────────────────────────────────────────────────────
   @override

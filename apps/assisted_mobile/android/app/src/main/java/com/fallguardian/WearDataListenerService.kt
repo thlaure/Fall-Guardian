@@ -4,7 +4,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.tasks.Tasks
@@ -14,7 +13,6 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
-import java.nio.ByteBuffer
 
 /**
  * Listens for messages sent by the Wear OS app via the Wearable MessageClient API.
@@ -40,6 +38,7 @@ class WearDataListenerService : WearableListenerService() {
         // "Fall Alerts" entry in system notification settings.
         private const val CHANNEL_ID = "fall_guardian_alerts"
         private const val DATA_EVENT_TTL_MS = 2 * 60 * 1000L
+        private const val DISPLAYED_NOTIFICATION_KEY = "displayed_fall_notification"
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
@@ -59,9 +58,22 @@ class WearDataListenerService : WearableListenerService() {
                         deleteDataItem(event)
                         return@forEach
                     }
-                    handleFallDetected(timestamp)
+                    // Optional watch-generated incident UUID (newer watches).
+                    handleFallDetected(timestamp, dataMap.getString("incidentId"))
                 }
-                "/cancel_alert" -> handleCancelAlert()
+                "/cancel_alert" -> {
+                    // Optional incident targeting: newer watches send the
+                    // incidentId and fallTimestamp of the incident to cancel.
+                    // Note "timestamp" on this item is the cancel time, not
+                    // the fall time, so it is deliberately not used here.
+                    val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    val fallTimestamp = if (dataMap.containsKey("fallTimestamp")) {
+                        dataMap.getLong("fallTimestamp")
+                    } else {
+                        null
+                    }
+                    handleCancelAlert(dataMap.getString("incidentId"), fallTimestamp)
+                }
             }
             deleteDataItem(event)
         }
@@ -69,7 +81,11 @@ class WearDataListenerService : WearableListenerService() {
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
         when (messageEvent.path) {
-            "/cancel_alert" -> { handleCancelAlert(); return }
+            "/cancel_alert" -> {
+                val target = WatchPayloads.parseCancel(messageEvent.data)
+                handleCancelAlert(target.incidentId, target.fallTimestamp)
+                return
+            }
             "/fall_event" -> Unit
             else -> return
         }
@@ -80,8 +96,8 @@ class WearDataListenerService : WearableListenerService() {
             return
         }
         if (connectedNodes.none { it.id == messageEvent.sourceNodeId }) return
-        val timestamp = ByteBuffer.wrap(messageEvent.data).long
-        handleFallDetected(timestamp)
+        val fall = WatchPayloads.parseFall(messageEvent.data) ?: return
+        handleFallDetected(fall.timestamp, fall.incidentId)
     }
 
     private fun isTrustedDataItem(event: DataEvent): Boolean {
@@ -103,20 +119,24 @@ class WearDataListenerService : WearableListenerService() {
         Wearable.getDataClient(this).deleteDataItems(event.dataItem.uri)
     }
 
-    private fun handleFallDetected(timestamp: Long) {
+    private fun handleFallDetected(timestamp: Long, incidentId: String?) {
+        // Watch UUID, forwarded to Flutter as an alias when the incident is
+        // already known under another id (e.g. legacy transport first).
+        val watchIncidentId = NativeAlertRelayPolicy.normalizedIncidentId(incidentId)
         // Persist and schedule backend registration before touching UI. The
         // JobService survives a missing Flutter engine, process death and
         // temporary network loss. Dart receives the same idempotency key when
         // it is available, so native and Flutter retries create one incident.
         val clientAlertId = NativeAlertRelay.enqueueFall(
             applicationContext,
-            timestamp
+            timestamp,
+            incidentId
         )
         val activity = MainActivity.getInstance()
         if (activity != null && activity.isInForeground) {
             // App is visible — invoke the Flutter channel directly.
             // No notification needed: Flutter will push FallAlertScreen immediately.
-            activity.sendFallDetectedToFlutter(timestamp, clientAlertId)
+            activity.sendFallDetectedToFlutter(timestamp, clientAlertId, watchIncidentId)
             return
         }
 
@@ -135,11 +155,25 @@ class WearDataListenerService : WearableListenerService() {
         // taps the notification. A dedup guard in MainActivity prevents a double FallAlertScreen
         // if the user later taps the notification (which fires onNewIntent with the same
         // timestamp).
-        showFallNotification(timestamp, clientAlertId)
-        activity?.sendFallDetectedToFlutter(timestamp, clientAlertId)
+        showFallNotification(timestamp, clientAlertId, watchIncidentId)
+        activity?.sendFallDetectedToFlutter(timestamp, clientAlertId, watchIncidentId)
     }
 
-    private fun showFallNotification(timestamp: Long, clientAlertId: String) {
+    private fun showFallNotification(
+        timestamp: Long,
+        clientAlertId: String,
+        watchIncidentId: String?
+    ) {
+        // Remember which incident the notification shows, so a delayed cancel
+        // for another incident cannot remove it.
+        getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(
+                DISPLAYED_NOTIFICATION_KEY,
+                FallNotificationPolicy.encode(
+                    DisplayedFallNotification(clientAlertId, watchIncidentId, timestamp)
+                )
+            )
+            .apply()
         val nm = getSystemService(NotificationManager::class.java)
 
         // Create the channel if it doesn't exist yet (idempotent — no-op if
@@ -188,14 +222,21 @@ class WearDataListenerService : WearableListenerService() {
         nm.notify(FALL_WAKEUP_NOTIF_ID, builder.build())
     }
 
-    private fun handleCancelAlert() {
-        getSystemService(NotificationManager::class.java)
-            ?.cancel(FALL_WAKEUP_NOTIF_ID)
+    private fun handleCancelAlert(rawIncidentId: String?, fallTimestamp: Long?) {
+        val incidentId = NativeAlertRelayPolicy.normalizedIncidentId(rawIncidentId)
+        val prefs = getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE)
+        val displayed = FallNotificationPolicy.decode(
+            prefs.getString(DISPLAYED_NOTIFICATION_KEY, null)
+        )
+        if (FallNotificationPolicy.shouldDismiss(displayed, incidentId, fallTimestamp)) {
+            getSystemService(NotificationManager::class.java)
+                ?.cancel(FALL_WAKEUP_NOTIF_ID)
+            prefs.edit().remove(DISPLAYED_NOTIFICATION_KEY).apply()
+        }
 
-        val prefs = getSharedPreferences("fall_guardian", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("pending_alert_cancelled", true).apply()
-        NativeAlertRelay.requestCancel(applicationContext)
+        MainActivity.storePendingCancel(applicationContext, incidentId, fallTimestamp)
+        NativeAlertRelay.requestCancel(applicationContext, incidentId, fallTimestamp)
 
-        MainActivity.getInstance()?.sendCancelAlertToFlutter()
+        MainActivity.getInstance()?.deliverPendingCancelsToFlutter()
     }
 }

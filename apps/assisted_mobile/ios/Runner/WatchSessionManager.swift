@@ -57,6 +57,12 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     private static let pendingFallTimestampKey = "pendingFallTimestamp"
     private static let pendingFallClientAlertIdKey = "pendingFallClientAlertId"
     private static let pendingAlertCancelledKey = "pendingAlertCancelled"
+    private static let pendingAlertCancelledIncidentIdKey = "pendingAlertCancelledIncidentId"
+    private static let pendingAlertCancelledFallTimestampKey = "pendingAlertCancelledFallTimestamp"
+    private static let pendingAlertCancelsKey = "pendingAlertCancels_v1"
+    private static let pendingCancelsLock = NSLock()
+    private static let displayedFallNotificationKey = "displayedFallNotification_v1"
+    private var cancelsInFlight = Set<String>()
 
     // Identifier for the native wake-up notification shown when Flutter is not
     // ready. Cancelled by drainPendingFallEvent() once Flutter takes over.
@@ -259,12 +265,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// FallAlertScreen takes over.
     func drainPendingFallEvent() {
         let key = WatchSessionManager.pendingFallTimestampKey
-        guard let timestamp = UserDefaults.standard.object(forKey: key) as? Int else { return }
+        guard let timestamp = UserDefaults.standard.object(forKey: key) as? Int,
+              let channel else { return }
         let clientAlertId = UserDefaults.standard.string(
-            forKey: WatchSessionManager.pendingFallClientAlertIdKey
-        )
-        UserDefaults.standard.removeObject(forKey: key)
-        UserDefaults.standard.removeObject(
             forKey: WatchSessionManager.pendingFallClientAlertIdKey
         )
         // Cancel the native wake-up notification — FallAlertScreen takes over.
@@ -276,8 +279,25 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         if let clientAlertId {
             arguments["clientAlertId"] = clientAlertId
         }
-        forwardToFlutter("onFallDetected", arguments: arguments)
+        DispatchQueue.main.async {
+            channel.invokeMethod("onFallDetected", arguments: arguments) { result in
+                // Forget the stored fall only once Flutter handled it; otherwise
+                // the next drain (e.g. after the Dart handler registers) retries.
+                guard Self.isSuccessfulResult(result) else { return }
+                let defaults = UserDefaults.standard
+                if defaults.object(forKey: key) as? Int == timestamp {
+                    defaults.removeObject(forKey: key)
+                    defaults.removeObject(forKey: WatchSessionManager.pendingFallClientAlertIdKey)
+                }
+            }
+        }
         startPollingForWatchCancel()
+    }
+
+    static func isSuccessfulResult(_ result: Any?) -> Bool {
+        if result is FlutterError { return false }
+        if let object = result as AnyObject?, object === FlutterMethodNotImplemented { return false }
+        return true
     }
 
     /// Forward any watch-originated cancel that arrived before Flutter was ready.
@@ -285,12 +305,81 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// This prevents a stale native fall notification from lingering if the watch
     /// user cancels while the phone app is backgrounded or killed.
     func drainPendingAlertCancel() {
-        let key = WatchSessionManager.pendingAlertCancelledKey
-        guard UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.removeObject(forKey: key)
-        UNUserNotificationCenter.current()
-            .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
-        forwardToFlutter("onAlertCancelled", arguments: nil)
+        let entries = Self.readPendingCancels()
+        guard !entries.isEmpty else { return }
+        entries.forEach {
+            dismissFallNotificationIfMatching(incidentID: $0.incidentID, fallTimestamp: $0.fallTimestamp)
+        }
+        deliverPendingCancels()
+    }
+
+    // MARK: - Pending watch cancels (list, removed only after Flutter handled them)
+
+    static func readPendingCancels() -> [PendingCancelEntry] {
+        pendingCancelsLock.lock()
+        defer { pendingCancelsLock.unlock() }
+        return readPendingCancelsLocked()
+    }
+
+    private static func readPendingCancelsLocked() -> [PendingCancelEntry] {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: pendingAlertCancelsKey) {
+            return (try? JSONDecoder().decode([PendingCancelEntry].self, from: data)) ?? []
+        }
+        // Migrate the pre-list single slot so an undelivered cancel survives.
+        let migrated = PendingCancelList.migrateLegacy(
+            pending: defaults.bool(forKey: pendingAlertCancelledKey),
+            incidentID: defaults.string(forKey: pendingAlertCancelledIncidentIdKey),
+            fallTimestamp: (defaults.object(forKey: pendingAlertCancelledFallTimestampKey) as? NSNumber)?.int64Value
+        )
+        writePendingCancelsLocked(migrated)
+        [pendingAlertCancelledKey, pendingAlertCancelledIncidentIdKey, pendingAlertCancelledFallTimestampKey]
+            .forEach { defaults.removeObject(forKey: $0) }
+        return migrated
+    }
+
+    private static func writePendingCancelsLocked(_ entries: [PendingCancelEntry]) {
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        UserDefaults.standard.set(data, forKey: pendingAlertCancelsKey)
+    }
+
+    private static func storePendingCancel(incidentID: String?, fallTimestamp: Int64?) {
+        pendingCancelsLock.lock()
+        defer { pendingCancelsLock.unlock() }
+        let entry = PendingCancelEntry(
+            entryID: UUID().uuidString,
+            incidentID: incidentID,
+            fallTimestamp: fallTimestamp
+        )
+        writePendingCancelsLocked(PendingCancelList.add(readPendingCancelsLocked(), entry))
+    }
+
+    private static func removePendingCancel(entryID: String) {
+        pendingCancelsLock.lock()
+        defer { pendingCancelsLock.unlock() }
+        writePendingCancelsLocked(PendingCancelList.remove(readPendingCancelsLocked(), entryID: entryID))
+    }
+
+    /// Delivers every stored watch cancel to Flutter in arrival order. Each
+    /// entry is removed only after Flutter's handler returned successfully.
+    private func deliverPendingCancels() {
+        guard let channel else { return }
+        let entries = Self.readPendingCancels()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for entry in entries where !self.cancelsInFlight.contains(entry.entryID) {
+                self.cancelsInFlight.insert(entry.entryID)
+                var arguments: [String: Any] = [:]
+                if let incidentID = entry.incidentID { arguments["incidentId"] = incidentID }
+                if let fallTimestamp = entry.fallTimestamp { arguments["fallTimestamp"] = Int(fallTimestamp) }
+                channel.invokeMethod("onAlertCancelled", arguments: arguments.isEmpty ? nil : arguments) { result in
+                    self.cancelsInFlight.remove(entry.entryID)
+                    if Self.isSuccessfulResult(result) {
+                        Self.removePendingCancel(entryID: entry.entryID)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Session Lifecycle
@@ -425,8 +514,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// WITHOUT a reply handler (fire-and-forget style).
     ///
     /// Message format (dictionary):
-    ///   { "event": "fall_detected", "timestamp": <Int ms since epoch> }
-    ///   { "event": "alert_cancelled" }
+    ///   { "event": "fall_detected", "timestamp": <Int ms since epoch>, "incidentId"?: <uuid> }
+    ///   { "event": "alert_cancelled", "incidentId"?: <uuid>, "fallTimestamp"?: <Int ms> }
+    /// The optional fields are sent by newer watches; older payloads keep working.
     ///
     /// This method runs on a background thread provided by WCSession.
     /// We must dispatch to the main thread before touching Flutter (see forwardToFlutter).
@@ -440,38 +530,62 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         // The watch detected a fall and is starting its 30-second countdown.
         case "fall_detected":
             // Extract the timestamp (milliseconds since epoch) that the watch wrote
-            // at the moment of detection. Both the watch and the phone use this same
-            // value as the countdown origin, keeping the timers in sync even if there
-            // is a small delay delivering the message.
+            // at the moment of detection. It identifies the incident and is the
+            // phone's countdown origin only until the backend answers: Flutter then
+            // drives the countdown from the server-owned cancelDeadlineAt (corrected
+            // for clock skew), because the server grace period starts when the API
+            // receives the alert, not when the watch detected the fall.
             let timestamp = message["timestamp"] as? Int ??
                 Int(Date().timeIntervalSince1970 * 1000)
             let fallTimestamp = Int64(timestamp)
             resetCancelContext(fallTimestamp: fallTimestamp)
+            // Newer watches send a lowercase UUID incidentId generated at
+            // detection; when valid it becomes the backend clientAlertId.
             let clientAlertId = NativeAppleWatchAlertRelay.shared.enqueueFall(
-                timestamp: fallTimestamp
+                timestamp: fallTimestamp,
+                incidentID: message["incidentId"] as? String
             )
 
             // Show the native UNNotification immediately, before involving Flutter.
             // This is reliable across all app states (foreground, background, killed)
             // and sidesteps flutter_local_notifications' UIScene delegate issues on iOS 26.
-            showFallNotificationIfNeeded(timestamp: timestamp)
+            showFallNotificationIfNeeded(
+                timestamp: timestamp,
+                clientAlertID: clientAlertId,
+                watchIncidentID: RelayQueueLogic.normalizedIncidentID(message["incidentId"] as? String)
+            )
 
             // Tell Flutter a fall was detected. Flutter will show FallAlertScreen.
+            var fallArguments: [String: Any] = ["timestamp": timestamp, "clientAlertId": clientAlertId]
+            // Watch UUID, so Flutter can match cancels naming it even when the
+            // incident is known under another id (alias).
+            if let watchIncidentID = RelayQueueLogic.normalizedIncidentID(message["incidentId"] as? String) {
+                fallArguments["incidentId"] = watchIncidentID
+            }
             forwardToFlutter(
                 "onFallDetected",
-                arguments: ["timestamp": timestamp, "clientAlertId": clientAlertId]
+                arguments: fallArguments
             )
 
             // Start the simulator cancel-poll loop in case the user cancels on the watch.
             startPollingForWatchCancel()  // watch→phone IPC fallback for simulator
 
         // The user cancelled the alert on the watch side.
+        // Newer watches name the incident (incidentId and/or fallTimestamp);
+        // only that incident is cancelled. Without them, legacy behaviour.
         case "alert_cancelled":
-            NativeAppleWatchAlertRelay.shared.requestCancel()
-            UNUserNotificationCenter.current()
-                .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+            let incidentId = RelayQueueLogic.normalizedIncidentID(message["incidentId"] as? String)
+            let fallTimestamp = (message["fallTimestamp"] as? NSNumber)?.int64Value
+            NativeAppleWatchAlertRelay.shared.requestCancel(
+                incidentID: incidentId,
+                fallTimestamp: fallTimestamp
+            )
+            dismissFallNotificationIfMatching(incidentID: incidentId, fallTimestamp: fallTimestamp)
+            var arguments: [String: Any] = [:]
+            if let incidentId { arguments["incidentId"] = incidentId }
+            if let fallTimestamp { arguments["fallTimestamp"] = Int(fallTimestamp) }
             // Tell Flutter to dismiss the alert screen.
-            forwardToFlutter("onAlertCancelled", arguments: nil)
+            forwardToFlutter("onAlertCancelled", arguments: arguments.isEmpty ? nil : arguments)
 
         default:
             break
@@ -521,7 +635,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///   2. Stops watching for a watch-side cancel (it's already cancelled).
     ///   3. Simulator IPC: writes /tmp/com.fallguardian.cancelAlert for the watchOS sim.
     ///   4. Sends the cancellation to the real watch via three delivery paths (see below).
-    func sendCancelAlert() {
+    func sendCancelAlert(incidentID: String? = nil, fallTimestamp requestedFallTimestamp: Int64? = nil) {
         // Step 1 — Update the in-memory flag immediately.
         // If the watch sends a "query_cancel_status" before the WCSession message
         // arrives, we still return the correct answer.
@@ -549,11 +663,13 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
         NSLog("[WCSession][Phone] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
 
-        let fallTimestamp = activeFallTimestamp
-        let message: [String: Any] = [
+        let fallTimestamp = requestedFallTimestamp ?? activeFallTimestamp
+        var message: [String: Any] = [
             "event": "alert_cancelled",
             "fallTimestamp": Int(fallTimestamp ?? 0),
         ]
+        // Lets newer watches cancel only the matching incident.
+        if let incidentID { message["incidentId"] = incidentID }
 
         // Three delivery paths, ordered most → least real-time:
         //
@@ -570,10 +686,12 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         //     reads when it next launches. This ensures the cancel survives an
         //     app restart on either device. Only the latest context is kept
         //     (unlike transferUserInfo which queues all calls).
-        try? WCSession.default.updateApplicationContext([
+        var context: [String: Any] = [
             "alertCancelled": true,
             "fallTimestamp": Int(fallTimestamp ?? 0),
-        ])
+        ]
+        if let incidentID { context["incidentId"] = incidentID }
+        try? WCSession.default.updateApplicationContext(context)
     }
 
     /// Reset all cancel state when a NEW fall event begins.
@@ -674,10 +792,22 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 }
             } else if method == "onAlertCancelled" {
                 NSLog("[WCSession][Phone] forwardToFlutter: no channel — storing pending cancel for drain")
-                UserDefaults.standard.set(true, forKey: WatchSessionManager.pendingAlertCancelledKey)
-                UNUserNotificationCenter.current()
-                    .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+                let args = arguments as? [String: Any]
+                let incidentID = args?["incidentId"] as? String
+                let fallTimestamp = (args?["fallTimestamp"] as? NSNumber)?.int64Value
+                Self.storePendingCancel(incidentID: incidentID, fallTimestamp: fallTimestamp)
+                dismissFallNotificationIfMatching(incidentID: incidentID, fallTimestamp: fallTimestamp)
             }
+            return
+        }
+        if method == "onAlertCancelled" {
+            // Persist first; removed only once Flutter confirms handling it.
+            let args = arguments as? [String: Any]
+            Self.storePendingCancel(
+                incidentID: args?["incidentId"] as? String,
+                fallTimestamp: (args?["fallTimestamp"] as? NSNumber)?.int64Value
+            )
+            deliverPendingCancels()
             return
         }
         NSLog("[WCSession][Phone] forwardToFlutter: invoking \(method)")
@@ -696,6 +826,25 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// The `timeSensitive` interruption level (iOS 15+) bypasses Focus modes,
     /// which is appropriate for a safety-critical fall alert.
+    /// Removes the wake-up notification only if it shows the cancelled
+    /// incident (or for legacy untargeted cancels).
+    private func dismissFallNotificationIfMatching(incidentID: String?, fallTimestamp: Int64?) {
+        let defaults = UserDefaults.standard
+        let displayed = defaults.data(forKey: Self.displayedFallNotificationKey)
+            .flatMap { try? JSONDecoder().decode(DisplayedFallNotification.self, from: $0) }
+        guard FallNotificationMatch.shouldDismiss(
+            displayed: displayed,
+            incidentID: incidentID,
+            fallTimestamp: fallTimestamp
+        ) else {
+            NSLog("[WCSession][Phone] keeping fall notification: cancel targets another incident")
+            return
+        }
+        UNUserNotificationCenter.current()
+            .removeDeliveredNotifications(withIdentifiers: [WatchSessionManager.fallWakeupNotifId])
+        defaults.removeObject(forKey: Self.displayedFallNotificationKey)
+    }
+
     private func showFallNotification(timestamp: Int) {
         let content = UNMutableNotificationContent()
         content.title = "⚠️ Fall Detected"
@@ -724,7 +873,20 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// In the foreground, Flutter immediately pushes FallAlertScreen and a second
     /// iOS banner creates noisy duplicate alert UI.
-    private func showFallNotificationIfNeeded(timestamp: Int) {
+    private func showFallNotificationIfNeeded(
+        timestamp: Int,
+        clientAlertID: String? = nil,
+        watchIncidentID: String? = nil
+    ) {
+        // Remember which incident the (single) notification slot shows.
+        let displayed = DisplayedFallNotification(
+            clientAlertID: clientAlertID,
+            watchIncidentID: watchIncidentID,
+            timestamp: Int64(timestamp)
+        )
+        if let data = try? JSONEncoder().encode(displayed) {
+            UserDefaults.standard.set(data, forKey: Self.displayedFallNotificationKey)
+        }
         if UIApplication.shared.applicationState == .active {
             NSLog("[WCSession][Phone] suppressing native fall notification while foregrounded")
             return

@@ -3,6 +3,11 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>com.fallguardian.alert-relay.refresh</string>
+        <string>com.fallguardian.alert-relay.processing</string>
+    </array>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
     <key>CFBundleDevelopmentRegion</key>
@@ -70,6 +75,7 @@
         <string>remote-notification</string>
         <string>fetch</string>
         <string>location</string>
+        <string>processing</string>
     </array>
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>

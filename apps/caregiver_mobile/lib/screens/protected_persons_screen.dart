@@ -1,6 +1,6 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/app_localizations.dart';
 import '../services/caregiver_backend_service.dart';
@@ -51,7 +51,6 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
         _loading = false;
       });
     } catch (e) {
-      debugPrint('Protected persons load error: $e');
       developer.log(
         'Protected persons load error: $e',
         name: 'ProtectedPersonsScreen',
@@ -73,7 +72,8 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => LinkScreen(onLinked: _handleLinked),
+        builder: (_) =>
+            LinkScreen(onLinked: _handleLinked, backend: widget.backend),
       ),
     );
   }
@@ -156,9 +156,8 @@ class _ProtectedPersonsScreenState extends State<ProtectedPersonsScreen> {
                   else ...[
                     Text(
                       l10n.protectedPersonsCount(_protectedPersons.length),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 12),
                     ..._protectedPersons.indexed.map(
@@ -262,9 +261,8 @@ class _EmptyProtectedPersonsState extends StatelessWidget {
         Text(
           l10n.protectedPersonsEmptyTitle,
           textAlign: TextAlign.center,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium
+              ?.copyWith(fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 8),
         Text(

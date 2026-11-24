@@ -14,6 +14,7 @@ backend/api/              Symfony/API Platform backend
 packages/                 shared contracts, fixtures, and generated artifacts
 docs/                     workspace documentation
 scripts/                  workspace automation
+tools/e2e/                cross-app API workflow E2E (run by `make e2e`)
 ```
 
 ## Rules
@@ -118,6 +119,9 @@ Root commands:
 make quality
 make test
 make status
+make e2e             # isolated test backend + app workflow E2E
+make openapi-export  # refresh packages/api_contract/openapi.json
+make openapi-check   # fail if the committed OpenAPI snapshot is stale
 ```
 
 Project commands:

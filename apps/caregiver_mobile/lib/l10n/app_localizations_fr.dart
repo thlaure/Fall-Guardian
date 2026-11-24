@@ -54,13 +54,60 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get alertIdTitle => 'ID alerte';
   @override
-  String get acknowledge => 'Acquitter';
+  String get imHandlingIt => 'Je m’en occupe';
+  @override
+  String fallDetectedFor(String name) => '$name a peut-être chuté';
+  @override
+  String get yourContact => 'Votre proche';
+  @override
+  String detectedOn(String date, String time) => 'Détectée le $date à $time';
+  @override
+  String get justNow => 'à l’instant';
+  @override
+  String minutesAgo(int minutes) => 'il y a $minutes min';
+  @override
+  String hoursAgo(int hours) => 'il y a $hours h';
+  @override
+  String daysAgo(int days) =>
+      days == 1 ? 'il y a 1 jour' : 'il y a $days jours';
+  @override
+  String get openInMaps => 'Ouvrir dans Plans';
+  @override
+  String get mapsUnavailable =>
+      'Aucune application de cartes n’a pu ouvrir cette position.';
+  @override
+  String callEmergencyServices(String number) =>
+      'Appeler les secours ($number)';
+  @override
+  String get dialerUnavailable => 'Impossible d’ouvrir le téléphone.';
+  @override
+  String get alertDetailsTitle => 'Détails techniques';
+  @override
+  String coordinatesLabel(String latitude, String longitude) =>
+      'Coordonnées : $latitude, $longitude';
+  @override
+  String get reminderBanner => 'Rappel — personne n’a encore répondu';
+  @override
+  String get handlingByMe => 'Vous vous en occupez';
+  @override
+  String get handlingByOther => 'Un autre aidant s’en occupe';
+  @override
+  String handlingByOtherSince(String time) =>
+      'Un autre aidant s’en occupe depuis $time';
+  @override
+  String get closeAlert => 'Fermer';
+  @override
+  String moreAlertsWaiting(int count) => count == 1
+      ? '1 autre alerte en attente'
+      : '$count autres alertes en attente';
+  @override
+  String fallAlertSemantics(String name) => 'Alerte de chute pour $name';
   @override
   String get activeAlertGuidanceWithLocation =>
-      'Acquittez quand vous avez vu cette alerte. Si vous n’arrivez pas à joindre la personne protégée, utilisez la position ci-dessous et appelez les secours.';
+      'Appuyez sur « Je m’en occupe » dès que vous prenez en charge cette alerte. Si vous n’arrivez pas à joindre votre proche, ouvrez la position dans Plans et appelez les secours.';
   @override
   String get activeAlertGuidanceWithoutLocation =>
-      'Acquittez quand vous avez vu cette alerte. Si vous n’arrivez pas à joindre la personne protégée, appelez les secours et indiquez qu’aucune position n’a été fournie.';
+      'Appuyez sur « Je m’en occupe » dès que vous prenez en charge cette alerte. Si vous n’arrivez pas à joindre votre proche, appelez les secours et indiquez qu’aucune position n’a été fournie.';
   @override
   String get activeAlertEmergencyTitle => 'Actions d’urgence';
   @override
@@ -155,9 +202,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get statusStoppedByProtectedPerson =>
       'Annulée par la personne protégée';
   @override
-  String get statusAcknowledged => 'Acquittée par un aidant';
+  String get statusAcknowledged => 'Prise en charge par vous';
   @override
-  String get statusUnacknowledged => 'À acquitter par un aidant';
+  String get statusUnacknowledged => 'En attente de votre réponse';
   @override
   String get unknownDate => 'Date inconnue';
 }

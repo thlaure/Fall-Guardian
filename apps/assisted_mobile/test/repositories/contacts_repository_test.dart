@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fall_guardian/models/contact.dart';
@@ -56,13 +57,15 @@ class _FakeBackendGateway implements AlertBackendGateway {
   }) async {}
 
   @override
-  Future<void> submitFallAlert({
+  Future<FallAlertReceipt?> submitFallAlert({
     required String clientAlertId,
     required int fallTimestamp,
     required String locale,
     required double? latitude,
     required double? longitude,
-  }) async {}
+  }) async {
+    return null;
+  }
 
   @override
   Future<void> attachLocation({
@@ -160,32 +163,36 @@ void main() {
       expect(all.first.id, '42');
     });
 
-    test('getAll migrates legacy shared preferences into secure storage',
-        () async {
-      const validContact = Contact(id: '42', name: 'Alice', phone: '+1');
-      final validJson = jsonEncode(validContact.toJson());
-      SharedPreferences.setMockInitialValues({
-        'contacts': [validJson],
-      });
-      repo = ContactsRepository(store: store, backendGateway: backend);
+    test(
+      'getAll migrates legacy shared preferences into secure storage',
+      () async {
+        const validContact = Contact(id: '42', name: 'Alice', phone: '+1');
+        final validJson = jsonEncode(validContact.toJson());
+        SharedPreferences.setMockInitialValues({
+          'contacts': [validJson],
+        });
+        repo = ContactsRepository(store: store, backendGateway: backend);
 
-      final all = await repo.getAll();
+        final all = await repo.getAll();
 
-      expect(all.single.id, '42');
-      expect(store.data['contacts'], contains('Alice'));
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList('contacts'), isNull);
-    });
+        expect(all.single.id, '42');
+        expect(store.data['contacts'], contains('Alice'));
+        final prefs = await SharedPreferences.getInstance();
+        expect(prefs.getStringList('contacts'), isNull);
+      },
+    );
 
-    test('getAll deletes and recovers from a corrupted secure store value',
-        () async {
-      store.data['contacts'] = 'not a valid json list';
+    test(
+      'getAll deletes and recovers from a corrupted secure store value',
+      () async {
+        store.data['contacts'] = 'not a valid json list';
 
-      final all = await repo.getAll();
+        final all = await repo.getAll();
 
-      expect(all, isEmpty);
-      expect(store.data.containsKey('contacts'), isFalse);
-    });
+        expect(all, isEmpty);
+        expect(store.data.containsKey('contacts'), isFalse);
+      },
+    );
 
     test('add keeps local contact when backend sync fails', () async {
       backend = _FakeBackendGateway(shouldFail: true);

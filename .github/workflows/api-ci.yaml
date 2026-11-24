@@ -1,37 +1,82 @@
 name: API CI
 
+# NOTE: "Deploy API" (api-deploy.yaml) triggers on the completion of this
+# workflow by name. Renaming it requires updating api-deploy.yaml.
+
 on:
   push:
     branches:
       - main
     paths:
       - backend/api/**
+      - packages/api_contract/**
+      - tools/e2e/**
+      - scripts/deploy-api-remote.sh
+      - Makefile
       - .github/workflows/api-ci.yaml
+      - .github/workflows/api-deploy.yaml
   pull_request:
     branches:
       - main
-    paths:
-      - backend/api/**
-      - .github/workflows/api-ci.yaml
   workflow_dispatch: ~
 
 concurrency:
   group: api-ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  changes:
+    name: Detect API changes
+    runs-on: ubuntu-latest
+    outputs:
+      relevant: ${{ steps.filter.outputs.relevant }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE_SHA" "$GITHUB_SHA" -- \
+            backend/api \
+            packages/api_contract \
+            tools/e2e \
+            scripts/deploy-api-remote.sh \
+            Makefile \
+            .github/workflows/api-ci.yaml \
+            .github/workflows/api-deploy.yaml; then
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          fi
+
   tests:
     name: Tests
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
+      # Composer runs on the host because compose.test.yaml bind-mounts
+      # backend/api into the container: the host vendor/ directory is the one
+      # the container uses.
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.5'
           coverage: none
@@ -42,7 +87,7 @@ jobs:
           COMPOSER_MEMORY_LIMIT: -1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build test image
         run: docker compose -f compose.test.yaml build
@@ -50,18 +95,11 @@ jobs:
       - name: Start services
         run: docker compose -f compose.test.yaml up -d
 
-      - name: Print logs on failure
-        if: failure()
-        run: docker compose -f compose.test.yaml logs
-
       - name: Create test database
         run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:database:create --if-not-exists
 
       - name: Run migrations
         run: docker compose -f compose.test.yaml exec -T app php bin/console -e test doctrine:migrations:migrate --no-interaction
-
-      - name: Run PHPUnit
-        run: docker compose -f compose.test.yaml exec -T app vendor/bin/phpunit
 
       - name: Run PHPUnit with coverage
         run: docker compose -f compose.test.yaml exec -T app php -d pcov.enabled=1 vendor/bin/phpunit --coverage-clover var/coverage/clover.xml --coverage-text
@@ -84,6 +122,15 @@ jobs:
       - name: Run Behat
         run: docker compose -f compose.test.yaml exec -T app vendor/bin/behat --no-interaction --colors
 
+      - name: Check OpenAPI contract snapshot
+        working-directory: .
+        run: |
+          make openapi-export API_COMPOSE="docker compose -f compose.test.yaml"
+          if ! git diff --exit-code -- packages/api_contract/openapi.json; then
+            echo "::error file=packages/api_contract/openapi.json::OpenAPI contract changed. Run 'make openapi-export' and commit packages/api_contract/openapi.json."
+            exit 1
+          fi
+
       - name: Audit PHP dependencies
         run: |
           docker compose -f compose.test.yaml exec -T app composer audit || { code=$?; [ "$code" -eq 2 ] || exit "$code"; }
@@ -100,43 +147,96 @@ jobs:
       - name: YAML linter
         run: docker compose -f compose.test.yaml exec -T app php bin/console lint:yaml config
 
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose -f compose.test.yaml logs
+
+  e2e:
+    name: App Workflow E2E
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
+    runs-on: ubuntu-latest
+    env:
+      E2E_COMPOSE: docker compose -f compose.test.yaml -f ../../tools/e2e/compose.e2e.yaml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      # Composer dependencies are installed inside the test image by
+      # `make e2e-up`, so no host PHP toolchain is needed here.
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Test environment: fake push provider and no-op rate limiter, so the
+      # workflow is deterministic and never contacts FCM.
+      - name: Start backend
+        run: make e2e-up E2E_COMPOSE="$E2E_COMPOSE"
+
+      - name: Run app workflow E2E
+        run: make e2e-app-workflow BACKEND_BASE_URL=http://127.0.0.1:8003
+
+      - name: Print logs on failure
+        if: failure()
+        working-directory: backend/api
+        run: $E2E_COMPOSE logs
+
   trivy:
     name: Trivy Security Scan
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build prod image
         run: docker build -f .docker/api/Dockerfile --target frankenphp_prod -t fall-guardian-api:ci .
 
-      - name: Scan image
-        uses: aquasecurity/trivy-action@v0.36.0
+      - name: Report HIGH vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: fall-guardian-api:ci
           format: table
           exit-code: 0
           ignore-unfixed: true
-          severity: CRITICAL,HIGH
+          severity: HIGH
+
+      # Blocking gate on fixable CRITICAL findings (unfixed ones are ignored).
+      - name: Fail on fixable CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: fall-guardian-api:ci
+          format: table
+          exit-code: 1
+          ignore-unfixed: true
+          severity: CRITICAL
+          skip-setup-trivy: true
 
   docker-lint:
     name: Docker Lint
+    needs: changes
+    if: needs.changes.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Lint Dockerfile
-        uses: hadolint/hadolint-action@v3.3.0
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: backend/api/.docker/api/Dockerfile
           failure-threshold: error
@@ -146,7 +246,43 @@ jobs:
           SERVER_NAME: https://fall.example.test
           PUSH_PROVIDER: fake
         run: |
-          export POSTGRES_PASSWORD="$(openssl rand -hex 32)"
-          export APP_SECRET="$(openssl rand -hex 32)"
-          export DEVICE_TOKEN_HASH_SECRET="$(openssl rand -hex 32)"
+          POSTGRES_PASSWORD="$(openssl rand -hex 32)"
+          APP_SECRET="$(openssl rand -hex 32)"
+          DEVICE_TOKEN_HASH_SECRET="$(openssl rand -hex 32)"
+          export POSTGRES_PASSWORD APP_SECRET DEVICE_TOKEN_HASH_SECRET
           docker compose -f compose.prod.yaml --profile tools config --quiet
+
+      - name: Lint deploy script
+        working-directory: .
+        run: shellcheck scripts/*.sh
+
+  required-quality:
+    name: API Quality
+    needs:
+      - changes
+      - tests
+      - e2e
+      - trivy
+      - docker-lint
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify API result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.relevant }}
+          RESULTS: >-
+            ${{ needs.tests.result }}
+            ${{ needs.e2e.result }}
+            ${{ needs.trivy.result }}
+            ${{ needs.docker-lint.result }}
+        run: |
+          test "$CHANGES_RESULT" = "success"
+          if [ "$RELEVANT" = "true" ]; then
+            expected=success
+          else
+            expected=skipped
+          fi
+          for result in $RESULTS; do
+            test "$result" = "$expected"
+          done

@@ -39,11 +39,16 @@
 //   watch → phone:  /tmp/com.fallguardian.cancelFromWatch  (contains "cancelled")
 //   phone → watch:  /tmp/com.fallguardian.cancelAlert      (presence = cancelled)
 //
+// ## Message contract (keys only ever added; see WatchPayloads)
+//   watch → phone  fall:    event=fall_detected, timestamp (ms), incidentId
+//   watch → phone  cancel:  event=alert_cancelled, fallTimestamp (ms), incidentId
+//   phone → watch  cancel:  event=alert_cancelled, fallTimestamp, [incidentId]
+//   phone → watch  context: alertCancelled, fallTimestamp, [incidentId]
+//   phone → watch  set_thresholds: DEBUG builds only (custom detector)
+//
 // ## Connection to the rest of the app
-//   FallDetectionManager   →  sendFallEvent()
-//   ContentViewModel       →  sendCancelAlert(), stopPolling(), onAlertCancelled
-//   WatchSessionManager    →  thresholds saved to UserDefaults
-//                             FallDetectionManager reloads via didChangeNotification
+//   SystemFallDetectionService  →  sendFallEvent()
+//   ContentViewModel            →  sendCancelAlert(), stopPolling(), onAlertCancelled
 
 import Foundation         // Basic utilities: NSObject, DispatchQueue, FileManager, etc.
 import WatchConnectivity  // WCSession, WCSessionDelegate — Apple Watch ↔ iPhone bridge
@@ -58,7 +63,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     // MARK: - Singleton
 
     static let shared = WatchSessionManager()
-    private let pendingFallTimestampKey = "pending_watch_fall_timestamp"
+    private let pendingFallTimestampKey = WatchIncidentStorageKey.pendingTimestamp
+    private let pendingFallIncidentIdKey = WatchIncidentStorageKey.pendingIncidentId
 
     // Private init prevents anyone from creating a second instance.
     private override init() {
@@ -86,17 +92,19 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Tells the iPhone that the user tapped "Cancel" on the watch alert screen.
     ///
-    /// Delivery strategy (same pattern used throughout this file):
+    /// Delivery strategy (same as fall events):
     /// 1. Simulator path — write a flag file to /tmp that the iOS sim polls every 1 s.
-    /// 2. Guard: abort if WCSession is not yet activated (e.g. during early startup).
-    /// 3. Try `sendMessage` (fast, real-time) first.
-    /// 4. If sendMessage fails (phone is locked, out of range, etc.), fall back to
+    /// 2. Persist the cancel. A cancel made right after watchOS cold-launches the
+    ///    app from the notification can happen before WCSession activates;
+    ///    activationDidCompleteWith then delivers it.
+    /// 3. Try `sendMessage` (fast, real-time) with an acknowledgement.
+    /// 4. If the phone is unreachable or sendMessage fails, fall back to
     ///    `transferUserInfo` which queues the message for reliable later delivery.
     ///
     /// The `notifyPhone: false` path in ContentViewModel ensures we never call this
     /// when the cancel originated from the phone — that would create a ping-pong loop
     /// (phone cancels → watch calls sendCancelAlert → phone receives → phone cancels again…).
-    func sendCancelAlert() {
+    func sendCancelAlert(for incident: WatchIncident?) {
         // --- Simulator IPC workaround ---
         // WCSession watch→phone is broken when the watchOS app is deployed via
         // xcrun simctl (isReachable is always false).  Write a flag file that
@@ -111,26 +119,52 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         )
         #endif
 
-        // Guard: WCSession must be fully activated before we can send.
-        // `.activated` is the only state where sendMessage works.
-        guard WCSession.default.activationState == .activated else {
-            NSLog("[WCSession] sendCancelAlert: not activated")
+        guard let incident else {
+            // No active incident: nothing the phone could match. Keep the
+            // legacy best-effort message for older phones only when possible.
+            NSLog("[WCSession] sendCancelAlert: no active incident")
+            if WCSession.default.activationState == .activated {
+                WCSession.default.transferUserInfo(WatchPayloads.alertCancelled(nil))
+            }
             return
         }
 
-        // Build the message dictionary.  The phone's WatchSessionManager reads the
-        // "event" key to dispatch to the right handler.
-        let message: [String: Any] = ["event": "alert_cancelled"]
+        // Persist first so the cancel survives until WCSession can carry it.
+        WatchPendingCancel.save(incident, store: UserDefaults.standard)
 
-        NSLog("[WCSession] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
+        guard WCSession.default.activationState == .activated else {
+            NSLog("[WCSession] sendCancelAlert: not activated, cancel kept pending")
+            return
+        }
+        deliverPendingCancel()
+    }
 
-        // Try real-time delivery.  The error handler (trailing closure `{ _ in }`)
-        // fires if the phone cannot be reached right now; we fall back to the queue.
-        WCSession.default.sendMessage(message, replyHandler: nil) { error in
-            NSLog("[WCSession] sendCancelAlert: sendMessage failed error=\(error) falling back to transferUserInfo")
+    /// Delivers a cancel saved before WCSession activation (or just now).
+    /// `fallTimestamp` and `incidentId` let the phone ignore a cancel aimed at
+    /// a different incident.
+    private func deliverPendingCancel() {
+        let defaults = UserDefaults.standard
+        guard let incident = WatchPendingCancel.load(store: defaults),
+              WCSession.default.activationState == .activated else { return }
+
+        let message = WatchPayloads.alertCancelled(incident)
+        let clearPending = { WatchPendingCancel.clear(incident, store: defaults) }
+
+        NSLog("[WCSession] deliverPendingCancel: isReachable=\(WCSession.default.isReachable)")
+        guard WCSession.default.isReachable else {
             // transferUserInfo queues the message on-device; the OS delivers it when
             // the phone becomes reachable again — guaranteed delivery, but not instant.
             WCSession.default.transferUserInfo(message)
+            clearPending()
+            return
+        }
+
+        WCSession.default.sendMessage(message) { _ in
+            clearPending()
+        } errorHandler: { error in
+            NSLog("[WCSession] deliverPendingCancel: sendMessage failed error=\(error) falling back to transferUserInfo")
+            WCSession.default.transferUserInfo(message)
+            clearPending()
         }
     }
 
@@ -141,15 +175,17 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// keeping their countdowns perfectly in sync even if delivery is slightly delayed.
     ///
     /// Delivery strategy: same as sendCancelAlert (simulator file → sendMessage → transferUserInfo).
-    func sendFallEvent(timestamp: Int64) {
+    func sendFallEvent(_ incident: WatchIncident) {
         // Keep the incident identity even when watchOS launches us directly in
         // the background and never constructs ContentView. Phone-side cancels
-        // are accepted only when they carry this same timestamp.
-        activeFallTimestamp = timestamp
+        // are accepted only when they identify this same incident.
+        activeIncident = incident
+        let timestamp = incident.timestamp
 
         // Persist first. A system fall can launch this extension before WCSession
         // finishes activating; activationDidCompleteWith retries the pending event.
         UserDefaults.standard.set(Double(timestamp), forKey: pendingFallTimestampKey)
+        UserDefaults.standard.set(incident.id, forKey: pendingFallIncidentIdKey)
 
         // --- Simulator IPC workaround ---
         // Write the timestamp to a file that the iOS sim polls every 1 second.
@@ -183,8 +219,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Restores the incident persisted by the notification service after watchOS
     /// relaunches the extension in the background.
-    func restoreActiveFall(timestamp: Int64) {
-        activeFallTimestamp = timestamp
+    func restoreActiveFall(_ incident: WatchIncident) {
+        activeIncident = incident
     }
 
     // MARK: - Cancel-status polling (watch waiting for phone to cancel)
@@ -208,7 +244,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// The running background poll task.  Stored so we can cancel it in stopPolling().
     private var pollTask: Task<Void, Never>?
-    private var activeFallTimestamp: Int64?
+    private var activeIncident: WatchIncident?
 
     /// Starts the 2-second polling loop that watches for a phone-side cancellation.
     ///
@@ -221,9 +257,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///   - `Task.isCancelled` is checked before and after the sleep so the loop
     ///     exits immediately when stopPolling() cancels the task.
     ///   - `try? await Task.sleep(nanoseconds:)` pauses without blocking the main thread.
-    func startPollingForCancel(timestamp: Int64) {
+    func startPollingForCancel(incident: WatchIncident) {
         stopPolling()  // Cancel any stale poll from a previous alert.
-        activeFallTimestamp = timestamp
+        activeIncident = incident
         pollTask = Task {
             while !Task.isCancelled {
                 // Sleep 2 seconds between checks.  2 s feels responsive while keeping
@@ -238,7 +274,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
                 guard WCSession.default.activationState == .activated else { continue }
                 #endif
 
-                let cancelled = await checkCancelledOnPhone(for: timestamp)
+                let cancelled = await checkCancelledOnPhone(for: incident)
                 NSLog("[WCSession] poll: cancelled=\(cancelled)")
                 if cancelled {
                     // Jump back to the main thread before touching UI-facing state.
@@ -260,7 +296,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Simulator: checks for the existence of `/tmp/com.fallguardian.cancelAlert`.
     /// The iOS simulator writes that file when the user taps Cancel on the phone.
     /// We delete it after reading so we don't double-fire the cancellation.
-    private func checkCancelledOnPhone(for timestamp: Int64) async -> Bool {
+    private func checkCancelledOnPhone(for incident: WatchIncident) async -> Bool {
         #if targetEnvironment(simulator)
         let path = "/tmp/com.fallguardian.cancelAlert"
         guard FileManager.default.fileExists(atPath: path) else { return false }
@@ -268,9 +304,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         try? FileManager.default.removeItem(atPath: path)
         return true
         #else
-        let context = WCSession.default.receivedApplicationContext
-        let cancelledTimestamp = Int64(context["fallTimestamp"] as? Int ?? 0)
-        return context["alertCancelled"] as? Bool == true && cancelledTimestamp == timestamp
+        return WatchCancelMatcher.acceptsApplicationContext(
+            WCSession.default.receivedApplicationContext,
+            active: incident
+        )
         #endif
     }
 
@@ -281,7 +318,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     func stopPolling() {
         pollTask?.cancel()  // Signals Task.isCancelled inside the loop.
         pollTask = nil      // Release the reference so ARC can deallocate the task.
-        activeFallTimestamp = nil
+        activeIncident = nil
     }
 
     // MARK: - Inbound (phone → watch) — WCSessionDelegate callbacks
@@ -326,7 +363,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ) {
         NSLog("[WCSession] activationDidCompleteWith: state=\(activationState.rawValue) isCompanionAppInstalled=\(session.isCompanionAppInstalled) isReachable=\(session.isReachable) error=\(String(describing: error))")
         if activationState == .activated {
+            // Fall first, then any cancel for it, so the phone sees them in order.
             deliverPendingFallEvent()
+            deliverPendingCancel()
         }
     }
 
@@ -338,10 +377,8 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///
     /// We also handle this in the polling loop as a belt-and-suspenders safety net.
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        let cancelledTimestamp = Int64(applicationContext["fallTimestamp"] as? Int ?? 0)
-        NSLog("[WCSession] didReceiveApplicationContext: alertCancelled=\(applicationContext["alertCancelled"] as? Bool ?? false) timestamp=\(cancelledTimestamp)")
-        if applicationContext["alertCancelled"] as? Bool == true,
-           cancelledTimestamp == activeFallTimestamp {
+        NSLog("[WCSession] didReceiveApplicationContext: alertCancelled=\(applicationContext[WatchMessageKey.alertCancelled] as? Bool ?? false)")
+        if WatchCancelMatcher.acceptsApplicationContext(applicationContext, active: activeIncident) {
             // The callback touches UI state — must run on the main thread.
             DispatchQueue.main.async { self.onAlertCancelled?() }
         }
@@ -352,10 +389,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Central handler for all incoming messages regardless of delivery path.
     ///
     /// Known event types:
-    ///   `"set_thresholds"` — phone is pushing updated sensitivity values.
-    ///       The four keys are saved to UserDefaults.  FallDetectionManager
-    ///       observes `UserDefaults.didChangeNotification` and reloads the
-    ///       algorithm automatically — no restart needed.
+    ///   `"set_thresholds"` — DEBUG builds only. Phone pushes sensitivity values
+    ///       for the custom raw-accelerometer detector, which is compiled only
+    ///       in DEBUG for physical tuning. Release builds rely solely on Apple
+    ///       fall detection and ignore this message.
     ///
     ///   `"alert_cancelled"` — phone cancelled the alert (user tapped cancel or
     ///       the phone app was brought to foreground and the user dismissed it).
@@ -363,9 +400,10 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ///       can dismiss the UI immediately.
     private func handleMessage(_ message: [String: Any]) {
         NSLog("[WCSession] handleMessage: event=\(message["event"] as? String ?? "nil")")
-        switch message["event"] as? String {
+        switch message[WatchMessageKey.event] as? String {
 
-        case "set_thresholds":
+        #if DEBUG
+        case WatchMessageEvent.setThresholds:
             // The phone app's Settings screen lets the user adjust sensitivity.
             // Flutter calls `sendThresholds` on the MethodChannel, which causes
             // the iOS WatchSessionManager to send this message here.
@@ -390,12 +428,14 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
             // this automatically but calling it explicitly ensures the value is
             // persisted before FallDetectionManager's observer fires.
             d.synchronize()
+        #endif
 
-        case "alert_cancelled":
+        case WatchMessageEvent.alertCancelled:
             // The phone cancelled — dismiss the watch alert without sending another
             // cancel back to the phone (ContentViewModel handles that via notifyPhone: false).
-            let cancelledTimestamp = Int64(message["fallTimestamp"] as? Int ?? 0)
-            guard cancelledTimestamp == activeFallTimestamp else { return }
+            // With `incidentId` the cancel must match the active incident; without
+            // it (older phone) the `fallTimestamp` must match.
+            guard WatchCancelMatcher.accepts(message, active: activeIncident) else { return }
             DispatchQueue.main.async { self.onAlertCancelled?() }
 
         default:
@@ -405,6 +445,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    #if DEBUG
     private func validDouble(_ rawValue: Any?, range: ClosedRange<Double>) -> Double? {
         let value: Double?
         if let doubleValue = rawValue as? Double {
@@ -418,6 +459,7 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         guard let value, value.isFinite, range.contains(value) else { return nil }
         return value
     }
+    #endif
 
     /// Delivers a fall saved before WCSession activation. Real-time delivery asks
     /// for an acknowledgement; background delivery enters Apple's reliable queue.
@@ -427,12 +469,18 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         let timestamp = Int64(defaults.double(forKey: pendingFallTimestampKey))
         guard timestamp > 0, WCSession.default.activationState == .activated else { return }
 
-        let message: [String: Any] = ["event": "fall_detected", "timestamp": timestamp]
+        // Reuses the id stored by the notification path for the same incident
+        // (or generates one shared id for a pre-upgrade pending event).
+        let incidentId = WatchIncidentIdentity.resolve(timestamp: timestamp, store: defaults)
+        let message = WatchPayloads.fallDetected(
+            WatchIncident(id: incidentId, timestamp: timestamp)
+        )
         let clearPending: () -> Void = {
             guard Int64(defaults.double(forKey: self.pendingFallTimestampKey)) == timestamp else {
                 return
             }
             defaults.removeObject(forKey: self.pendingFallTimestampKey)
+            defaults.removeObject(forKey: self.pendingFallIncidentIdKey)
         }
 
         NSLog("[WCSession] deliverPendingFallEvent: isReachable=\(WCSession.default.isReachable) isCompanionAppInstalled=\(WCSession.default.isCompanionAppInstalled)")

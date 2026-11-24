@@ -1,0 +1,10 @@
+# synthetic-*.csv: MODEL-GENERATED regression fixtures from
+# scripts/generate_synthetic_traces.py. They pin current detector behaviour;
+# they are NOT real-world recordings and do NOT validate detection accuracy.
+# Add real labelled recordings as separate (non-synthetic-*) files.
+file,expect_fall,description
+synthetic-fall-forward.csv,true,"MODEL-GENERATED synthetic fixture: walk, 280 ms low acceleration, 5 g impact, wrist ends ~90 deg rotated, lies still"
+synthetic-fall-sideways.csv,true,"MODEL-GENERATED synthetic fixture: walk, 200 ms low acceleration, 5 g impact, wrist ends on its side, lies still"
+synthetic-sit-down-hard.csv,false,"MODEL-GENERATED synthetic fixture: partial unloading (0.5 g), 3.2 g landing, ~35 deg wrist rotation, rest"
+synthetic-table-bump.csv,false,"MODEL-GENERATED synthetic fixture: watch flat on table, single 6 g knock, no rotation"
+synthetic-walking.csv,false,"MODEL-GENERATED synthetic fixture: 12 s walking with arm swing"

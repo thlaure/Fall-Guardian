@@ -21,19 +21,19 @@ void main() {
     calls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call.method);
-      switch (call.method) {
-        case 'initialize':
-          return true;
-        case 'requestNotificationsPermission':
-          return true;
-        case 'show':
+          calls.add(call.method);
+          switch (call.method) {
+            case 'initialize':
+              return true;
+            case 'requestNotificationsPermission':
+              return true;
+            case 'show':
+              return null;
+            case 'cancelAll':
+              return null;
+          }
           return null;
-        case 'cancelAll':
-          return null;
-      }
-      return null;
-    });
+        });
   });
 
   tearDown(() {
@@ -42,17 +42,19 @@ void main() {
   });
 
   group('NotificationService', () {
-    test('initialize registers the Android channel and requests permission',
-        () async {
-      final service = NotificationService();
+    test(
+      'initialize registers the Android channel and requests permission',
+      () async {
+        final service = NotificationService();
 
-      await service.initialize();
+        await service.initialize();
 
-      // On the macOS test host, Platform.isIOS is false, so the Android
-      // initialization branch runs regardless of the target platform.
-      expect(calls, contains('initialize'));
-      expect(calls, contains('requestNotificationsPermission'));
-    });
+        // On the macOS test host, Platform.isIOS is false, so the Android
+        // initialization branch runs regardless of the target platform.
+        expect(calls, contains('initialize'));
+        expect(calls, contains('requestNotificationsPermission'));
+      },
+    );
 
     test('initialize is a no-op on the second call', () async {
       final service = NotificationService();
@@ -64,17 +66,19 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('showFallDetectedNotification shows a notification via the plugin',
-        () async {
-      final service = NotificationService();
+    test(
+      'showFallDetectedNotification shows a notification via the plugin',
+      () async {
+        final service = NotificationService();
 
-      await service.showFallDetectedNotification(
-        title: 'Fall detected',
-        body: 'Tap to open',
-      );
+        await service.showFallDetectedNotification(
+          title: 'Fall detected',
+          body: 'Tap to open',
+        );
 
-      expect(calls, contains('show'));
-    });
+        expect(calls, contains('show'));
+      },
+    );
 
     test('cancelAll clears active notifications', () async {
       final service = NotificationService();
@@ -87,8 +91,8 @@ void main() {
     test('cancelAll swallows plugin errors', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'ERROR', message: 'no notifications');
-      });
+            throw PlatformException(code: 'ERROR', message: 'no notifications');
+          });
 
       final service = NotificationService();
 

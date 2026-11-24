@@ -1,6 +1,6 @@
 # Fall Guardian — functional and technical documentation
 
-> Reference status as of July 26, 2026.
+> Reference status as of November 24, 2026 (`main` at #131).
 >
 > This document separately describes what exists on `main`, known
 > limitations, and what remains to be built. It is the product and
@@ -10,8 +10,15 @@
 > there, not here. The watch-enrollment contract and its PR breakdown live
 > in `docs/COMPANION_ENROLLMENT.md`.
 >
-> Items marked 🟡 are implemented on `agent/family-beta-readiness` and
-> remain pending review/merge.
+> The family-beta readiness work formerly tracked as 🟡 on
+> `agent/family-beta-readiness` was squash-merged as
+> [#116](https://github.com/thlaure/Fall-Guardian/pull/116) (`5695658`,
+> 2026-07-26) and is now ✅.
+>
+> 🟡 items below are "in PR stack": open, stacked branches not yet on
+> `main` — `t3/harden-alert-delivery-api`, `t3/assisted-alert-reliability`,
+> `t3/caregiver-alert-handling`, `t3/wear-os-cancel-and-ci`,
+> `t3/watchos-alert-localization`, `t3/ci-deploy-contract-hardening`.
 
 ## 1. Product goal
 
@@ -38,7 +45,7 @@ not send SMS messages.
 | Marker | Meaning |
 | --- | --- |
 | ✅ | Available on `main` |
-| 🟡 | Developed in an open pull request, not yet on `main` |
+| 🟡 | In the open PR stack, not yet on `main` |
 | 🔴 | To be implemented |
 | ⚠️ | Known limitation or risk |
 
@@ -114,13 +121,18 @@ will be deduplicated. Opening the application must never be necessary.
 - ✅ local history of detections and their outcome;
 - ✅ explicit retention of a cancellation not confirmed by the server;
 - ✅ display of a warning if caregivers may already have been notified;
-- ✅ creation of a companion enrollment and versioned transmission to the
-  associated watch from settings;
+- ⚠️ the settings flow that created a companion enrollment and sent it to
+  the watch was removed in
+  [#128](https://github.com/thlaure/Fall-Guardian/pull/128); the server
+  enrollment API remains;
 - ⚠️ location is not required to create the alert: it can arrive later;
 - ✅ user-facing watch text describes backend escalation and caregiver
   notification; it no longer promises an SMS;
-- 🟡 Android persists Wear OS incidents and cancellations before touching
-  Flutter, then relays them with the same `clientAlertId`;
+- ✅ Android persists Wear OS incidents and cancellations before touching
+  Flutter, then relays them with the same `clientAlertId` (#116; network-state
+  permission fixed in #127);
+- ✅ the iPhone relays Apple Watch system fall events through native code when
+  Flutter is unavailable ([#124](https://github.com/thlaure/Fall-Guardian/pull/124));
 - ⚠️ the iOS relay to the API still depends on the application path.
 
 Since the merge of
@@ -159,20 +171,26 @@ On `main`:
 - ✅ activation at watchOS extension startup;
 - ✅ possible reception of a fall in the background;
 - ✅ persistence and retry of an event that was not transmitted;
-- 🟡 custom raw detection in Debug while the app is open, for physical
-  tuning; Release uses Apple's system detector when authorized;
+- ✅ `CMFallDetectionManager` is the only production fall source; the custom
+  raw-accelerometer detector stays suspended and watchOS threshold controls
+  are hidden ([#125](https://github.com/thlaure/Fall-Guardian/pull/125));
+  monitoring is reported inactive when Apple fall detection is not authorized;
 - ✅ real-time transmission to the iPhone with WatchConnectivity;
 - ✅ deferred transfer if the real-time message does not go through;
 - ✅ countdown and cancellation on the watch;
 - ✅ time-sensitive notification with sound and an explicit cancellation
   action when the interface is closed;
+- 🟡 the notification action opens the 1.5-second hold screen instead of
+  cancelling directly;
+- 🟡 falls dismissed on Apple's system prompt are not re-alerted by the app;
+- 🟡 fall events sent to the phone carry an `incidentId`;
 - ✅ restoration of the synchronized countdown after the notification opens
   the app;
 - ✅ rejection of notification cancellation actions received after the
   30-second deadline;
 - ✅ retransmission of the cancellation to the iPhone;
 - ✅ integration of the Watch target into the main iOS project;
-- 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
+- ✅ the foreground alert requires a deliberate 1.5-second hold to cancel;
 - ⚠️ no direct submission to the API;
 - ⚠️ watchOS does not permit forced foreground launch; the system
   notification is the supported urgent surface;
@@ -191,9 +209,12 @@ These features joined `main` with
 ### 5.4 Wear OS watch
 
 - ✅ foreground service to continuously monitor the accelerometer;
-- 🟡 detection requires impact, either qualified low acceleration or a
-  pre/post-impact orientation change, then two seconds of stillness;
-- 🟡 plain table impacts and continued post-impact motion are rejected by
+- ✅ detection requires impact, either qualified low acceleration or a
+  pre/post-impact orientation change, then two seconds of stillness; all
+  phases are mandatory and thresholds were hardened in
+  [#128](https://github.com/thlaure/Fall-Guardian/pull/128) (defaults
+  `0.35 g` free fall for `160 ms`, `4.2 g` impact, `80°` tilt);
+- ✅ plain table impacts and continued post-impact motion are rejected by
   deterministic tests;
 - ✅ service restart after the watch boots;
 - ✅ countdown and local cancellation;
@@ -201,15 +222,24 @@ These features joined `main` with
 - ✅ full-screen alert request that wakes the locked watch when Android grants
   full-screen-intent access;
 - ✅ persistent heads-up notification with a direct cancellation action when
-  full-screen access is unavailable;
+  full-screen access is unavailable; 🟡 in the PR stack the notification
+  action opens the alert screen instead of cancelling directly;
 - ✅ visible settings shortcut when notifications or full-screen alert access
   is disabled;
 - ✅ immediate message to the Android phone;
 - ✅ urgent data persisted in the Data Layer as a fallback;
-- 🟡 the paired Android phone persists the incident and schedules a native
+- ✅ the paired Android phone persists the incident and schedules a native
   authenticated relay before starting any Flutter UI;
-- 🟡 cancellation uses the same durable native path;
-- 🟡 the foreground alert requires a deliberate 1.5-second hold to cancel;
+- ✅ cancellation uses the same durable native path;
+- ✅ the foreground alert cancels with a single tap (#128); 🟡 in the PR
+  stack this becomes a deliberate 1.5-second hold;
+- 🟡 fall events sent to the phone carry an `incidentId`;
+- ✅ reduced battery drain of continuous monitoring
+  ([#129](https://github.com/thlaure/Fall-Guardian/pull/129));
+- ✅ local fall-detection diagnostics recorder with archive export for
+  physical tuning ([#131](https://github.com/thlaure/Fall-Guardian/pull/131));
+- ✅ UI and notification copy in Android resources with French translation
+  ([#127](https://github.com/thlaure/Fall-Guardian/pull/127));
 - ⚠️ no direct submission to the API;
 - ⚠️ Android 14+ or Google Play policy can withhold full-screen-intent access;
   the actionable notification remains the fallback;
@@ -464,11 +494,14 @@ Local OpenAPI documentation is accessible at
 - ✅ idempotent receipts and acknowledgements;
 - ✅ versioned incident contract and multi-device deduplication;
 - ✅ creation and consumption of a secure companion enrollment;
-- ✅ enrollment creation and transmission from the assisted person app;
+- ✅ enrollment creation and transmission from the assisted person app (UI
+  later removed in #128);
 - ✅ Flutter tests and static analysis of the mobile applications;
 - ✅ Wear OS lint, tests, and build;
 - ✅ watchOS analysis, build, deadline tests, and raw-algorithm tests;
-- 🟡 Android assisted-app native relay unit tests and lint;
+- ✅ Android assisted-app native relay unit tests and lint;
+- ✅ assisted/caregiver API workflow E2E (`tools/e2e`) runs in API CI against
+  the test backend with the fake push provider;
 - ✅ simulated Watch → iPhone → Flutter chain;
 - ✅ iPhone app launch/wake-up in the background observed on simulator;
 - ⚠️ `transferUserInfo` and locked-phone behavior require real devices;
@@ -490,6 +523,20 @@ Local OpenAPI documentation is accessible at
 | [#79](https://github.com/thlaure/Fall-Guardian/pull/79) | Secure server-side watchOS and Wear OS enrollment | ✅ Merged into `main` |
 | [#80](https://github.com/thlaure/Fall-Guardian/pull/80) | Client contract and watch integration plan | ✅ Merged into `main` |
 | [#81](https://github.com/thlaure/Fall-Guardian/pull/81) | Enrollment creation and transmission from the assisted app | ✅ Merged into `main` |
+| [#82](https://github.com/thlaure/Fall-Guardian/pull/82)–[#86](https://github.com/thlaure/Fall-Guardian/pull/86) | Handoff docs, Apple Fall Detection capability approval, SMS path removal, enrollment error reporting | ✅ Merged into `main` |
+| [#87](https://github.com/thlaure/Fall-Guardian/pull/87) | Protected caregiver links and aligned watch alert UX | ✅ Merged into `main` |
+| [#113](https://github.com/thlaure/Fall-Guardian/pull/113)–[#115](https://github.com/thlaure/Fall-Guardian/pull/115) | Urgent watch alert presentation, hardened watch cancellation, Apple Watch installation record | ✅ Merged into `main` |
+| [#116](https://github.com/thlaure/Fall-Guardian/pull/116) | Family-beta readiness: durable Android native relay, stillness-gated detection, 1.5 s hold cancel | ✅ Merged into `main` (squash `5695658`) |
+| [#118](https://github.com/thlaure/Fall-Guardian/pull/118)–[#122](https://github.com/thlaure/Fall-Guardian/pull/122) | OVH production deployment: hardened Compose, GHCR images by commit SHA, health probe | ✅ Merged into `main` |
+| [#123](https://github.com/thlaure/Fall-Guardian/pull/123) | Custom watch fall detector (superseded on watchOS by #125) | ✅ Merged into `main` |
+| [#124](https://github.com/thlaure/Fall-Guardian/pull/124) | Background relay of Apple Watch fall events through native iPhone code | ✅ Merged into `main` |
+| [#125](https://github.com/thlaure/Fall-Guardian/pull/125) | Apple `CMFallDetectionManager` as the only watchOS production fall source | ✅ Merged into `main`, physical validation pending |
+| [#126](https://github.com/thlaure/Fall-Guardian/pull/126) | Caregiver can unlink a protected person (app + API) | ✅ Merged into `main` |
+| [#127](https://github.com/thlaure/Fall-Guardian/pull/127) | Android Wear alert relay fix and localized Wear OS UI | ✅ Merged into `main` |
+| [#128](https://github.com/thlaure/Fall-Guardian/pull/128) | Hardened detection thresholds, single-tap Wear cancel, assisted enrollment UI removed | ✅ Merged into `main` |
+| [#129](https://github.com/thlaure/Fall-Guardian/pull/129) | Reduced Wear OS battery drain | ✅ Merged into `main` |
+| [#130](https://github.com/thlaure/Fall-Guardian/pull/130) | Wear OS release signing ignore and Gradle daemon JVM | ✅ Merged into `main` |
+| [#131](https://github.com/thlaure/Fall-Guardian/pull/131) | Local Wear OS fall-detection diagnostics | ✅ Merged into `main` |
 
 The architecture changes below can now build on this common base.
 

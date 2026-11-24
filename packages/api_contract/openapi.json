@@ -1,0 +1,2968 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Fall Guardian Backend API",
+        "description": "Device API for Fall Guardian alert delivery. Register once to obtain a device bearer token, then authenticate all fall-alert and caregiver-link calls with `Authorization: Bearer <token>`.",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": ""
+        }
+    ],
+    "paths": {
+        "/api/v1/caregiver/alerts": {
+            "get": {
+                "operationId": "api_apiv1caregiveralerts_get_collection",
+                "tags": [
+                    "Caregiver alerts"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fall alerts for linked protected persons, with `acknowledgedAt`, `acknowledgedByMe` and `acknowledgementCount`.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "CaregiverAlertOutputDTO.jsonld collection.",
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/HydraCollectionBaseSchema"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "required": [
+                                                "member"
+                                            ],
+                                            "properties": {
+                                                "member": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/CaregiverAlertOutputDTO.jsonld"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/CaregiverAlertOutputDTO"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    }
+                },
+                "summary": "List caregiver fall alerts",
+                "description": "Returns alerts from protected persons linked to the authenticated caregiver device, including acknowledgement state. `acknowledged` and `acknowledgedByMe` are true when the authenticated caregiver acknowledged the alert; `acknowledgedAt` is the first acknowledgement time by any linked caregiver (ISO-8601 UTC; omitted, like other null fields, while nobody acknowledged); `acknowledgementCount` is the number of caregivers who acknowledged it. Status may move from `failed` or `partially_sent` back to `dispatching` while the server retries delivery.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "The collection page number",
+                        "required": false,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        },
+                        "style": "form",
+                        "explode": true
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/caregiver/push-token": {
+            "post": {
+                "operationId": "api_apiv1caregiverpush-token_post",
+                "tags": [
+                    "Caregiver alerts"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Notification token registered.",
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "Only a caregiver device can register a notification token."
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    }
+                },
+                "summary": "Register a caregiver notification token",
+                "description": "Stores the Firebase Cloud Messaging token used to deliver fall notifications to the authenticated caregiver device.",
+                "parameters": [],
+                "requestBody": {
+                    "description": "Firebase Cloud Messaging registration token for this caregiver device. Fall-alert pushes carry `data` keys: `type` (`fall_alert`), `alertId`, `fallTimestamp`, `cancelDeadlineAt` (ISO-8601 UTC), `reminder` (`0` for the first notification, `1` for re-notifications while the alert stays unacknowledged), optional `latitude`/`longitude`, and optional `protectedPersonName` (this caregiver's name for the protected person). A token rejected by Firebase as unregistered or invalid is deleted server-side; register it again after refreshing it.",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RegisterPushTokenInputDTO"
+                            },
+                            "example": {
+                                "fcmToken": "example-firebase-cloud-messaging-token"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RegisterPushTokenInputDTO"
+                            },
+                            "example": {
+                                "fcmToken": "example-firebase-cloud-messaging-token"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/fall-alerts/{id}/acknowledge": {
+            "post": {
+                "operationId": "api_apiv1fall-alerts_idacknowledge_post",
+                "tags": [
+                    "Caregiver alerts"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Alert acknowledgement recorded.",
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    },
+                    "404": {
+                        "description": "No fall alert with that identifier was found, or the caregiver is not linked to its protected person."
+                    }
+                },
+                "summary": "Acknowledge a fall alert",
+                "description": "Records that the authenticated caregiver has seen an alert belonging to a linked protected person.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "AcknowledgeAlertInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/fall-alerts/{id}/receipt": {
+            "post": {
+                "operationId": "api_apiv1fall-alerts_idreceipt_post",
+                "tags": [
+                    "Caregiver alerts"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "ReportAlertReceiptInputDTO resource created",
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Report receipt of a fall alert",
+                "description": "Records that a linked caregiver device received a dispatched fall alert. Repeated receipts are idempotent.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ReportAlertReceiptInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/caregiver/protected-persons": {
+            "get": {
+                "operationId": "api_apiv1caregiverprotected-persons_get_collection",
+                "tags": [
+                    "Caregiver links"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "LinkedProtectedPersonOutputDTO collection",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "LinkedProtectedPersonOutputDTO.jsonld collection.",
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/HydraCollectionBaseSchema"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "required": [
+                                                "member"
+                                            ],
+                                            "properties": {
+                                                "member": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/LinkedProtectedPersonOutputDTO.jsonld"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/LinkedProtectedPersonOutputDTO"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "summary": "List linked protected persons",
+                "description": "Returns active protected-person links for the authenticated caregiver device.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "The collection page number",
+                        "required": false,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        },
+                        "style": "form",
+                        "explode": true
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/caregiver/protected-persons/{id}": {
+            "delete": {
+                "operationId": "api_apiv1caregiverprotected-persons_id_delete",
+                "tags": [
+                    "Caregiver links"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "LinkedProtectedPersonOutputDTO resource deleted"
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Remove a protected-person link",
+                "description": "Revokes one link owned by the authenticated caregiver. The protected person and their other caregiver links are unchanged.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "LinkedProtectedPersonOutputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/invites": {
+            "post": {
+                "operationId": "api_apiv1invites_post",
+                "tags": [
+                    "Caregiver links"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Caregiver invitation created.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateInviteOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateInviteOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "Only a protected-person device can create an invitation."
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    }
+                },
+                "summary": "Create a caregiver invitation",
+                "description": "Creates a short-lived invitation code on a protected-person device. Share the code with the caregiver who will accept the link.",
+                "parameters": [],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/invites/{code}/accept": {
+            "post": {
+                "operationId": "api_apiv1invites_codeaccept_post",
+                "tags": [
+                    "Caregiver links"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Caregiver link created.",
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "Only a caregiver device can accept an invitation."
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    },
+                    "404": {
+                        "description": "The invitation code was not found, expired, or was already used."
+                    },
+                    "429": {
+                        "description": "Too many invitation acceptance requests from this client."
+                    }
+                },
+                "summary": "Accept a caregiver invitation",
+                "description": "Links the authenticated caregiver device to the protected person associated with this valid invitation code.",
+                "parameters": [
+                    {
+                        "name": "code",
+                        "in": "path",
+                        "description": "AcceptInviteInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "requestBody": {
+                    "description": "The new AcceptInviteInputDTO resource",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AcceptInviteInputDTO"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AcceptInviteInputDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/companion-enrollments": {
+            "post": {
+                "operationId": "api_apiv1companion-enrollments_post",
+                "tags": [
+                    "Companion devices"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "CreateCompanionEnrollmentOutputDTO resource created",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateCompanionEnrollmentOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateCompanionEnrollmentOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Create a short-lived companion enrollment",
+                "description": "Create a short-lived companion enrollment",
+                "parameters": [],
+                "requestBody": {
+                    "description": "The new CreateCompanionEnrollmentOutputDTO resource",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateCompanionEnrollmentOutputDTO.CreateCompanionEnrollmentInputDTO"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateCompanionEnrollmentOutputDTO.CreateCompanionEnrollmentInputDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/companion-enrollments/claim": {
+            "post": {
+                "operationId": "api_apiv1companion-enrollmentsclaim_post",
+                "tags": [
+                    "Companion devices"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "ClaimCompanionEnrollmentInputDTO resource created",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClaimCompanionEnrollmentInputDTO.DeviceRegistrationOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ClaimCompanionEnrollmentInputDTO.DeviceRegistrationOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Exchange a one-time enrollment token for companion credentials",
+                "description": "Exchange a one-time enrollment token for companion credentials",
+                "parameters": [],
+                "requestBody": {
+                    "description": "The new ClaimCompanionEnrollmentInputDTO resource",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClaimCompanionEnrollmentInputDTO"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ClaimCompanionEnrollmentInputDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                }
+            }
+        },
+        "/api/v1/devices/register": {
+            "post": {
+                "operationId": "api_apiv1devicesregister_post",
+                "tags": [
+                    "Devices"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Device registered. The response includes the bearer token to store securely.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeviceRegistrationInputDTO.DeviceRegistrationOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeviceRegistrationInputDTO.DeviceRegistrationOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "429": {
+                        "description": "Too many device registration requests from this client."
+                    }
+                },
+                "summary": "Register a device",
+                "description": "Registers an app installation and returns the bearer token required by subsequent API calls. Store that token securely on the device.",
+                "parameters": [],
+                "requestBody": {
+                    "description": "Application installation and device role to register.",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DeviceRegistrationInputDTO"
+                            },
+                            "example": {
+                                "platform": "ios",
+                                "appVersion": "1.0.0",
+                                "deviceType": "protected_person"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DeviceRegistrationInputDTO"
+                            },
+                            "example": {
+                                "platform": "ios",
+                                "appVersion": "1.0.0",
+                                "deviceType": "protected_person"
+                            }
+                        }
+                    },
+                    "required": true
+                }
+            }
+        },
+        "/api/v1/devices/{deviceId}/revoke": {
+            "post": {
+                "operationId": "api_apiv1devices_deviceIdrevoke_post",
+                "tags": [
+                    "Devices"
+                ],
+                "responses": {
+                    "204": {
+                        "description": "RevokeDeviceInputDTO resource created",
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Revoke a device",
+                "description": "Revokes the authenticated device or another protected-person device belonging to the same protected person.",
+                "parameters": [
+                    {
+                        "name": "deviceId",
+                        "in": "path",
+                        "description": "RevokeDeviceInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "requestBody": {
+                    "description": "The new RevokeDeviceInputDTO resource",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RevokeDeviceInputDTO"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RevokeDeviceInputDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                }
+            }
+        },
+        "/api/v1/fall-alerts": {
+            "post": {
+                "operationId": "api_apiv1fall-alerts_post",
+                "tags": [
+                    "Fall alerts"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Fall alert accepted. Non-cancelled alerts are queued for caregiver delivery.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateFallAlertInputDTO.FallAlertOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CreateFallAlertInputDTO.FallAlertOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    },
+                    "403": {
+                        "description": "A caregiver device cannot report a protected-person fall."
+                    },
+                    "429": {
+                        "description": "Too many fall alert submissions from this client."
+                    }
+                },
+                "summary": "Report a detected fall",
+                "description": "Reports a fall detected for the authenticated protected-person device. Use a stable clientAlertId to identify this alert across retries and later cancellation.",
+                "parameters": [],
+                "requestBody": {
+                    "description": "Detected fall event and optional location. Set `cancelled` to true when the protected person stopped the alert before caregiver notification; the fall is stored for caregiver history without urgent push dispatch.",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateFallAlertInputDTO"
+                            },
+                            "example": {
+                                "clientAlertId": "019e3005-a828-7db0-818f-1e57d20add1f",
+                                "fallTimestamp": "2026-05-24T10:15:30+00:00",
+                                "locale": "en",
+                                "latitude": 48.8566,
+                                "longitude": 2.3522,
+                                "cancelled": false
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateFallAlertInputDTO"
+                            },
+                            "example": {
+                                "clientAlertId": "019e3005-a828-7db0-818f-1e57d20add1f",
+                                "fallTimestamp": "2026-05-24T10:15:30+00:00",
+                                "locale": "en",
+                                "latitude": 48.8566,
+                                "longitude": 2.3522,
+                                "cancelled": false
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/fall-alerts/{clientAlertId}/cancel": {
+            "post": {
+                "operationId": "api_apiv1fall-alerts_clientAlertIdcancel_post",
+                "tags": [
+                    "Fall alerts"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Fall alert cancelled.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancelFallAlertInputDTO.FallAlertOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CancelFallAlertInputDTO.FallAlertOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    },
+                    "403": {
+                        "description": "A caregiver device cannot cancel a protected-person fall."
+                    },
+                    "404": {
+                        "description": "No fall alert with that clientAlertId was found for the authenticated device."
+                    }
+                },
+                "summary": "Cancel a fall alert",
+                "description": "Cancels a previously reported fall by its clientAlertId. Only the protected-person device that reported the alert may cancel it.",
+                "parameters": [
+                    {
+                        "name": "clientAlertId",
+                        "in": "path",
+                        "description": "CancelFallAlertInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/fall-alerts/{clientAlertId}/location": {
+            "post": {
+                "operationId": "api_apiv1fall-alerts_clientAlertIdlocation_post",
+                "tags": [
+                    "Fall alerts"
+                ],
+                "responses": {
+                    "201": {
+                        "description": "AttachFallAlertLocationInputDTO resource created",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachFallAlertLocationInputDTO.FallAlertOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AttachFallAlertLocationInputDTO.FallAlertOutputDTO"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "400": {
+                        "description": "Invalid input",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Error"
+                                }
+                            }
+                        },
+                        "links": {}
+                    },
+                    "422": {
+                        "description": "An error occurred",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation.jsonld"
+                                }
+                            },
+                            "application/problem+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ConstraintViolation"
+                                }
+                            }
+                        },
+                        "links": {}
+                    }
+                },
+                "summary": "Attach a location fix to an already-reported fall alert",
+                "description": "Updates the latitude/longitude of a fall alert once a GPS fix resolves. Reporting the alert must not block on this \u2014 it is submitted separately, best-effort. Only the protected-person device that reported the alert may attach a location.",
+                "parameters": [
+                    {
+                        "name": "clientAlertId",
+                        "in": "path",
+                        "description": "AttachFallAlertLocationInputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "requestBody": {
+                    "description": "The new AttachFallAlertLocationInputDTO resource",
+                    "content": {
+                        "application/ld+json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AttachFallAlertLocationInputDTO"
+                            }
+                        },
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AttachFallAlertLocationInputDTO"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/fall-alerts/{id}": {
+            "get": {
+                "operationId": "api_apiv1fall-alerts_id_get",
+                "tags": [
+                    "Fall alerts"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Current fall-alert state.",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FallAlertOutputDTO.jsonld"
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FallAlertOutputDTO"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No fall alert with that identifier was found for the authenticated device."
+                    },
+                    "401": {
+                        "description": "Missing or invalid device bearer token."
+                    }
+                },
+                "summary": "Get a fall alert status",
+                "description": "Returns the current lifecycle status of an alert reported by the authenticated protected-person device.",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "FallAlertOutputDTO identifier",
+                        "required": true,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "style": "simple",
+                        "explode": false
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/protected/linked-caregivers": {
+            "get": {
+                "operationId": "api_apiv1protectedlinked-caregivers_get_collection",
+                "tags": [
+                    "Protected person"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "LinkedCaregiverOutputDTO collection",
+                        "content": {
+                            "application/ld+json": {
+                                "schema": {
+                                    "type": "object",
+                                    "description": "LinkedCaregiverOutputDTO.jsonld collection.",
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/HydraCollectionBaseSchema"
+                                        },
+                                        {
+                                            "type": "object",
+                                            "required": [
+                                                "member"
+                                            ],
+                                            "properties": {
+                                                "member": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/LinkedCaregiverOutputDTO.jsonld"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/LinkedCaregiverOutputDTO"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "summary": "List linked caregivers",
+                "description": "Returns active caregiver links for the authenticated protected-person device.",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "The collection page number",
+                        "required": false,
+                        "deprecated": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        },
+                        "style": "form",
+                        "explode": true
+                    }
+                ],
+                "security": [
+                    {
+                        "deviceBearer": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "AcceptInviteInputDTO": {
+                "type": "object",
+                "properties": {
+                    "protectedPersonName": {
+                        "minLength": 2,
+                        "maxLength": 120,
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "caregiverName": {
+                        "minLength": 2,
+                        "maxLength": 120,
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "AttachFallAlertLocationInputDTO": {
+                "type": "object",
+                "properties": {
+                    "latitude": {
+                        "minimum": -90,
+                        "maximum": 90,
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "longitude": {
+                        "minimum": -180,
+                        "maximum": 180,
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "AttachFallAlertLocationInputDTO.FallAlertOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "clientAlertId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fallTimestamp": {
+                        "type": "string"
+                    },
+                    "receivedAt": {
+                        "type": "string"
+                    },
+                    "cancelDeadlineAt": {
+                        "type": "string"
+                    },
+                    "cancelledAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dispatchClaimedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deliveryReceiptDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstDeliveryReceiptAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgementDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "detectionSource": {
+                        "type": "string"
+                    },
+                    "resolution": {
+                        "type": "string"
+                    }
+                }
+            },
+            "AttachFallAlertLocationInputDTO.FallAlertOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "clientAlertId": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "fallTimestamp": {
+                                "type": "string"
+                            },
+                            "receivedAt": {
+                                "type": "string"
+                            },
+                            "cancelDeadlineAt": {
+                                "type": "string"
+                            },
+                            "cancelledAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "dispatchClaimedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deliveryReceiptDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "firstDeliveryReceiptAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgementDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "revision": {
+                                "type": "integer"
+                            },
+                            "detectionSource": {
+                                "type": "string"
+                            },
+                            "resolution": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "CancelFallAlertInputDTO.FallAlertOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "clientAlertId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fallTimestamp": {
+                        "type": "string"
+                    },
+                    "receivedAt": {
+                        "type": "string"
+                    },
+                    "cancelDeadlineAt": {
+                        "type": "string"
+                    },
+                    "cancelledAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dispatchClaimedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deliveryReceiptDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstDeliveryReceiptAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgementDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "detectionSource": {
+                        "type": "string"
+                    },
+                    "resolution": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CancelFallAlertInputDTO.FallAlertOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "clientAlertId": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "fallTimestamp": {
+                                "type": "string"
+                            },
+                            "receivedAt": {
+                                "type": "string"
+                            },
+                            "cancelDeadlineAt": {
+                                "type": "string"
+                            },
+                            "cancelledAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "dispatchClaimedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deliveryReceiptDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "firstDeliveryReceiptAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgementDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "revision": {
+                                "type": "integer"
+                            },
+                            "detectionSource": {
+                                "type": "string"
+                            },
+                            "resolution": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "CaregiverAlertOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fallDetectedAt": {
+                        "type": "string"
+                    },
+                    "receivedAt": {
+                        "type": "string"
+                    },
+                    "cancelDeadlineAt": {
+                        "type": "string"
+                    },
+                    "latitude": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "longitude": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "acknowledged": {
+                        "type": "boolean"
+                    },
+                    "cancelledAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "protectedDeviceId": {
+                        "type": "string"
+                    },
+                    "protectedDevicePlatform": {
+                        "type": "string"
+                    },
+                    "protectedPersonName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deliveryReceiptDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstDeliveryReceiptAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgementDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgedByMe": {
+                        "type": "boolean"
+                    },
+                    "acknowledgementCount": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "CaregiverAlertOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "fallDetectedAt": {
+                                "type": "string"
+                            },
+                            "receivedAt": {
+                                "type": "string"
+                            },
+                            "cancelDeadlineAt": {
+                                "type": "string"
+                            },
+                            "latitude": {
+                                "type": [
+                                    "number",
+                                    "null"
+                                ]
+                            },
+                            "longitude": {
+                                "type": [
+                                    "number",
+                                    "null"
+                                ]
+                            },
+                            "acknowledged": {
+                                "type": "boolean"
+                            },
+                            "cancelledAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "protectedDeviceId": {
+                                "type": "string"
+                            },
+                            "protectedDevicePlatform": {
+                                "type": "string"
+                            },
+                            "protectedPersonName": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deliveryReceiptDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "firstDeliveryReceiptAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgementDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgedByMe": {
+                                "type": "boolean"
+                            },
+                            "acknowledgementCount": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                ]
+            },
+            "ClaimCompanionEnrollmentInputDTO": {
+                "type": "object",
+                "required": [
+                    "enrollmentToken",
+                    "appVersion"
+                ],
+                "properties": {
+                    "enrollmentToken": {
+                        "minLength": 64,
+                        "maxLength": 64,
+                        "default": "",
+                        "type": "string"
+                    },
+                    "platform": {
+                        "enum": [
+                            "watchos",
+                            "wearos"
+                        ],
+                        "default": "",
+                        "type": "string"
+                    },
+                    "appVersion": {
+                        "maxLength": 32,
+                        "default": "",
+                        "type": "string"
+                    }
+                }
+            },
+            "ClaimCompanionEnrollmentInputDTO.DeviceRegistrationOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "deviceId": {
+                        "type": "string"
+                    },
+                    "deviceToken": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ClaimCompanionEnrollmentInputDTO.DeviceRegistrationOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "deviceId": {
+                                "type": "string"
+                            },
+                            "deviceToken": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "ConstraintViolation": {
+                "type": "object",
+                "description": "Unprocessable entity",
+                "properties": {
+                    "status": {
+                        "default": 422,
+                        "type": "integer"
+                    },
+                    "violations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "propertyPath": {
+                                    "type": "string",
+                                    "description": "The property path of the violation"
+                                },
+                                "message": {
+                                    "type": "string",
+                                    "description": "The message associated with the violation"
+                                },
+                                "code": {
+                                    "type": "string",
+                                    "description": "The code of the violation"
+                                },
+                                "hint": {
+                                    "type": "string",
+                                    "description": "An extra hint to understand the violation"
+                                },
+                                "payload": {
+                                    "type": "object",
+                                    "additionalProperties": true,
+                                    "description": "The serialized payload of the violation"
+                                }
+                            },
+                            "required": [
+                                "propertyPath",
+                                "message"
+                            ]
+                        }
+                    },
+                    "detail": {
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "type": {
+                        "readOnly": true,
+                        "type": "string"
+                    },
+                    "title": {
+                        "readOnly": true,
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "instance": {
+                        "readOnly": true,
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "ConstraintViolation.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "default": 422,
+                                "type": "integer"
+                            },
+                            "violations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "propertyPath": {
+                                            "type": "string",
+                                            "description": "The property path of the violation"
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "description": "The message associated with the violation"
+                                        },
+                                        "code": {
+                                            "type": "string",
+                                            "description": "The code of the violation"
+                                        },
+                                        "hint": {
+                                            "type": "string",
+                                            "description": "An extra hint to understand the violation"
+                                        },
+                                        "payload": {
+                                            "type": "object",
+                                            "additionalProperties": true,
+                                            "description": "The serialized payload of the violation"
+                                        }
+                                    },
+                                    "required": [
+                                        "propertyPath",
+                                        "message"
+                                    ]
+                                }
+                            },
+                            "detail": {
+                                "readOnly": true,
+                                "type": "string"
+                            },
+                            "description": {
+                                "readOnly": true,
+                                "type": "string"
+                            },
+                            "type": {
+                                "readOnly": true,
+                                "type": "string"
+                            },
+                            "title": {
+                                "readOnly": true,
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "instance": {
+                                "readOnly": true,
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "description": "Unprocessable entity"
+            },
+            "CreateCompanionEnrollmentOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "enrollmentToken": {
+                        "type": "string"
+                    },
+                    "expiresAt": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateCompanionEnrollmentOutputDTO.CreateCompanionEnrollmentInputDTO": {
+                "type": "object",
+                "properties": {
+                    "platform": {
+                        "enum": [
+                            "watchos",
+                            "wearos"
+                        ],
+                        "default": "",
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateCompanionEnrollmentOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "enrollmentToken": {
+                                "type": "string"
+                            },
+                            "expiresAt": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "CreateFallAlertInputDTO": {
+                "type": "object",
+                "required": [
+                    "clientAlertId",
+                    "fallTimestamp",
+                    "locale"
+                ],
+                "properties": {
+                    "clientAlertId": {
+                        "maxLength": 100,
+                        "default": "",
+                        "type": "string"
+                    },
+                    "fallTimestamp": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "format": "date-time"
+                    },
+                    "locale": {
+                        "maxLength": 8,
+                        "default": "en",
+                        "type": "string"
+                    },
+                    "latitude": {
+                        "minimum": -90,
+                        "maximum": 90,
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "longitude": {
+                        "minimum": -180,
+                        "maximum": 180,
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "cancelled": {
+                        "default": false,
+                        "type": "boolean"
+                    },
+                    "revision": {
+                        "minimum": 0,
+                        "exclusiveMinimum": 0,
+                        "default": 1,
+                        "type": "integer"
+                    },
+                    "detectionSource": {
+                        "enum": [
+                            "assisted_phone",
+                            "apple_watch",
+                            "wear_os"
+                        ],
+                        "default": "assisted_phone",
+                        "type": "string"
+                    },
+                    "resolution": {
+                        "enum": [
+                            "unknown",
+                            "confirmed",
+                            "dismissed",
+                            "unresponsive",
+                            "rejected"
+                        ],
+                        "default": "unknown",
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateFallAlertInputDTO.FallAlertOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "clientAlertId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fallTimestamp": {
+                        "type": "string"
+                    },
+                    "receivedAt": {
+                        "type": "string"
+                    },
+                    "cancelDeadlineAt": {
+                        "type": "string"
+                    },
+                    "cancelledAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dispatchClaimedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deliveryReceiptDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstDeliveryReceiptAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgementDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "detectionSource": {
+                        "type": "string"
+                    },
+                    "resolution": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateFallAlertInputDTO.FallAlertOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "clientAlertId": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "fallTimestamp": {
+                                "type": "string"
+                            },
+                            "receivedAt": {
+                                "type": "string"
+                            },
+                            "cancelDeadlineAt": {
+                                "type": "string"
+                            },
+                            "cancelledAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "dispatchClaimedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deliveryReceiptDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "firstDeliveryReceiptAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgementDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "revision": {
+                                "type": "integer"
+                            },
+                            "detectionSource": {
+                                "type": "string"
+                            },
+                            "resolution": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "CreateInviteOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "default": "",
+                        "type": "string"
+                    },
+                    "expiresAt": {
+                        "default": "",
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateInviteOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "default": "",
+                                "type": "string"
+                            },
+                            "expiresAt": {
+                                "default": "",
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "DeviceRegistrationInputDTO": {
+                "type": "object",
+                "required": [
+                    "platform",
+                    "appVersion"
+                ],
+                "properties": {
+                    "platform": {
+                        "enum": [
+                            "ios",
+                            "android"
+                        ],
+                        "default": "",
+                        "type": "string"
+                    },
+                    "appVersion": {
+                        "maxLength": 32,
+                        "default": "",
+                        "type": "string"
+                    },
+                    "deviceType": {
+                        "enum": [
+                            "protected_person",
+                            "caregiver"
+                        ],
+                        "default": "protected_person",
+                        "type": "string"
+                    }
+                }
+            },
+            "DeviceRegistrationInputDTO.DeviceRegistrationOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "deviceId": {
+                        "type": "string"
+                    },
+                    "deviceToken": {
+                        "type": "string"
+                    }
+                }
+            },
+            "DeviceRegistrationInputDTO.DeviceRegistrationOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "deviceId": {
+                                "type": "string"
+                            },
+                            "deviceToken": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "Error": {
+                "type": "object",
+                "description": "A representation of common errors.",
+                "properties": {
+                    "title": {
+                        "readOnly": true,
+                        "description": "A short, human-readable summary of the problem.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "detail": {
+                        "readOnly": true,
+                        "description": "A human-readable explanation specific to this occurrence of the problem.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "status": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ],
+                        "examples": [
+                            404
+                        ],
+                        "default": 400
+                    },
+                    "instance": {
+                        "readOnly": true,
+                        "description": "A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "type": {
+                        "readOnly": true,
+                        "description": "A URI reference that identifies the problem type",
+                        "type": "string"
+                    }
+                }
+            },
+            "Error.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "readOnly": true,
+                                "description": "A short, human-readable summary of the problem.",
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "detail": {
+                                "readOnly": true,
+                                "description": "A human-readable explanation specific to this occurrence of the problem.",
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "status": {
+                                "type": [
+                                    "integer",
+                                    "null"
+                                ],
+                                "examples": [
+                                    404
+                                ],
+                                "default": 400
+                            },
+                            "instance": {
+                                "readOnly": true,
+                                "description": "A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced.",
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "type": {
+                                "readOnly": true,
+                                "description": "A URI reference that identifies the problem type",
+                                "type": "string"
+                            },
+                            "description": {
+                                "readOnly": true,
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                ],
+                "description": "A representation of common errors."
+            },
+            "FallAlertOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "clientAlertId": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "fallTimestamp": {
+                        "type": "string"
+                    },
+                    "receivedAt": {
+                        "type": "string"
+                    },
+                    "cancelDeadlineAt": {
+                        "type": "string"
+                    },
+                    "cancelledAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dispatchClaimedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "deliveryReceiptDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "firstDeliveryReceiptAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "acknowledgementDeadlineAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "revision": {
+                        "type": "integer"
+                    },
+                    "detectionSource": {
+                        "type": "string"
+                    },
+                    "resolution": {
+                        "type": "string"
+                    }
+                }
+            },
+            "FallAlertOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "clientAlertId": {
+                                "type": "string"
+                            },
+                            "status": {
+                                "type": "string"
+                            },
+                            "fallTimestamp": {
+                                "type": "string"
+                            },
+                            "receivedAt": {
+                                "type": "string"
+                            },
+                            "cancelDeadlineAt": {
+                                "type": "string"
+                            },
+                            "cancelledAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "dispatchClaimedAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "deliveryReceiptDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "firstDeliveryReceiptAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "acknowledgementDeadlineAt": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "revision": {
+                                "type": "integer"
+                            },
+                            "detectionSource": {
+                                "type": "string"
+                            },
+                            "resolution": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ]
+            },
+            "HydraCollectionBaseSchema": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraCollectionBaseSchemaNoPagination"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "view": {
+                                "type": "object",
+                                "properties": {
+                                    "@id": {
+                                        "type": "string",
+                                        "format": "iri-reference"
+                                    },
+                                    "@type": {
+                                        "type": "string"
+                                    },
+                                    "first": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "iri-reference"
+                                    },
+                                    "last": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "iri-reference"
+                                    },
+                                    "previous": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "iri-reference"
+                                    },
+                                    "next": {
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
+                                        "format": "iri-reference"
+                                    }
+                                },
+                                "example": {
+                                    "@id": "string",
+                                    "@type": "string",
+                                    "first": "string",
+                                    "last": "string",
+                                    "previous": "string",
+                                    "next": "string"
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "HydraCollectionBaseSchemaNoPagination": {
+                "type": "object",
+                "properties": {
+                    "totalItems": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "search": {
+                        "type": "object",
+                        "properties": {
+                            "@type": {
+                                "type": "string"
+                            },
+                            "template": {
+                                "type": "string"
+                            },
+                            "variableRepresentation": {
+                                "type": "string"
+                            },
+                            "mapping": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "@type": {
+                                            "type": "string"
+                                        },
+                                        "variable": {
+                                            "type": "string"
+                                        },
+                                        "property": {
+                                            "type": [
+                                                "string",
+                                                "null"
+                                            ]
+                                        },
+                                        "required": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "HydraItemBaseSchema": {
+                "type": "object",
+                "properties": {
+                    "@context": {
+                        "oneOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "@vocab": {
+                                        "type": "string"
+                                    },
+                                    "hydra": {
+                                        "type": "string",
+                                        "enum": [
+                                            "http://www.w3.org/ns/hydra/core#"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "@vocab",
+                                    "hydra"
+                                ],
+                                "additionalProperties": true
+                            }
+                        ]
+                    },
+                    "@id": {
+                        "type": "string"
+                    },
+                    "@type": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "@id",
+                    "@type"
+                ]
+            },
+            "LinkedCaregiverOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "caregiverDeviceId": {
+                        "type": "string"
+                    },
+                    "linkedAt": {
+                        "type": "string"
+                    },
+                    "platform": {
+                        "type": "string"
+                    },
+                    "protectedPersonName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "caregiverName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "LinkedCaregiverOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "caregiverDeviceId": {
+                                "type": "string"
+                            },
+                            "linkedAt": {
+                                "type": "string"
+                            },
+                            "platform": {
+                                "type": "string"
+                            },
+                            "protectedPersonName": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            },
+                            "caregiverName": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "LinkedProtectedPersonOutputDTO": {
+                "type": "object",
+                "properties": {
+                    "linkId": {
+                        "type": "string"
+                    },
+                    "protectedDeviceId": {
+                        "type": "string"
+                    },
+                    "protectedDevicePlatform": {
+                        "type": "string"
+                    },
+                    "linkedAt": {
+                        "type": "string"
+                    },
+                    "protectedPersonName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                }
+            },
+            "LinkedProtectedPersonOutputDTO.jsonld": {
+                "allOf": [
+                    {
+                        "$ref": "#/components/schemas/HydraItemBaseSchema"
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "linkId": {
+                                "type": "string"
+                            },
+                            "protectedDeviceId": {
+                                "type": "string"
+                            },
+                            "protectedDevicePlatform": {
+                                "type": "string"
+                            },
+                            "linkedAt": {
+                                "type": "string"
+                            },
+                            "protectedPersonName": {
+                                "type": [
+                                    "string",
+                                    "null"
+                                ]
+                            }
+                        }
+                    }
+                ]
+            },
+            "RegisterPushTokenInputDTO": {
+                "type": "object",
+                "required": [
+                    "fcmToken"
+                ],
+                "properties": {
+                    "fcmToken": {
+                        "default": "",
+                        "type": "string"
+                    }
+                }
+            },
+            "RevokeDeviceInputDTO": {
+                "type": "object"
+            }
+        },
+        "responses": {},
+        "parameters": {},
+        "examples": {},
+        "requestBodies": {},
+        "headers": {},
+        "securitySchemes": {
+            "deviceBearer": {
+                "type": "http",
+                "description": "Value for the http bearer parameter.",
+                "scheme": "bearer",
+                "bearerFormat": "Device token"
+            }
+        }
+    },
+    "security": [
+        {
+            "deviceBearer": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "Devices",
+            "description": "Register an assisted-person or caregiver application installation."
+        },
+        {
+            "name": "Fall alerts",
+            "description": "Report, cancel, and inspect fall-alert lifecycle state."
+        },
+        {
+            "name": "Caregiver links",
+            "description": "Create and accept protected-person/caregiver relationships."
+        },
+        {
+            "name": "Caregiver alerts",
+            "description": "Receive and acknowledge linked fall alerts."
+        }
+    ],
+    "webhooks": {}
+}

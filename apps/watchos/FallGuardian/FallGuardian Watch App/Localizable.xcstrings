@@ -1,0 +1,246 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%lld seconds before your caregivers are notified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld seconds before your caregivers are notified"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld secondes avant la notification de vos aidants"
+          }
+        }
+      }
+    },
+    "Allow Apple fall detection for background alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow Apple fall detection for background alerts"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisez la détection des chutes Apple pour les alertes en arrière-plan"
+          }
+        }
+      }
+    },
+    "Apple background fall detection active": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple background fall detection active"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détection des chutes Apple active en arrière-plan"
+          }
+        }
+      }
+    },
+    "Apple fall detection unavailable — monitoring inactive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple fall detection unavailable — monitoring inactive"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détection des chutes Apple indisponible — surveillance inactive"
+          }
+        }
+      }
+    },
+    "Caregivers may already have been notified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caregivers may already have been notified"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos proches ont peut-être déjà été prévenus"
+          }
+        }
+      }
+    },
+    "Checking permission…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking permission…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérification de l’autorisation…"
+          }
+        }
+      }
+    },
+    "Fall detected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fall detected"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chute détectée"
+          }
+        }
+      }
+    },
+    "I'm OK\nHold to cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I'm OK\nHold to cancel"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je vais bien\nMaintenir pour annuler"
+          }
+        }
+      }
+    },
+    "I'm OK — Open to cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I'm OK — Open to cancel"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je vais bien — Ouvrir pour annuler"
+          }
+        }
+      }
+    },
+    "I'm OK. Cancel alert": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I'm OK. Cancel alert"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je vais bien. Annuler l’alerte"
+          }
+        }
+      }
+    },
+    "Notifying your caregivers…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notifying your caregivers…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos aidants sont en cours de notification…"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Open Fall Guardian and hold “I'm OK” to cancel the alert.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Fall Guardian and hold “I'm OK” to cancel the alert."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrez Fall Guardian et maintenez « Je vais bien » pour annuler l’alerte."
+          }
+        }
+      }
+    },
+    "Test Apple relay (debug)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test Apple relay (debug)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tester le relais Apple (debug)"
+          }
+        }
+      }
+    },
+    "Touch and hold for one and a half seconds": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch and hold for one and a half seconds"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenez le doigt appuyé une seconde et demie"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

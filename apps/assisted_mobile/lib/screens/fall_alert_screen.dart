@@ -3,7 +3,7 @@
 import 'dart:async';
 
 // Flutter's Material UI toolkit — widgets, animations, navigation, etc.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 // Our translated strings — all user-visible text comes from here so the app
 // can display in English, French, etc. based on device language.
@@ -58,12 +58,15 @@ class _FallAlertScreenState extends State<FallAlertScreen>
   final Stopwatch _screenStopwatch = Stopwatch();
   Timer? _timer; // periodic timer that re-computes _remaining
   StreamSubscription<AlertUiState>?
-      _alertStateSub; // state updates from the coordinator
+  _alertStateSub; // state updates from the coordinator
   StreamSubscription<void>?
-      _dismissSub; // dismissal events from the coordinator
+  _dismissSub; // dismissal events from the coordinator
   bool _sending = false; // true while the alert-send flow is in progress
   String _statusMessage = ''; // shown beneath the spinner while sending
   AlertPhase _phase = AlertPhase.countdown;
+  // True once the (server-owned) cancellation window has closed while the
+  // countdown is still displayed: caregivers are being notified.
+  bool _pastDeadline = false;
 
   // ── Animation ─────────────────────────────────────────────────────────────
   // AnimationController drives the pulse animation on the warning icon.
@@ -126,18 +129,25 @@ class _FallAlertScreenState extends State<FallAlertScreen>
 
       final coordinatorOwnsCountdown =
           widget.alertCoordinator.currentState?.fallTimestamp ==
-              widget.fallTimestamp;
+          widget.fallTimestamp;
+      // The coordinator drives the countdown from the server deadline once
+      // the API answered (fallTimestamp + 30 s before that). Never negative.
       final remaining = coordinatorOwnsCountdown
           ? widget.alertCoordinator.remainingCountdownSeconds
-          : (_countdownSeconds - _screenStopwatch.elapsed.inSeconds)
-              .clamp(0, _countdownSeconds);
+          : (_countdownSeconds - _screenStopwatch.elapsed.inSeconds).clamp(
+              0,
+              _countdownSeconds,
+            );
+      final pastDeadline = coordinatorOwnsCountdown
+          ? widget.alertCoordinator.isPastDeadline
+          : remaining <= 0;
 
-      // setState tells Flutter to rebuild the widget with the new _remaining value.
-      setState(() => _remaining = remaining);
-
-      if (_remaining <= 0) {
-        timer.cancel();
-      }
+      // setState tells Flutter to rebuild the widget with the new values.
+      // The timer keeps running: a late server answer can re-open the window.
+      setState(() {
+        _remaining = remaining;
+        _pastDeadline = pastDeadline;
+      });
     });
   }
 
@@ -198,133 +208,181 @@ class _FallAlertScreenState extends State<FallAlertScreen>
         body: SafeArea(
           // SafeArea insets the content so it doesn't overlap the status bar
           // (top of screen) or home indicator (bottom of screen on notchless phones).
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── Pulsing warning icon ──────────────────────────────────
-                // ScaleTransition rebuilds every animation frame with a new
-                // scale value derived from _pulseAnimation (0.9 ↔ 1.1).
-                ScaleTransition(
-                  scale: _pulseAnimation,
-                  child: const Icon(
-                    Icons.warning_rounded,
-                    size: 80,
-                    color: Colors.redAccent,
+          // Scrollable so the extra deadline/re-pair messages never overflow
+          // on small screens or with large accessibility font sizes; the
+          // min-height constraint keeps the content vertically centred.
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: (constraints.maxHeight - 64).clamp(
+                    0,
+                    double.infinity,
                   ),
                 ),
-                const SizedBox(height: 24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Pulsing warning icon ──────────────────────────────────
+                    // ScaleTransition rebuilds every animation frame with a new
+                    // scale value derived from _pulseAnimation (0.9 ↔ 1.1).
+                    ScaleTransition(
+                      scale: _pulseAnimation,
+                      child: const Icon(
+                        Icons.warning_rounded,
+                        size: 80,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
-                // ── Title & body text ─────────────────────────────────────
-                Text(
-                  l10n.fallAlertTitle, // e.g. "Fall Detected!"
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  l10n.fallAlertBody, // e.g. "Tap Cancel if you are OK"
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
-                ),
-                const SizedBox(height: 40),
+                    // ── Title & body text ─────────────────────────────────────
+                    Text(
+                      l10n.fallAlertTitle, // e.g. "Fall Detected!"
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      l10n.fallAlertBody, // e.g. "Tap Cancel if you are OK"
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 40),
 
-                // ── Conditional body: spinner OR countdown + cancel button ─
-                // Once _sendAlert starts (_sending = true), replace the
-                // interactive countdown with a progress spinner and status text.
-                // The user can no longer cancel at this point — the alert is already
-                // on its way.
-                _phase != AlertPhase.countdown
-                    ? Column(
-                        children: [
-                          const CircularProgressIndicator(
-                            color: Colors.redAccent,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _statusMessage, // "Getting location…" or "Sending alert…"
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        children: [
-                          // ── Countdown ring ────────────────────────────────
-                          // Stack layers widgets on top of each other.
-                          // Layer 1 (bottom): the circular progress arc.
-                          // Layer 2 (top):    the remaining-seconds number.
-                          Stack(
-                            alignment: Alignment.center,
+                    // ── Conditional body: spinner OR countdown + cancel button ─
+                    // Once _sendAlert starts (_sending = true), replace the
+                    // interactive countdown with a progress spinner and status text.
+                    // The user can no longer cancel at this point — the alert is already
+                    // on its way.
+                    _phase != AlertPhase.countdown
+                        ? Column(
                             children: [
-                              SizedBox(
-                                width: 120,
-                                height: 120,
-                                child: CircularProgressIndicator(
-                                  // `value` between 0.0 and 1.0: the filled fraction.
-                                  value: progress,
-                                  strokeWidth: 8,
-                                  // Faint white background arc so the ring doesn't
-                                  // look broken when almost empty.
-                                  backgroundColor: Colors.white12,
-                                  // Turn the ring bright red in the final 10 seconds
-                                  // to signal increasing urgency.
-                                  color: _remaining <= 10
-                                      ? Colors.redAccent
-                                      : const Color(0xFFE5694A), // brand orange
+                              const CircularProgressIndicator(
+                                color: Colors.redAccent,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _statusMessage, // "Getting location…" or "Sending alert…"
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
                                 ),
                               ),
-                              // Large digit centred inside the ring.
-                              Text(
-                                '$_remaining',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 48,
-                                  fontWeight: FontWeight.bold,
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              // ── Countdown ring ────────────────────────────────
+                              // Stack layers widgets on top of each other.
+                              // Layer 1 (bottom): the circular progress arc.
+                              // Layer 2 (top):    the remaining-seconds number.
+                              Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 120,
+                                    height: 120,
+                                    child: CircularProgressIndicator(
+                                      // `value` between 0.0 and 1.0: the filled fraction.
+                                      value: progress,
+                                      strokeWidth: 8,
+                                      // Faint white background arc so the ring doesn't
+                                      // look broken when almost empty.
+                                      backgroundColor: Colors.white12,
+                                      // Turn the ring bright red in the final 10 seconds
+                                      // to signal increasing urgency.
+                                      color: _remaining <= 10
+                                          ? Colors.redAccent
+                                          : const Color(
+                                              0xFFE5694A,
+                                            ), // brand orange
+                                    ),
+                                  ),
+                                  // Large digit centred inside the ring.
+                                  Text(
+                                    '$_remaining',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 48,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_pastDeadline) ...[
+                                const SizedBox(height: 16),
+                                Text(
+                                  l10n.caregiversBeingNotified,
+                                  key: const Key('caregivers-being-notified'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                              // e.g. "caregivers were NOT notified — re-pair".
+                              if (_statusMessage.isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                Text(
+                                  _statusMessage,
+                                  key: const Key('countdown-status-message'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 48),
+
+                              // ── Cancel button ─────────────────────────────────
+                              // Green = safe / "I'm OK". Made deliberately large
+                              // (60 px tall) so it's easy to tap in a stressful moment.
+                              SizedBox(
+                                height: 60,
+                                child: ElevatedButton.icon(
+                                  onPressed: _sending ? null : _cancel,
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 28,
+                                  ),
+                                  label: Text(
+                                    l10n.cancelAlert,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    alignment: Alignment.center,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 48),
-
-                          // ── Cancel button ─────────────────────────────────
-                          // Green = safe / "I'm OK". Made deliberately large
-                          // (60 px tall) so it's easy to tap in a stressful moment.
-                          SizedBox(
-                            height: 60,
-                            child: ElevatedButton.icon(
-                              onPressed: _sending ? null : _cancel,
-                              icon: const Icon(Icons.check_circle, size: 28),
-                              label: Text(
-                                l10n.cancelAlert,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  height: 1.15,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                                alignment: Alignment.center,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),

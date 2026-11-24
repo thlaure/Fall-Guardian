@@ -1,16 +1,31 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
 import '../l10n/app_localizations.dart';
 import '../services/backend_api_service.dart';
+import '../services/device_pairing_state.dart';
 import 'contacts_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.onSimulateFall, this.backendApi});
+  const HomeScreen({
+    super.key,
+    this.onSimulateFall,
+    this.backendApi,
+    this.pairingState,
+    this.onDeviceRepaired,
+  });
 
   final Future<void> Function(int timestamp)? onSimulateFall;
   final BackendApiService? backendApi;
+
+  /// Shared "re-pairing required" signal; defaults to the app-wide one.
+  final DevicePairingState? pairingState;
+
+  /// Called after a successful explicit re-pair (e.g. to reconfigure the
+  /// native relay so queued incidents are retried with the new credentials).
+  final Future<void> Function()? onDeviceRepaired;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -19,12 +34,51 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final BackendApiService _backendApi =
       widget.backendApi ?? BackendApiService();
+  late final DevicePairingState _pairingState =
+      widget.pairingState ?? DevicePairingState.shared;
   int? _caregiverCount;
+  bool _repairing = false;
 
   @override
   void initState() {
     super.initState();
+    _pairingState.repairRequired.addListener(_onPairingChanged);
     _loadCaregiverCount();
+    _loadRepairState();
+  }
+
+  @override
+  void dispose() {
+    _pairingState.repairRequired.removeListener(_onPairingChanged);
+    super.dispose();
+  }
+
+  void _onPairingChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadRepairState() async {
+    try {
+      await _backendApi.isRepairRequired();
+    } catch (_) {
+      // Storage unavailable: keep the last known state.
+    }
+  }
+
+  Future<void> _repairDevice() async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _repairing = true);
+    try {
+      await _backendApi.repairDevice();
+      await widget.onDeviceRepaired?.call();
+      messenger.showSnackBar(SnackBar(content: Text(l10n.repairSucceeded)));
+      await _loadCaregiverCount();
+    } catch (_) {
+      messenger.showSnackBar(SnackBar(content: Text(l10n.repairFailed)));
+    } finally {
+      if (mounted) setState(() => _repairing = false);
+    }
   }
 
   Future<void> _loadCaregiverCount() async {
@@ -53,9 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute<void>(
-                builder: (_) => const SettingsScreen(),
-              ),
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
             ),
           ),
         ],
@@ -66,6 +118,14 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 16),
+            if (_pairingState.repairRequired.value) ...[
+              _RepairRequiredBanner(
+                l10n: l10n,
+                repairing: _repairing,
+                onRepair: _repairDevice,
+              ),
+              const SizedBox(height: 16),
+            ],
             _StatusCard(l10n: l10n, linked: (_caregiverCount ?? 0) > 0),
             const SizedBox(height: 32),
             _NavButton(
@@ -120,6 +180,75 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Persistent, non-dismissable warning: alerts currently reach nobody.
+class _RepairRequiredBanner extends StatelessWidget {
+  const _RepairRequiredBanner({
+    required this.l10n,
+    required this.repairing,
+    required this.onRepair,
+  });
+
+  final AppLocalizations l10n;
+  final bool repairing;
+  final VoidCallback onRepair;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        key: const Key('repair-required-banner'),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: cs.errorContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.error, width: 2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.error, color: cs.error, size: 32),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    l10n.repairRequiredTitle,
+                    style: TextStyle(
+                      color: cs.onErrorContainer,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.repairRequiredBody,
+              style: TextStyle(color: cs.onErrorContainer, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: repairing ? null : onRepair,
+              icon: repairing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.link),
+              label: Text(l10n.repairAction),
+              style: FilledButton.styleFrom(backgroundColor: cs.error),
+            ),
           ],
         ),
       ),
@@ -249,10 +378,7 @@ class _NavButton extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: cs.onSurfaceVariant,
-              ),
+              Icon(Icons.chevron_right, color: cs.onSurfaceVariant),
             ],
           ),
         ),

@@ -6,12 +6,11 @@ import 'dart:developer' as developer;
 
 // Flutter's material library provides the core UI building blocks:
 // widgets, themes, navigation, etc. "Material" refers to Google's design system.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-// flutter_localizations ships the translated strings that Flutter's own widgets
-// use (e.g. the "OK" button on a date picker). We need to include its delegates
-// alongside our own so every part of the UI speaks the user's language.
-import 'package:flutter_localizations/flutter_localizations.dart';
+// material_ui ships the translated strings that Flutter's own widgets use
+// (e.g. the "OK" button on a date picker) through
+// GlobalMaterialLocalizations.delegates.
 
 // Our own generated localization helper (lives in lib/l10n/).
 // It reads the device locale and returns the matching translated strings.
@@ -23,7 +22,10 @@ import 'screens/fall_alert_screen.dart';
 import 'repositories/contacts_repository.dart';
 
 // The service that talks to the native watch layer (Wear OS / watchOS).
+import 'repositories/fall_events_repository.dart';
+import 'services/alert_runtime.dart';
 import 'services/app_bootstrap_service.dart';
+import 'services/relay_outcome_importer.dart';
 import 'services/watch_communication_service.dart';
 import 'services/alert_coordinator.dart';
 import 'services/backend_api_service.dart';
@@ -105,8 +107,10 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _watchService.setFallDetectedCallback(_onFallDetected);
+    _watchService.setFallDetectedCallback(_onWatchFallDetected);
     _watchService.setCancelAlertCallback(_onAlertCancelled);
+    // Handlers are set: pull watch events native code kept for us.
+    unawaited(WatchCommunicationService.requestPendingWatchEvents());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrapBackend());
     });
@@ -116,6 +120,7 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_alertCoordinator.reconcileActiveAlert());
+      unawaited(_syncNativeRelayState());
     }
   }
 
@@ -127,12 +132,41 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     );
     try {
       await bootstrapService.bootstrap();
+    } catch (_) {
+      // Best effort only: the app must still function locally if the backend is
+      // unavailable, and alert submission will surface the failure later.
+      // A rejected device surfaces through DevicePairingState (home banner).
+    }
+    try {
+      // Configure the native relay even when bootstrap failed (e.g. offline):
+      // queued incidents must keep retrying with the stored credentials.
       await WatchCommunicationService.configureNativeAlertRelay(
         _backendApi.debugBaseUrl,
       );
     } catch (_) {
-      // Best effort only: the app must still function locally if the backend is
-      // unavailable, and alert submission will surface the failure later.
+      // No backend URL for this build; the relay keeps incidents queued.
+    }
+    await _syncNativeRelayState();
+  }
+
+  /// Pulls state the native relays may have produced while Flutter was not
+  /// running: terminal outcomes for history, and the re-pairing flag.
+  Future<void> _syncNativeRelayState() async {
+    try {
+      final history = FallEventsRepository();
+      await RelayOutcomeImporter(
+        recorder: history,
+        idGenerator: const UuidGenerator(),
+        existingStatus: history.statusAt,
+      ).importOutcomes();
+      await _backendApi.isRepairRequired();
+    } catch (error, stackTrace) {
+      developer.log(
+        'Native relay state sync failed',
+        name: 'FallGuardianApp',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -140,16 +174,30 @@ class _FallGuardianAppState extends State<FallGuardianApp>
   // signals that an in-progress alert has been cancelled.
   // We push `null` into the broadcast stream — the value itself doesn't matter,
   // the event ("something was cancelled") is what listeners care about.
-  void _onAlertCancelled() {
-    unawaited(_alertCoordinator.cancelFromWatch());
+  void _onAlertCancelled({String? incidentId, int? fallTimestamp}) {
+    unawaited(
+      _alertCoordinator.cancelFromWatch(
+        incidentId: incidentId,
+        fallTimestamp: fallTimestamp,
+      ),
+    );
   }
 
   // Called by WatchCommunicationService when the watch detects a fall.
   // [timestamp] is the Unix epoch in milliseconds of the moment the fall
   // was detected — it is the shared "origin" that keeps both countdowns in sync.
+  void _onWatchFallDetected(
+    int timestamp,
+    String? clientAlertId, {
+    String? incidentId,
+  }) {
+    unawaited(_onFallDetected(timestamp, clientAlertId, incidentId));
+  }
+
   Future<void> _onFallDetected(
     int timestamp, [
     String? clientAlertId,
+    String? incidentId,
   ]) async {
     // Retrieve the current localization bundle so we can build translated
     // notification strings. We use the navigator's context rather than the
@@ -158,6 +206,7 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     final started = await _alertCoordinator.startAlert(
       timestamp,
       clientAlertId: clientAlertId,
+      incidentId: incidentId,
     );
     if (!started) return;
 
@@ -181,19 +230,19 @@ class _FallGuardianAppState extends State<FallGuardianApp>
     unawaited(
       navigator
           .push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => FallAlertScreen(
-            // Pass the original fall timestamp so FallAlertScreen can compute
-            // its remaining seconds relative to the same clock origin as the watch.
-            fallTimestamp: timestamp,
-            alertCoordinator: _alertCoordinator,
-          ),
-          fullscreenDialog: true,
-        ),
-      )
+            MaterialPageRoute<void>(
+              builder: (_) => FallAlertScreen(
+                // Pass the original fall timestamp so FallAlertScreen can compute
+                // its remaining seconds relative to the same clock origin as the watch.
+                fallTimestamp: timestamp,
+                alertCoordinator: _alertCoordinator,
+              ),
+              fullscreenDialog: true,
+            ),
+          )
           .whenComplete(() {
-        _isAlertScreenShowing = false;
-      }),
+            _isAlertScreenShowing = false;
+          }),
     );
   }
 
@@ -227,17 +276,13 @@ class _FallGuardianAppState extends State<FallGuardianApp>
 
       // ── Localization ──────────────────────────────────────────────────────
       // "Delegates" are factories: Flutter asks each delegate to produce the
-      // translated strings for a given locale. We need four delegates:
+      // translated strings for a given locale:
       //   1. AppLocalizations.delegate — our own strings (lib/l10n/)
-      //   2. GlobalMaterialLocalizations.delegate — strings for Material widgets
-      //      (e.g. "Cancel", "OK", month names in date pickers)
-      //   3. GlobalWidgetsLocalizations.delegate — text direction (LTR vs RTL)
-      //   4. GlobalCupertinoLocalizations.delegate — strings for iOS-style widgets
-      localizationsDelegates: const [
+      //   2. GlobalMaterialLocalizations.delegates — Material, Widgets (text
+      //      direction) and Cupertino strings, from the material_ui package
+      localizationsDelegates: [
         AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+        ...GlobalMaterialLocalizations.delegates,
       ],
       // Tell Flutter which locales the app supports. If the device is set to a
       // language not in this list, Flutter picks the closest match or the first
@@ -280,6 +325,10 @@ class _FallGuardianAppState extends State<FallGuardianApp>
       home: HomeScreen(
         onSimulateFall: _onFallDetected,
         backendApi: _backendApi,
+        onDeviceRepaired: () =>
+            WatchCommunicationService.configureNativeAlertRelay(
+              _backendApi.debugBaseUrl,
+            ),
       ),
     );
   }
