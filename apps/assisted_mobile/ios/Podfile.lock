@@ -37,6 +37,6 @@ SPEC CHECKSUMS:
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
 
-PODFILE CHECKSUM: 423aa76af79868aad2560946c2ffc13cdb31fb5f
+PODFILE CHECKSUM: f2d7c6e483e2d6a89e255cdd304f0e4ff603e29a
 
 COCOAPODS: 1.17.0
