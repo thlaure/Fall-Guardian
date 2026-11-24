@@ -22,7 +22,7 @@ class ActiveAlertScreen extends StatefulWidget {
     this.backend,
     this.actions,
     this.clock,
-    this.deviceLocale,
+    this.deviceRegion,
     this.waitingCount = 0,
   });
 
@@ -39,10 +39,9 @@ class ActiveAlertScreen extends StatefulWidget {
   final AlertActions? actions;
   final DateTime Function()? clock;
 
-  /// Phone region used to pick the emergency number. Defaults to the device
-  /// locale (the app locale has no country because only languages are
-  /// supported).
-  final Locale? deviceLocale;
+  /// Phone region (country code) used to pick the emergency number.
+  /// Defaults to the region found in the device locales.
+  final String? deviceRegion;
 
   /// Other alerts queued behind this one.
   final int waitingCount;
@@ -182,7 +181,8 @@ class _ActiveAlertScreenState extends State<ActiveAlertScreen> {
     final personName = alert.protectedPersonName ?? l10n.yourContact;
     final handlingLabel = _handlingLabel(context, alert);
     final emergencyNumber = emergencyNumberFor(
-      widget.deviceLocale ?? WidgetsBinding.instance.platformDispatcher.locale,
+      widget.deviceRegion ??
+          deviceRegionFrom(WidgetsBinding.instance.platformDispatcher.locales),
     );
 
     return Scaffold(

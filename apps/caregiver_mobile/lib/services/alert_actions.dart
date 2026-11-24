@@ -28,14 +28,27 @@ List<Uri> mapUrisFor({
   return [Uri.parse('geo:$coordinates?q=$coordinates'), web];
 }
 
+/// Phone region (ISO 3166 country code) from the device's preferred
+/// locales, e.g. `FR` for `fr_FR` or `en_FR`. Flutter does not expose the
+/// OS region setting separately, so the first locale carrying a country
+/// code is used; null when none does.
+String? deviceRegionFrom(List<Locale> deviceLocales) {
+  for (final locale in deviceLocales) {
+    final country = locale.countryCode;
+    if (country != null && country.isNotEmpty) return country.toUpperCase();
+  }
+  return null;
+}
+
 /// Local emergency number for the phone's region.
 ///
-/// 911 is used in North America; 112 is the EU-wide number and is also
-/// routed to local emergency services by GSM phones in most other countries.
-/// The UI always shows the number on the button so the caregiver knows what
-/// will be dialed.
-String emergencyNumberFor(Locale deviceLocale) {
-  return switch (deviceLocale.countryCode?.toUpperCase()) {
+/// 911 in the US and Canada; 112 everywhere else, including when the region
+/// is unknown: 112 is the EU-wide number and GSM phones route it to local
+/// emergency services in most other countries. The app language is never
+/// used (an English UI does not mean the caregiver is in North America).
+/// The UI always shows the number on the button.
+String emergencyNumberFor(String? region) {
+  return switch (region?.toUpperCase()) {
     'US' || 'CA' => '911',
     _ => '112',
   };

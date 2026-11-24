@@ -69,7 +69,7 @@ void main() {
     Map<String, dynamic> data = _alertWithLocation,
     ValueNotifier<Map<String, dynamic>>? live,
     Locale locale = const Locale('en'),
-    Locale deviceLocale = const Locale('fr', 'FR'),
+    String? deviceRegion = 'FR',
     int waitingCount = 0,
     ThemeData? theme,
   }) async {
@@ -89,7 +89,7 @@ void main() {
           backend: backend,
           actions: actions,
           clock: () => DateTime.utc(2026, 6, 16, 19, 55, 3),
-          deviceLocale: deviceLocale,
+          deviceRegion: deviceRegion,
           waitingCount: waitingCount,
           onDismiss: () => dismissals++,
         ),
@@ -193,7 +193,7 @@ void main() {
     tester,
   ) async {
     actions = _FakeActions(succeeds: false);
-    await pumpScreen(tester, deviceLocale: const Locale('en', 'US'));
+    await pumpScreen(tester, deviceRegion: 'US');
 
     final button = find.text('Call emergency services (911)');
     await tester.ensureVisible(button);

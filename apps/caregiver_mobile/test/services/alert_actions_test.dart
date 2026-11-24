@@ -21,10 +21,19 @@ void main() {
   });
 
   test('emergency number follows the phone region', () {
-    expect(emergencyNumberFor(const Locale('en', 'US')), '911');
-    expect(emergencyNumberFor(const Locale('fr', 'CA')), '911');
-    expect(emergencyNumberFor(const Locale('fr', 'FR')), '112');
-    expect(emergencyNumberFor(const Locale('en', 'GB')), '112');
-    expect(emergencyNumberFor(const Locale('en')), '112');
+    expect(emergencyNumberFor('US'), '911');
+    expect(emergencyNumberFor('ca'), '911');
+    expect(emergencyNumberFor('FR'), '112');
+    expect(emergencyNumberFor('GB'), '112');
+    expect(emergencyNumberFor(null), '112');
+  });
+
+  test('device region comes from the first locale with a country', () {
+    expect(deviceRegionFrom(const [Locale('en'), Locale('fr', 'FR')]), 'FR');
+    // English UI in France is still France, not the US.
+    expect(deviceRegionFrom(const [Locale('en', 'FR')]), 'FR');
+    expect(deviceRegionFrom(const [Locale('en')]), isNull);
+    expect(deviceRegionFrom(const []), isNull);
+    expect(emergencyNumberFor(deviceRegionFrom(const [Locale('en')])), '112');
   });
 }
