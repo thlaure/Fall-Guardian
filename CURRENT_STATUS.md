@@ -1,9 +1,10 @@
 # Fall Guardian — current status and handoff
 
-> Functional status as of July 26, 2026.
+> Functional status as of November 24, 2026 (`main` at `c4a12d7`, #131).
 >
-> The fixes described below are currently on
-> `agent/family-beta-readiness`, not yet on `main`.
+> The family-beta readiness fixes formerly on `agent/family-beta-readiness`
+> were squash-merged as #116 (`5695658`, 2026-07-26). Everything below is on
+> `main`.
 >
 > Read this file first when resuming work. Detailed architecture documentation
 > stays in `docs/SYSTEM_OVERVIEW.md`, and the watch contract in
@@ -12,10 +13,14 @@
 ## 1. Starting point
 
 - Reference branch: `main`.
-- Last functional baseline before this handoff:
-  `9397d29 feat(assisted): start secure watch enrollment (#81)`.
-- PRs #73 to #81 merged after CI.
-- Active implementation branch: `agent/family-beta-readiness`.
+- Last functional baseline: `c4a12d7` (merge of #131, Wear OS detection
+  diagnostics).
+- PRs #73 to #131 merged after CI; the merged-PR changelog lives in
+  `docs/SYSTEM_OVERVIEW.md` §11 (notably #116 family-beta readiness, #118–#122
+  production deployment, #124 background Apple relay, #125 Apple fall
+  detection, #126 caregiver unlink, #128 detection hardening, #129 Wear OS
+  battery, #131 detection diagnostics).
+- No long-lived implementation branch is active.
 
 Always confirm before starting:
 
@@ -46,35 +51,41 @@ make status
   finish;
 - cancellation, deferred location addition, and local history;
 - receiving watchOS/Wear OS events;
-- "Connect the watch" action in settings;
-- enrollment creation and versioned transmission to the native bridge;
-- waiting, error, expiration, and retry states;
-- no enrollment token persisted or logged;
-- Android requires exactly one connected watch before sending the secret.
-- on `agent/family-beta-readiness`, Wear OS incidents and cancellations are
+- the watch connection/enrollment settings flow was removed in #128 (the
+  server enrollment API remains);
+- Wear OS incidents and cancellations are
   persisted before Flutter and sent by a native `JobService` using the
   phone's Keystore-backed credential;
-- duplicate native/Flutter submissions share one `clientAlertId`.
+- duplicate native/Flutter submissions share one `clientAlertId`;
+- iPhone relays Apple Watch system fall events natively when Flutter is not
+  running (#124).
 
 ### Watches
 
-- watchOS: Apple system detection, accelerometer fallback when the app is
-  open, countdown, cancellation, and WatchConnectivity relay;
+- watchOS: Apple `CMFallDetectionManager` is the only production fall source
+  (#125; custom raw detector suspended, thresholds hidden), countdown,
+  1.5-second hold cancellation, and WatchConnectivity relay;
 - Wear OS: foreground detection service, countdown, cancellation, and Data
   Layer relay to Android;
 - no watch consumes the enrollment yet;
 - no watch sends an incident directly to the API yet.
-- on `agent/family-beta-readiness`, both raw algorithms reject impact-only
-  table knocks and require a fall phase plus two seconds of stillness;
-- defaults are `0.7 g`, `2.5 g`, `50°`, and `60 ms`, with migration from
-  untouched legacy defaults;
-- foreground cancellation requires a deliberate 1.5-second hold;
-- watchOS Debug keeps raw monitoring available while the app is visible;
-  Release background detection remains Apple's `CMFallDetectionManager`.
+- Wear OS rejects impact-only table knocks and requires every detection phase
+  plus two seconds of stillness; hardened defaults (#128) are `0.35 g` free
+  fall for `160 ms`, `4.2 g` impact, and `80°` tilt;
+- Wear OS cancels with a single tap (#128), has reduced battery drain (#129),
+  localized French UI (#127), and a local diagnostics recorder (#131).
+- 🟡 in the open PR stack (`t3/harden-alert-delivery-api`,
+  `t3/assisted-alert-reliability`, `t3/caregiver-alert-handling`,
+  `t3/wear-os-cancel-and-ci`, `t3/watchos-alert-localization`,
+  `t3/ci-deploy-contract-hardening`): Wear OS returns to a 1.5-second
+  hold-to-cancel and its notification action opens the alert screen (no
+  direct cancel); the watchOS notification action also opens the hold screen;
+  watchOS does not re-alert falls dismissed on Apple's prompt; both watches
+  send an `incidentId`.
 
 ### Caregiver application
 
-- linking with multiple people;
+- linking with multiple people, and unlinking one with confirmation (#126);
 - push reception, alert screen, and history;
 - retry of history loading after an error;
 - receipts and acknowledgements.
@@ -179,8 +190,16 @@ From the root:
 ```sh
 make help
 make status
-make quality
+make quality   # lint/static checks of every project
+make test      # every project's tests (API needs `make up` first)
+make up        # local backend dev stack on :8002 (`make down` to stop)
+make e2e       # isolated test backend + assisted/caregiver workflow E2E
+make openapi-export  # refresh packages/api_contract/openapi.json
 ```
+
+Production deploys run only after API CI passes on `main`; see
+`backend/api/docs/OVH_GITHUB_ACTIONS_DEPLOYMENT.md` (rollback via the
+`image_sha` input of the **Deploy API** workflow).
 
 Backend:
 
