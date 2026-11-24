@@ -179,6 +179,46 @@ final class WatchIncidentIdentityTests: XCTestCase {
     }
 }
 
+final class WatchPendingCancelTests: XCTestCase {
+    private let incident = WatchIncident(id: "dddddddd-0000-0000-0000-000000000004", timestamp: 8_000)
+
+    func testSavedCancelRoundTripsWithIdentity() {
+        let store = FakeStore()
+        XCTAssertNil(WatchPendingCancel.load(store: store), "nothing pending")
+        WatchPendingCancel.save(incident, store: store)
+        XCTAssertEqual(WatchPendingCancel.load(store: store), incident)
+        XCTAssertEqual(
+            WatchPayloads.alertCancelled(WatchPendingCancel.load(store: store))["incidentId"] as? String,
+            incident.id,
+            "delivered after activation with incidentId"
+        )
+    }
+
+    func testClearRemovesDeliveredCancel() {
+        let store = FakeStore()
+        WatchPendingCancel.save(incident, store: store)
+        WatchPendingCancel.clear(incident, store: store)
+        XCTAssertNil(WatchPendingCancel.load(store: store))
+    }
+
+    func testClearKeepsANewerPendingCancel() {
+        let store = FakeStore()
+        WatchPendingCancel.save(incident, store: store)
+        let newer = WatchIncident(id: "eeeeeeee-0000-0000-0000-000000000005", timestamp: 9_000)
+        WatchPendingCancel.save(newer, store: store)
+        WatchPendingCancel.clear(incident, store: store)
+        XCTAssertEqual(WatchPendingCancel.load(store: store), newer)
+    }
+
+    func testIncompleteRecordIsNotDelivered() {
+        let store = FakeStore()
+        store.values = [WatchIncidentStorageKey.pendingCancelTimestamp: 8_000.0]
+        XCTAssertNil(WatchPendingCancel.load(store: store), "missing id")
+        store.values = [WatchIncidentStorageKey.pendingCancelIncidentId: "x"]
+        XCTAssertNil(WatchPendingCancel.load(store: store), "missing timestamp")
+    }
+}
+
 // MARK: - Cancel matching
 
 final class WatchCancelMatcherTests: XCTestCase {

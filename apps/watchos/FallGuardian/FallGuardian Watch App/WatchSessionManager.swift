@@ -92,11 +92,13 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Tells the iPhone that the user tapped "Cancel" on the watch alert screen.
     ///
-    /// Delivery strategy (same pattern used throughout this file):
+    /// Delivery strategy (same as fall events):
     /// 1. Simulator path — write a flag file to /tmp that the iOS sim polls every 1 s.
-    /// 2. Guard: abort if WCSession is not yet activated (e.g. during early startup).
-    /// 3. Try `sendMessage` (fast, real-time) first.
-    /// 4. If sendMessage fails (phone is locked, out of range, etc.), fall back to
+    /// 2. Persist the cancel. A cancel made right after watchOS cold-launches the
+    ///    app from the notification can happen before WCSession activates;
+    ///    activationDidCompleteWith then delivers it.
+    /// 3. Try `sendMessage` (fast, real-time) with an acknowledgement.
+    /// 4. If the phone is unreachable or sendMessage fails, fall back to
     ///    `transferUserInfo` which queues the message for reliable later delivery.
     ///
     /// The `notifyPhone: false` path in ContentViewModel ensures we never call this
@@ -117,27 +119,52 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
         )
         #endif
 
-        // Guard: WCSession must be fully activated before we can send.
-        // `.activated` is the only state where sendMessage works.
-        guard WCSession.default.activationState == .activated else {
-            NSLog("[WCSession] sendCancelAlert: not activated")
+        guard let incident else {
+            // No active incident: nothing the phone could match. Keep the
+            // legacy best-effort message for older phones only when possible.
+            NSLog("[WCSession] sendCancelAlert: no active incident")
+            if WCSession.default.activationState == .activated {
+                WCSession.default.transferUserInfo(WatchPayloads.alertCancelled(nil))
+            }
             return
         }
 
-        // Build the message dictionary.  The phone's WatchSessionManager reads the
-        // "event" key to dispatch to the right handler; `fallTimestamp` and
-        // `incidentId` let it ignore a cancel aimed at a different incident.
+        // Persist first so the cancel survives until WCSession can carry it.
+        WatchPendingCancel.save(incident, store: UserDefaults.standard)
+
+        guard WCSession.default.activationState == .activated else {
+            NSLog("[WCSession] sendCancelAlert: not activated, cancel kept pending")
+            return
+        }
+        deliverPendingCancel()
+    }
+
+    /// Delivers a cancel saved before WCSession activation (or just now).
+    /// `fallTimestamp` and `incidentId` let the phone ignore a cancel aimed at
+    /// a different incident.
+    private func deliverPendingCancel() {
+        let defaults = UserDefaults.standard
+        guard let incident = WatchPendingCancel.load(store: defaults),
+              WCSession.default.activationState == .activated else { return }
+
         let message = WatchPayloads.alertCancelled(incident)
+        let clearPending = { WatchPendingCancel.clear(incident, store: defaults) }
 
-        NSLog("[WCSession] sendCancelAlert: isReachable=\(WCSession.default.isReachable)")
-
-        // Try real-time delivery.  The error handler (trailing closure `{ _ in }`)
-        // fires if the phone cannot be reached right now; we fall back to the queue.
-        WCSession.default.sendMessage(message, replyHandler: nil) { error in
-            NSLog("[WCSession] sendCancelAlert: sendMessage failed error=\(error) falling back to transferUserInfo")
+        NSLog("[WCSession] deliverPendingCancel: isReachable=\(WCSession.default.isReachable)")
+        guard WCSession.default.isReachable else {
             // transferUserInfo queues the message on-device; the OS delivers it when
             // the phone becomes reachable again — guaranteed delivery, but not instant.
             WCSession.default.transferUserInfo(message)
+            clearPending()
+            return
+        }
+
+        WCSession.default.sendMessage(message) { _ in
+            clearPending()
+        } errorHandler: { error in
+            NSLog("[WCSession] deliverPendingCancel: sendMessage failed error=\(error) falling back to transferUserInfo")
+            WCSession.default.transferUserInfo(message)
+            clearPending()
         }
     }
 
@@ -336,7 +363,9 @@ class WatchSessionManager: NSObject, WCSessionDelegate {
     ) {
         NSLog("[WCSession] activationDidCompleteWith: state=\(activationState.rawValue) isCompanionAppInstalled=\(session.isCompanionAppInstalled) isReachable=\(session.isReachable) error=\(String(describing: error))")
         if activationState == .activated {
+            // Fall first, then any cancel for it, so the phone sees them in order.
             deliverPendingFallEvent()
+            deliverPendingCancel()
         }
     }
 

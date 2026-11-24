@@ -91,6 +91,33 @@ enum WatchIncidentStorageKey {
     static let activeIncidentId = "active_watch_fall_incident_id"
     static let pendingTimestamp = "pending_watch_fall_timestamp"
     static let pendingIncidentId = "pending_watch_fall_incident_id"
+    static let pendingCancelTimestamp = "pending_watch_cancel_timestamp"
+    static let pendingCancelIncidentId = "pending_watch_cancel_incident_id"
+}
+
+/// A watch cancel waiting for WatchConnectivity. Persisted so a cancel made
+/// right after a cold launch (before WCSession activates) is not lost.
+enum WatchPendingCancel {
+    static func save(_ incident: WatchIncident, store: WatchKeyValueStore) {
+        store.set(Double(incident.timestamp), forKey: WatchIncidentStorageKey.pendingCancelTimestamp)
+        store.set(incident.id, forKey: WatchIncidentStorageKey.pendingCancelIncidentId)
+    }
+
+    static func load(store: WatchKeyValueStore) -> WatchIncident? {
+        let timestamp = Int64(store.double(forKey: WatchIncidentStorageKey.pendingCancelTimestamp))
+        guard timestamp > 0,
+              let id = store.string(forKey: WatchIncidentStorageKey.pendingCancelIncidentId),
+              !id.isEmpty else { return nil }
+        return WatchIncident(id: id, timestamp: timestamp)
+    }
+
+    /// Clears only the cancel that was delivered, so a newer pending cancel
+    /// saved meanwhile survives.
+    static func clear(_ delivered: WatchIncident, store: WatchKeyValueStore) {
+        guard load(store: store) == delivered else { return }
+        store.set(nil, forKey: WatchIncidentStorageKey.pendingCancelTimestamp)
+        store.set(nil, forKey: WatchIncidentStorageKey.pendingCancelIncidentId)
+    }
 }
 
 enum WatchIncidentIdentity {
