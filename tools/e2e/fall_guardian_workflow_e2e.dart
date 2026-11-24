@@ -57,6 +57,10 @@ Future<void> main(List<String> args) async {
     final response = await client.post(
       '/api/v1/invites/$inviteCode/accept',
       token: caregiverDevice.token,
+      body: const {
+        'protectedPersonName': 'E2E Protected Person',
+        'caregiverName': 'E2E Caregiver',
+      },
     );
     _expectStatus(response, HttpStatus.noContent);
   });
@@ -75,6 +79,10 @@ Future<void> main(List<String> args) async {
     final response = await client.post(
       '/api/v1/invites/$secondInviteCode/accept',
       token: secondCaregiverDevice.token,
+      body: const {
+        'protectedPersonName': 'E2E Protected Person',
+        'caregiverName': 'E2E Second Caregiver',
+      },
     );
     _expectStatus(response, HttpStatus.noContent);
   });
