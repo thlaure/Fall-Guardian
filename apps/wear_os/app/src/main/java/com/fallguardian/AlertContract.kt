@@ -102,10 +102,56 @@ object AlertContract {
     }
 }
 
-data class ActiveAlert(val incidentId: String, val fallTimestampMs: Long) {
+/**
+ * One reading of the three clocks used by the alert.
+ * - [wallMs]: System.currentTimeMillis(), shared with the phone, but can jump
+ *   (user/network time changes).
+ * - [elapsedMs]: SystemClock.elapsedRealtime(), monotonic since boot.
+ * - [bootCount]: Settings.Global.BOOT_COUNT (null when unavailable); elapsed
+ *   time is only comparable within the same boot.
+ */
+data class ClockReading(val wallMs: Long, val elapsedMs: Long, val bootCount: Int?)
+
+/**
+ * The active incident. [fallTimestampMs] (wall clock) is what the phone
+ * receives; the countdown itself runs on the monotonic clock anchored at
+ * [detectedElapsedMs], so a wall-clock jump cannot end or extend it. After a
+ * reboot (different boot count) elapsed time is meaningless and the wall
+ * clock is used instead.
+ */
+data class ActiveAlert(
+    val incidentId: String,
+    val fallTimestampMs: Long,
+    val detectedElapsedMs: Long = -1L,
+    val bootCount: Int? = null
+) {
     val deadlineMs: Long get() = fallTimestampMs + ALERT_WINDOW_MS
 
-    fun isLive(nowMs: Long): Boolean = nowMs >= fallTimestampMs && nowMs < deadlineMs
+    /** Milliseconds since the fall, measured monotonically when possible. */
+    fun elapsedSinceFallMs(now: ClockReading): Long =
+        if (bootCount != null && detectedElapsedMs >= 0 && now.bootCount == bootCount) {
+            now.elapsedMs - detectedElapsedMs
+        } else {
+            now.wallMs - fallTimestampMs
+        }
+
+    fun isLive(now: ClockReading): Boolean =
+        elapsedSinceFallMs(now) in 0 until ALERT_WINDOW_MS
+
+    fun remainingSeconds(now: ClockReading): Int =
+        alertRemainingSecondsAfter(elapsedSinceFallMs(now))
+
+    companion object {
+        /**
+         * Builds the alert for a fall detected at wall time [fallTimestampMs]
+         * (possibly slightly in the past), anchoring the monotonic clock at the
+         * same instant.
+         */
+        fun detected(incidentId: String, fallTimestampMs: Long, now: ClockReading): ActiveAlert {
+            val ageMs = (now.wallMs - fallTimestampMs).coerceAtLeast(0L)
+            return ActiveAlert(incidentId, fallTimestampMs, now.elapsedMs - ageMs, now.bootCount)
+        }
+    }
 }
 
 data class PhoneCancel(val incidentId: String?, val fallTimestampMs: Long?)
@@ -121,32 +167,40 @@ interface AlertStateStorage {
 }
 
 /**
- * Persists the active incident (id, fall timestamp, deadline). Restores it
- * only while the 30-second window is still running; otherwise clears it.
+ * Persists the active incident (id, wall fall timestamp, wall deadline,
+ * monotonic anchor and boot count). Restores it only while the 30-second
+ * window is still running; otherwise clears it.
  */
 class ActiveAlertStore(private val storage: AlertStateStorage) {
     fun save(alert: ActiveAlert) {
         storage.write(
-            mapOf(
-                KEY_ID to alert.incidentId,
-                KEY_FALL_TS to alert.fallTimestampMs,
-                KEY_DEADLINE to alert.deadlineMs
-            )
+            buildMap {
+                put(KEY_ID, alert.incidentId)
+                put(KEY_FALL_TS, alert.fallTimestampMs)
+                put(KEY_DEADLINE, alert.deadlineMs)
+                put(KEY_DETECTED_ELAPSED, alert.detectedElapsedMs)
+                alert.bootCount?.let { put(KEY_BOOT_COUNT, it.toLong()) }
+            }
         )
     }
 
     fun clear() = storage.write(null)
 
-    fun restore(nowMs: Long): ActiveAlert? {
+    fun restore(now: ClockReading): ActiveAlert? {
         val id = storage.getString(KEY_ID)
         val timestamp = storage.getLong(KEY_FALL_TS)
         val deadline = storage.getLong(KEY_DEADLINE)
         val alert = if (AlertContract.isValidIncidentId(id) && timestamp != null && timestamp > 0) {
-            ActiveAlert(id!!, timestamp)
+            ActiveAlert(
+                id!!,
+                timestamp,
+                storage.getLong(KEY_DETECTED_ELAPSED) ?: -1L,
+                storage.getLong(KEY_BOOT_COUNT)?.toInt()
+            )
         } else {
             null
         }
-        val live = alert != null && deadline == alert.deadlineMs && alert.isLive(nowMs)
+        val live = alert != null && deadline == alert.deadlineMs && alert.isLive(now)
         if (!live) {
             if (id != null || timestamp != null || deadline != null) clear()
             return null
@@ -158,5 +212,7 @@ class ActiveAlertStore(private val storage: AlertStateStorage) {
         const val KEY_ID = "active_incident_id"
         const val KEY_FALL_TS = "active_fall_timestamp"
         const val KEY_DEADLINE = "active_deadline"
+        const val KEY_DETECTED_ELAPSED = "active_detected_elapsed"
+        const val KEY_BOOT_COUNT = "active_boot_count"
     }
 }

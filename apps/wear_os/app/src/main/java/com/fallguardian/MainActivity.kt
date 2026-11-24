@@ -9,8 +9,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.os.VibrationEffect
-import android.os.Vibrator
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -281,7 +279,6 @@ private fun AlertScreen(context: Context) {
  */
 @Composable
 private fun HoldToCancelButton(fontScale: Float, onConfirmed: () -> Unit) {
-    val context = LocalContext.current
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var confirming by remember { mutableStateOf(false) }
@@ -292,7 +289,8 @@ private fun HoldToCancelButton(fontScale: Float, onConfirmed: () -> Unit) {
     fun complete() {
         if (completed) return
         completed = true
-        hapticTick(context)
+        // The confirmation buzz is played by FallDetectionService after it
+        // stops the alarm vibration (playing it here would be cancelled).
         onConfirmed()
     }
 
@@ -400,12 +398,6 @@ private fun AlertChoice(text: String, color: Color, fontScale: Float, onClick: (
             modifier = Modifier.padding(horizontal = 6.dp)
         )
     }
-}
-
-/** Short, strong pulse confirming the hold completed. */
-private fun hapticTick(context: Context) {
-    context.getSystemService(Vibrator::class.java)
-        ?.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE))
 }
 
 /**

@@ -204,8 +204,16 @@ class FallDetectionService : Service(), SensorEventListener {
         createNotificationChannel() // Must exist before posting any notification.
         startForeground(NOTIF_ID, buildNotification())
 
-        WearDataSender.onAlertStateChanged = { active ->
-            if (active) showUrgentFallAlert() else dismissUrgentFallAlert()
+        WearDataSender.onAlertPresentation = { presentation ->
+            when (presentation) {
+                AlertPresentation.SHOW -> showUrgentFallAlert()
+                AlertPresentation.DISMISS -> dismissUrgentFallAlert()
+                AlertPresentation.DISMISS_CONFIRMED -> {
+                    dismissUrgentFallAlert()
+                    // After vibrator.cancel() in dismiss, so it is not swallowed.
+                    confirmCancelHaptic()
+                }
+            }
         }
         // After a process restart (crash, OS kill, START_STICKY relaunch) the
         // alert may still be inside its 30-second window: bring it back.
@@ -371,7 +379,7 @@ class FallDetectionService : Service(), SensorEventListener {
         diagnosticHandler.removeCallbacks(diagnosticHeartbeat)
         FallDiagnostics.flush()
         FallDiagnostics.event("service_stopped", "")
-        WearDataSender.onAlertStateChanged = null
+        WearDataSender.onAlertPresentation = null
         dismissUrgentFallAlert()
         prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener) // Stop threshold watching.
         sensorManager.unregisterListener(this)    // Stop receiving sensor events.
@@ -512,6 +520,11 @@ class FallDetectionService : Service(), SensorEventListener {
             play()
             Log.i("FallDetectionService", "Fall alarm sound started")
         }
+    }
+
+    /** Short, strong pulse confirming the wearer's hold-to-cancel completed. */
+    private fun confirmCancelHaptic() {
+        vibrator?.vibrate(VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
     private fun dismissUrgentFallAlert() {
