@@ -53,8 +53,9 @@ import androidx.core.app.NotificationCompat
  *    and writes them to SharedPreferences. This service's prefChangeListener
  *    detects those writes and rebuilds FallAlgorithm on the fly — no restart needed.
  *
- * Uses SensorManager with TYPE_ACCELEROMETER at 25 Hz and short hardware
- * batching windows to reduce CPU wake-ups while keeping fall alerts prompt.
+ * Uses SensorManager with TYPE_ACCELEROMETER at 25 Hz, preferring the wake-up
+ * variant with hardware FIFO batching so screen-off falls are still seen
+ * without holding a wake lock (see AccelerometerPlan).
  * On fall detection: sends Data Layer event to the phone and enforces
  * a 5-second cooldown before the next detection can fire.
  */
@@ -100,6 +101,8 @@ class FallDetectionService : Service(), SensorEventListener {
     // feels the countdown even with the screen off or only the notification.
     private var vibrator: Vibrator? = null
 
+    private lateinit var accelerometerPlan: AccelerometerPlan
+
     // Minimum gap between two successive fall alerts. 5 seconds prevents a
     // single tumble from firing the alarm multiple times (e.g. if the user
     // rolls after hitting the ground and triggers the sensor again).
@@ -143,11 +146,7 @@ class FallDetectionService : Service(), SensorEventListener {
         const val NOTIF_ID = 1001
         const val ALERT_NOTIF_ID = 1002
 
-        // 25 Hz provides four samples for the default 160 ms free-fall window.
-        // A half-second batch cuts app CPU wake-ups without
-        // making the fall alert feel delayed.
-        const val ACCELEROMETER_SAMPLING_PERIOD_US = 40_000
-        const val ACCELEROMETER_BATCH_LATENCY_US = 500_000
+        // Sampling rate and batching are chosen by AccelerometerPlan.
         const val ALERT_WAKE_LOCK_TIMEOUT_MS = 35_000L
     }
 
@@ -168,7 +167,22 @@ class FallDetectionService : Service(), SensorEventListener {
 
         // Ask the OS for the SensorManager, then request the accelerometer sensor.
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        // Prefer the wake-up accelerometer variant: its samples are buffered in
+        // the sensor hub FIFO while the main CPU sleeps, and the hub wakes the
+        // CPU only to deliver a batch. The default (non-wake-up) sensor stops
+        // reporting — and drops samples — once the screen is off and the CPU
+        // sleeps, which is how falls were missed. Fall back when unavailable
+        // or when its FIFO is too small to batch efficiently.
+        val wakeUpAccelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER, true)
+        accelerometerPlan = AccelerometerPlan.choose(
+            wakeUpAvailable = wakeUpAccelerometer?.isWakeUpSensor == true,
+            wakeUpFifoMaxEvents = wakeUpAccelerometer?.fifoMaxEventCount ?: 0
+        )
+        accelerometer = if (accelerometerPlan.useWakeUpSensor) {
+            wakeUpAccelerometer
+        } else {
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        }
         vibrator = getSystemService(Vibrator::class.java)
 
         // Do not acquire this at startup: monitoring must allow the watch to
@@ -245,8 +259,8 @@ class FallDetectionService : Service(), SensorEventListener {
     }
 
     /**
-     * Subscribes to the accelerometer at 25 Hz. The sensor hardware can batch
-     * readings for up to 500 ms, so the CPU processes a small group at once
+     * Subscribes to the accelerometer at 25 Hz with hardware batching (see
+     * AccelerometerPlan): the CPU processes a group of readings at once
      * instead of waking for every sample. SensorEvent timestamps still preserve
      * the timing seen by FallAlgorithm.
      *
@@ -259,13 +273,14 @@ class FallDetectionService : Service(), SensorEventListener {
             FallDiagnostics.event("sensor_registration", "available=false")
             return
         }
+        val plan = accelerometerPlan
         val registered = sensorManager.registerListener(
             this,
             sensor,
-            ACCELEROMETER_SAMPLING_PERIOD_US,
-            ACCELEROMETER_BATCH_LATENCY_US
+            plan.samplingPeriodUs,
+            plan.maxReportLatencyUs
         )
-        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};period_us=$ACCELEROMETER_SAMPLING_PERIOD_US;batch_us=$ACCELEROMETER_BATCH_LATENCY_US")
+        FallDiagnostics.event("sensor_registration", "registered=$registered;name=${sensor.name};wake_up=${sensor.isWakeUpSensor};fifo_max=${sensor.fifoMaxEventCount};period_us=${plan.samplingPeriodUs};batch_us=${plan.maxReportLatencyUs}")
     }
 
     // --- Step 3: Process each accelerometer reading ---
@@ -318,6 +333,10 @@ class FallDetectionService : Service(), SensorEventListener {
         // Only act on a positive detection if enough time has passed since the
         // last alert — this is the cooldown check.
         if (dispatched) {
+            // Wake-up sensor batches hold the CPU awake only until this
+            // callback returns. Take the time-limited alert wake lock now so
+            // the posted alert work cannot be deferred by the CPU sleeping.
+            if (!wakeLock.isHeld) wakeLock.acquire(ALERT_WAKE_LOCK_TIMEOUT_MS)
             lastFallMs = nowElapsed  // Record when this fall fired.
             algorithm.reset()        // Clear the state machine for the next event.
 

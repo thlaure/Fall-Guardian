@@ -60,3 +60,43 @@ class VibrationPattern(val timingsMs: LongArray, val amplitudes: IntArray) {
     val isEmpty: Boolean get() = timingsMs.isEmpty()
 }
 
+/**
+ * How the accelerometer is subscribed. Chosen by [AccelerometerPlan.choose]
+ * from what the hardware reports, so the decision is testable on the JVM.
+ */
+data class AccelerometerPlan(
+    val useWakeUpSensor: Boolean,
+    val samplingPeriodUs: Int,
+    val maxReportLatencyUs: Int
+) {
+    companion object {
+        // 25 Hz gives four samples for the default 160 ms low-acceleration
+        // window. 50 Hz would double FIFO fill rate and therefore AP wake-ups
+        // whenever the FIFO, not the latency, limits batching; without device
+        // measurements that cost is not justified, so 25 Hz is kept.
+        const val SAMPLING_PERIOD_US = 40_000
+
+        // Non-wake-up fallback (previous behaviour): short batches while the
+        // CPU is awake; samples are dropped by the hub once the AP sleeps.
+        const val NON_WAKE_UP_LATENCY_US = 500_000
+
+        // Wake-up sensor: the sensor hub buffers samples in its FIFO and wakes
+        // the AP at most once per batch to deliver them. Detection needs 2 s of
+        // post-impact stillness anyway, so 5 s adds at most ~5 s to alert
+        // latency while keeping sleep wake-ups to <= 0.2 per second.
+        const val WAKE_UP_LATENCY_US = 5_000_000
+
+        // A wake-up sensor whose FIFO holds less than this much data would
+        // wake the AP too often (or per sample without a FIFO); not worth it.
+        const val MIN_WAKE_UP_BUFFER_US = 2_000_000L
+
+        fun choose(wakeUpAvailable: Boolean, wakeUpFifoMaxEvents: Int): AccelerometerPlan {
+            val bufferUs = wakeUpFifoMaxEvents.toLong() * SAMPLING_PERIOD_US
+            return if (wakeUpAvailable && bufferUs >= MIN_WAKE_UP_BUFFER_US) {
+                AccelerometerPlan(true, SAMPLING_PERIOD_US, WAKE_UP_LATENCY_US)
+            } else {
+                AccelerometerPlan(false, SAMPLING_PERIOD_US, NON_WAKE_UP_LATENCY_US)
+            }
+        }
+    }
+}
