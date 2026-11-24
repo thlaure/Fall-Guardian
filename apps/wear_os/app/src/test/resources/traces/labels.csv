@@ -1,0 +1,6 @@
+file,expect_fall,description
+synthetic-fall-forward.csv,true,"Synthetic: walk, 280 ms low acceleration, 5 g impact, wrist ends ~90 deg rotated, lies still"
+synthetic-fall-sideways.csv,true,"Synthetic: walk, 200 ms low acceleration, 5 g impact, wrist ends on its side, lies still"
+synthetic-sit-down-hard.csv,false,"Synthetic: partial unloading (0.5 g), 3.2 g landing, ~35 deg wrist rotation, rest"
+synthetic-table-bump.csv,false,"Synthetic: watch flat on table, single 6 g knock, no rotation"
+synthetic-walking.csv,false,"Synthetic: 12 s walking with arm swing"
