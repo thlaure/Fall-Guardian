@@ -128,7 +128,7 @@ class NativeAlertQueueTest {
     fun `cancel with incident id only targets the matching incident`() {
         val items = listOf(item(uuidA, now), item(uuidB, now + 1))
 
-        val result = NativeAlertQueue.requestCancel(items, uuidA.uppercase(), null)
+        val result = NativeAlertQueue.requestCancel(items, uuidA.uppercase(), null).items
 
         assertTrue(result.first { it.clientAlertId == uuidA }.cancelRequested)
         assertFalse(result.first { it.clientAlertId == uuidB }.cancelRequested)
@@ -138,7 +138,7 @@ class NativeAlertQueueTest {
     fun `cancel with fall timestamp targets a legacy derived incident`() {
         val items = listOf(item("wear-os-$now", now), item(uuidB, now + 1))
 
-        val result = NativeAlertQueue.requestCancel(items, uuidA, now)
+        val result = NativeAlertQueue.requestCancel(items, uuidA, now).items
 
         assertTrue(result.first { it.clientAlertId == "wear-os-$now" }.cancelRequested)
         assertFalse(result.first { it.clientAlertId == uuidB }.cancelRequested)
@@ -148,14 +148,14 @@ class NativeAlertQueueTest {
     fun `cancel with unknown target changes nothing`() {
         val items = listOf(item(uuidA, now))
 
-        assertEquals(items, NativeAlertQueue.requestCancel(items, uuidB, now + 99))
+        assertEquals(items, NativeAlertQueue.requestCancel(items, uuidB, now + 99).items)
     }
 
     @Test
     fun `legacy cancel without target cancels only the most recent open incident`() {
         val items = listOf(item(uuidA, now), item(uuidB, now + 1))
 
-        val result = NativeAlertQueue.requestCancel(items, null, null)
+        val result = NativeAlertQueue.requestCancel(items, null, null).items
 
         assertFalse(result.first { it.clientAlertId == uuidA }.cancelRequested)
         assertTrue(result.first { it.clientAlertId == uuidB }.cancelRequested)
@@ -168,13 +168,148 @@ class NativeAlertQueueTest {
         val expired = item("wear-os-1", now - NativeAlertQueue.UNDELIVERED_RETENTION_MS - 1)
         val pendingCancel = item("wear-os-2", now - NativeAlertQueue.SUBMITTED_RETENTION_MS - 1, submitted = true, cancelRequested = true)
 
-        val (kept, dropped) = NativeAlertQueue.prune(
+        val (kept, outcomes) = NativeAlertQueue.prune(
             listOf(oldSubmitted, recentSubmitted, expired, pendingCancel),
             now
         )
 
         assertEquals(listOf(recentSubmitted, pendingCancel), kept)
-        assertEquals(listOf(expired), dropped)
+        assertEquals(
+            listOf(RelayOutcome("wear-os-1", expired.timestamp, RelayOutcomeKind.DROPPED)),
+            outcomes
+        )
+    }
+
+    @Test
+    fun `expired cancel-requested incidents never vanish silently`() {
+        val old = now - NativeAlertQueue.UNDELIVERED_RETENTION_MS - 1
+        val submittedCancel = item("wear-os-1", old, submitted = true, cancelRequested = true)
+        val unsentCancel = item("wear-os-2", old, cancelRequested = true)
+
+        val (kept, outcomes) = NativeAlertQueue.prune(listOf(submittedCancel, unsentCancel), now)
+
+        assertTrue(kept.isEmpty())
+        assertEquals(
+            listOf(RelayOutcomeKind.CANCEL_UNCONFIRMED, RelayOutcomeKind.CANCELLED_UNSENT),
+            outcomes.map { it.kind }
+        )
+    }
+
+    @Test
+    fun `targeted cancel arriving before its fall leaves a tombstone that cancels the fall`() {
+        val cancel = NativeAlertQueue.requestCancel(emptyList(), uuidA, null, now)
+        assertTrue(cancel.items.isEmpty())
+        assertEquals(1, cancel.tombstones.size)
+
+        val fall = NativeAlertQueue.enqueue(
+            cancel.items, now + 1_000, uuidA, RelaySource.WEAR_OS, now + 1_000, cancel.tombstones
+        )
+
+        assertTrue(fall.items.single().cancelRequested)
+        assertTrue("tombstone consumed", fall.tombstones.isEmpty())
+    }
+
+    @Test
+    fun `timestamp-only tombstone cancels a legacy fall with the same timestamp`() {
+        val cancel = NativeAlertQueue.requestCancel(emptyList(), null, now, now)
+
+        val fall = NativeAlertQueue.enqueue(
+            emptyList(), now, null, RelaySource.WEAR_OS, now + 500, cancel.tombstones
+        )
+
+        assertTrue(fall.items.single().cancelRequested)
+    }
+
+    @Test
+    fun `tombstones expire and never cancel an unrelated fall`() {
+        val cancel = NativeAlertQueue.requestCancel(emptyList(), uuidA, null, now)
+
+        val late = NativeAlertQueue.enqueue(
+            emptyList(), now, uuidA, RelaySource.WEAR_OS,
+            now + NativeAlertQueue.TOMBSTONE_TTL_MS + 1, cancel.tombstones
+        )
+        val other = NativeAlertQueue.enqueue(
+            emptyList(), now, uuidB, RelaySource.WEAR_OS, now + 1, cancel.tombstones
+        )
+
+        assertFalse(late.items.single().cancelRequested)
+        assertTrue(late.tombstones.isEmpty())
+        assertFalse(other.items.single().cancelRequested)
+    }
+
+    @Test
+    fun `untargeted cancel with an empty queue never leaves a tombstone`() {
+        val cancel = NativeAlertQueue.requestCancel(emptyList(), null, null, now)
+
+        assertTrue(cancel.tombstones.isEmpty())
+    }
+
+    @Test
+    fun `tombstones round trip through storage`() {
+        val tombstones = listOf(
+            CancelTombstone(uuidA, null, now),
+            CancelTombstone(null, now, now + 1),
+            CancelTombstone(uuidB, 5, now + 2)
+        )
+
+        assertEquals(
+            tombstones,
+            NativeAlertQueue.decodeTombstones(NativeAlertQueue.encodeTombstones(tombstones))
+        )
+        assertTrue(NativeAlertQueue.decodeTombstones("||1\nbad").isEmpty())
+    }
+
+    @Test
+    fun `a later UUID for a legacy-queued incident is stored as an alias`() {
+        val legacy = NativeAlertQueue.enqueue(emptyList(), now, null, RelaySource.WEAR_OS, now)
+
+        val withUuid = NativeAlertQueue.enqueue(legacy.items, now, uuidA, RelaySource.WEAR_OS, now)
+
+        assertEquals("wear-os-$now", withUuid.clientAlertId)
+        assertEquals(listOf(uuidA), withUuid.items.single().aliases)
+        val cancelled = NativeAlertQueue.requestCancel(withUuid.items, uuidA, null, now).items
+        assertTrue(cancelled.single().cancelRequested)
+        assertEquals(
+            withUuid.items,
+            NativeAlertQueue.decode(NativeAlertQueue.encode(withUuid.items))
+        )
+    }
+
+    @Test
+    fun `entries stored before aliases existed still decode`() {
+        val raw = "v2\n$uuidA|$now|wear_os|1|0|$now"
+
+        assertEquals(listOf(item(uuidA, now, submitted = true)), NativeAlertQueue.decode(raw))
+    }
+
+    @Test
+    fun `re-pairing reports queued incidents instead of sending them under the new device`() {
+        val items = listOf(
+            item("a", 1),
+            item("b", 2, submitted = true, cancelRequested = true),
+            item("c", 3, cancelRequested = true),
+            item("d", 4, submitted = true)
+        )
+
+        val outcomes = NativeAlertQueue.discardForRepair(items)
+
+        assertEquals(
+            listOf(
+                RelayOutcome("a", 1, RelayOutcomeKind.REPAIR_NOT_DELIVERED),
+                RelayOutcome("b", 2, RelayOutcomeKind.CANCEL_UNCONFIRMED),
+                RelayOutcome("c", 3, RelayOutcomeKind.CANCELLED_UNSENT)
+            ),
+            outcomes
+        )
+    }
+
+    @Test
+    fun `outcomes are removed only once acknowledged`() {
+        val first = RelayOutcome("a", 1, RelayOutcomeKind.DROPPED)
+        val second = RelayOutcome("b", 2, RelayOutcomeKind.CANCEL_TOO_LATE)
+
+        assertEquals(listOf(second), NativeAlertQueue.acknowledge(listOf(first, second), listOf(first.key)))
+        assertEquals(listOf(first, second), NativeAlertQueue.acknowledge(listOf(first, second), emptyList()))
     }
 
     @Test

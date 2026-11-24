@@ -28,6 +28,7 @@ internal object NativeAlertRelay {
     private const val BASE_URL_KEY = "native_alert_relay_base_url"
     private const val QUEUE_KEY = "native_alert_queue_v2"
     private const val OUTCOMES_KEY = "native_alert_outcomes_v1"
+    private const val TOMBSTONES_KEY = "native_alert_cancel_tombstones_v1"
 
     // Legacy single-slot keys (pre-queue). Read once, migrated, then removed.
     private const val LEGACY_TIMESTAMP_KEY = "native_alert_timestamp"
@@ -76,9 +77,11 @@ internal object NativeAlertRelay {
             timestamp,
             requestedId,
             source,
-            System.currentTimeMillis()
+            System.currentTimeMillis(),
+            readTombstones(context)
         )
         writeQueue(context, result.items)
+        writeTombstones(context, result.tombstones)
         result.dropped.forEach {
             recordOutcome(context, RelayOutcome(it.clientAlertId, it.timestamp, RelayOutcomeKind.DROPPED))
         }
@@ -86,26 +89,49 @@ internal object NativeAlertRelay {
         return result.clientAlertId
     }
 
+    /**
+     * Cancels the matching incident. A targeted cancel that arrives before its
+     * fall is kept as a short-lived tombstone so the fall is queued cancelled.
+     */
     @Synchronized
     fun requestCancel(context: Context, incidentId: String? = null, fallTimestamp: Long? = null) {
-        val items = readQueue(context)
-        if (items.isEmpty()) return
-        writeQueue(context, NativeAlertQueue.requestCancel(items, incidentId, fallTimestamp))
-        schedule(context)
+        val result = NativeAlertQueue.requestCancel(
+            readQueue(context),
+            incidentId,
+            fallTimestamp,
+            System.currentTimeMillis(),
+            readTombstones(context)
+        )
+        writeQueue(context, result.items)
+        writeTombstones(context, result.tombstones)
+        if (result.items.isNotEmpty()) schedule(context)
     }
 
-    /** Snapshot of the queue after pruning expired items. */
+    /** Snapshot of the queue after pruning expired items (never silently). */
     @Synchronized
     fun pending(context: Context): List<QueuedAlert> {
         val current = readQueue(context)
-        val (kept, expired) = NativeAlertQueue.prune(current, System.currentTimeMillis())
+        val (kept, outcomes) = NativeAlertQueue.prune(current, System.currentTimeMillis())
         if (kept.size != current.size) {
             writeQueue(context, kept)
-            expired.forEach {
-                recordOutcome(context, RelayOutcome(it.clientAlertId, it.timestamp, RelayOutcomeKind.DROPPED))
-            }
+            outcomes.forEach { recordOutcome(context, it) }
         }
         return kept
+    }
+
+    /**
+     * Called before the phone re-registers as a new device: queued incidents
+     * must not be sent under the new, caregiver-less registration. They are
+     * reported instead (history: caregivers may not have been reached).
+     */
+    @Synchronized
+    fun discardForRepair(context: Context): Int {
+        val items = readQueue(context)
+        val outcomes = NativeAlertQueue.discardForRepair(items)
+        outcomes.forEach { recordOutcome(context, it) }
+        writeQueue(context, emptyList())
+        writeTombstones(context, emptyList())
+        return items.size
     }
 
     @Synchronized
@@ -125,12 +151,27 @@ internal object NativeAlertRelay {
         if (outcome != null) recordOutcome(context, RelayOutcome(item.clientAlertId, item.timestamp, outcome))
     }
 
-    /** Hands terminal outcomes to Flutter (history) and forgets them. */
     @Synchronized
-    fun takeOutcomes(context: Context): List<RelayOutcome> {
-        val outcomes = NativeAlertQueue.decodeOutcomes(prefs(context).getString(OUTCOMES_KEY, null))
-        prefs(context).edit().remove(OUTCOMES_KEY).apply()
-        return outcomes
+    fun recordOutcome(context: Context, clientAlertId: String, kind: RelayOutcomeKind) {
+        val item = readQueue(context).firstOrNull { it.clientAlertId == clientAlertId } ?: return
+        recordOutcome(context, RelayOutcome(item.clientAlertId, item.timestamp, kind))
+    }
+
+    /**
+     * Terminal outcomes for Flutter's history. They stay stored until Flutter
+     * acknowledges them ([acknowledgeOutcomes]) after persisting, so a crash
+     * between the two steps never loses one.
+     */
+    @Synchronized
+    fun peekOutcomes(context: Context): List<RelayOutcome> =
+        NativeAlertQueue.decodeOutcomes(prefs(context).getString(OUTCOMES_KEY, null))
+
+    @Synchronized
+    fun acknowledgeOutcomes(context: Context, keys: Collection<String>) {
+        val remaining = NativeAlertQueue.acknowledge(peekOutcomes(context), keys)
+        prefs(context).edit()
+            .putString(OUTCOMES_KEY, NativeAlertQueue.encodeOutcomes(remaining))
+            .commit()
     }
 
     fun markReauthRequired(context: Context) {
@@ -153,7 +194,16 @@ internal object NativeAlertRelay {
         val existing = NativeAlertQueue.decodeOutcomes(prefs(context).getString(OUTCOMES_KEY, null))
         prefs(context).edit()
             .putString(OUTCOMES_KEY, NativeAlertQueue.encodeOutcomes(existing + outcome))
-            .apply()
+            .commit()
+    }
+
+    private fun readTombstones(context: Context): List<CancelTombstone> =
+        NativeAlertQueue.decodeTombstones(prefs(context).getString(TOMBSTONES_KEY, null))
+
+    private fun writeTombstones(context: Context, tombstones: List<CancelTombstone>) {
+        prefs(context).edit()
+            .putString(TOMBSTONES_KEY, NativeAlertQueue.encodeTombstones(tombstones))
+            .commit()
     }
 
     private fun readQueue(context: Context): List<QueuedAlert> {

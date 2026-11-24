@@ -38,6 +38,7 @@ class WearDataListenerService : WearableListenerService() {
         // "Fall Alerts" entry in system notification settings.
         private const val CHANNEL_ID = "fall_guardian_alerts"
         private const val DATA_EVENT_TTL_MS = 2 * 60 * 1000L
+        private const val DISPLAYED_NOTIFICATION_KEY = "displayed_fall_notification"
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
@@ -119,6 +120,9 @@ class WearDataListenerService : WearableListenerService() {
     }
 
     private fun handleFallDetected(timestamp: Long, incidentId: String?) {
+        // Watch UUID, forwarded to Flutter as an alias when the incident is
+        // already known under another id (e.g. legacy transport first).
+        val watchIncidentId = NativeAlertRelayPolicy.normalizedIncidentId(incidentId)
         // Persist and schedule backend registration before touching UI. The
         // JobService survives a missing Flutter engine, process death and
         // temporary network loss. Dart receives the same idempotency key when
@@ -132,7 +136,7 @@ class WearDataListenerService : WearableListenerService() {
         if (activity != null && activity.isInForeground) {
             // App is visible — invoke the Flutter channel directly.
             // No notification needed: Flutter will push FallAlertScreen immediately.
-            activity.sendFallDetectedToFlutter(timestamp, clientAlertId)
+            activity.sendFallDetectedToFlutter(timestamp, clientAlertId, watchIncidentId)
             return
         }
 
@@ -151,11 +155,25 @@ class WearDataListenerService : WearableListenerService() {
         // taps the notification. A dedup guard in MainActivity prevents a double FallAlertScreen
         // if the user later taps the notification (which fires onNewIntent with the same
         // timestamp).
-        showFallNotification(timestamp, clientAlertId)
-        activity?.sendFallDetectedToFlutter(timestamp, clientAlertId)
+        showFallNotification(timestamp, clientAlertId, watchIncidentId)
+        activity?.sendFallDetectedToFlutter(timestamp, clientAlertId, watchIncidentId)
     }
 
-    private fun showFallNotification(timestamp: Long, clientAlertId: String) {
+    private fun showFallNotification(
+        timestamp: Long,
+        clientAlertId: String,
+        watchIncidentId: String?
+    ) {
+        // Remember which incident the notification shows, so a delayed cancel
+        // for another incident cannot remove it.
+        getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE).edit()
+            .putString(
+                DISPLAYED_NOTIFICATION_KEY,
+                FallNotificationPolicy.encode(
+                    DisplayedFallNotification(clientAlertId, watchIncidentId, timestamp)
+                )
+            )
+            .apply()
         val nm = getSystemService(NotificationManager::class.java)
 
         // Create the channel if it doesn't exist yet (idempotent — no-op if
@@ -206,12 +224,19 @@ class WearDataListenerService : WearableListenerService() {
 
     private fun handleCancelAlert(rawIncidentId: String?, fallTimestamp: Long?) {
         val incidentId = NativeAlertRelayPolicy.normalizedIncidentId(rawIncidentId)
-        getSystemService(NotificationManager::class.java)
-            ?.cancel(FALL_WAKEUP_NOTIF_ID)
+        val prefs = getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE)
+        val displayed = FallNotificationPolicy.decode(
+            prefs.getString(DISPLAYED_NOTIFICATION_KEY, null)
+        )
+        if (FallNotificationPolicy.shouldDismiss(displayed, incidentId, fallTimestamp)) {
+            getSystemService(NotificationManager::class.java)
+                ?.cancel(FALL_WAKEUP_NOTIF_ID)
+            prefs.edit().remove(DISPLAYED_NOTIFICATION_KEY).apply()
+        }
 
         MainActivity.storePendingCancel(applicationContext, incidentId, fallTimestamp)
         NativeAlertRelay.requestCancel(applicationContext, incidentId, fallTimestamp)
 
-        MainActivity.getInstance()?.sendCancelAlertToFlutter(incidentId, fallTimestamp)
+        MainActivity.getInstance()?.deliverPendingCancelsToFlutter()
     }
 }

@@ -20,24 +20,63 @@ class MainActivity : FlutterActivity() {
         const val SECURE_STORAGE_CHANNEL = "fall_guardian/secure_storage"
         const val PREFS_NAME = "fall_guardian"
         const val PENDING_THRESHOLDS_KEY = "pending_thresholds_json"
+        // Legacy single-slot pending cancel (migrated into the list on read).
         const val PENDING_CANCEL_KEY = "pending_alert_cancelled"
         private const val PENDING_CANCEL_INCIDENT_KEY = "pending_alert_cancelled_incident_id"
         private const val PENDING_CANCEL_FALL_TIMESTAMP_KEY = "pending_alert_cancelled_fall_timestamp"
+        private const val PENDING_CANCELS_KEY = "pending_alert_cancels_v1"
 
         /**
-         * Persists a watch cancel for Flutter until the engine consumes it.
-         * The optional target lets Flutter cancel only the matching incident.
+         * Persists a watch cancel for Flutter until Flutter confirms it handled
+         * it. Kept in a list so concurrent/targeted cancels never overwrite
+         * each other.
          */
+        @Synchronized
         fun storePendingCancel(context: Context, incidentId: String?, fallTimestamp: Long?) {
+            val entry = PendingCancel(
+                entryId = "c${System.currentTimeMillis()}-${(Math.random() * 1_000_000).toInt()}",
+                incidentId = incidentId,
+                fallTimestamp = fallTimestamp
+            )
+            writePendingCancels(context, PendingCancels.add(readPendingCancels(context), entry))
+        }
+
+        @Synchronized
+        internal fun readPendingCancels(context: Context): List<PendingCancel> {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.contains(PENDING_CANCELS_KEY)) {
+                val migrated = PendingCancels.migrateLegacy(
+                    pending = prefs.getBoolean(PENDING_CANCEL_KEY, false),
+                    incidentId = prefs.getString(PENDING_CANCEL_INCIDENT_KEY, null),
+                    fallTimestamp = if (prefs.contains(PENDING_CANCEL_FALL_TIMESTAMP_KEY)) {
+                        prefs.getLong(PENDING_CANCEL_FALL_TIMESTAMP_KEY, 0L)
+                    } else {
+                        null
+                    }
+                )
+                prefs.edit()
+                    .putString(PENDING_CANCELS_KEY, PendingCancels.encode(migrated))
+                    .remove(PENDING_CANCEL_KEY)
+                    .remove(PENDING_CANCEL_INCIDENT_KEY)
+                    .remove(PENDING_CANCEL_FALL_TIMESTAMP_KEY)
+                    .commit()
+                return migrated
+            }
+            return PendingCancels.decode(prefs.getString(PENDING_CANCELS_KEY, null))
+        }
+
+        @Synchronized
+        internal fun removePendingCancel(context: Context, entryId: String) {
+            writePendingCancels(
+                context,
+                PendingCancels.remove(readPendingCancels(context), entryId)
+            )
+        }
+
+        private fun writePendingCancels(context: Context, entries: List<PendingCancel>) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putBoolean(PENDING_CANCEL_KEY, true)
-                .apply {
-                    if (incidentId != null) putString(PENDING_CANCEL_INCIDENT_KEY, incidentId)
-                    else remove(PENDING_CANCEL_INCIDENT_KEY)
-                    if (fallTimestamp != null) putLong(PENDING_CANCEL_FALL_TIMESTAMP_KEY, fallTimestamp)
-                    else remove(PENDING_CANCEL_FALL_TIMESTAMP_KEY)
-                }
-                .apply()
+                .putString(PENDING_CANCELS_KEY, PendingCancels.encode(entries))
+                .commit()
         }
 
         // WeakReference prevents Activity leak; @Volatile ensures cross-thread visibility.
@@ -64,6 +103,8 @@ class MainActivity : FlutterActivity() {
     // notification; when the user taps the notification onNewIntent fires with
     // the same timestamp — the dedup check here silently drops the duplicate.
     @Volatile private var lastForwardedTimestamp = Long.MIN_VALUE
+    @Volatile private var lastForwardedIncidentId: String? = null
+    private val cancelsInFlight = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     /** True when the activity is currently visible to the user. */
     val isInForeground: Boolean
@@ -108,16 +149,35 @@ class MainActivity : FlutterActivity() {
                         result.success(queuedId)
                     }
                 }
+                // Peek: outcomes stay stored until Flutter acknowledges them
+                // after persisting them in history.
                 "takeRelayOutcomes" -> {
                     result.success(
-                        NativeAlertRelay.takeOutcomes(applicationContext).map {
+                        NativeAlertRelay.peekOutcomes(applicationContext).map {
                             mapOf(
                                 "clientAlertId" to it.clientAlertId,
                                 "timestamp" to it.timestamp,
-                                "outcome" to it.kind.wireName
+                                "outcome" to it.kind.wireName,
+                                "key" to it.key
                             )
                         }
                     )
+                }
+                "acknowledgeRelayOutcomes" -> {
+                    val keys = ((call.arguments as? Map<*, *>)?.get("keys") as? List<*>)
+                        ?.filterIsInstance<String>()
+                        .orEmpty()
+                    NativeAlertRelay.acknowledgeOutcomes(applicationContext, keys)
+                    result.success(null)
+                }
+                // Dart registered its handlers: redeliver watch cancels that
+                // arrived (or failed) before it was ready.
+                "deliverPendingWatchEvents" -> {
+                    result.success(null)
+                    deliverPendingCancelsToFlutter()
+                }
+                "discardQueuedAlertsForRepair" -> {
+                    result.success(NativeAlertRelay.discardForRepair(applicationContext))
                 }
                 "configureNativeAlertRelay" -> {
                     val baseUrl =
@@ -206,9 +266,21 @@ class MainActivity : FlutterActivity() {
      * countdown starts) and also shows a notification. If the user taps the notification, onNewIntent
      * fires with the same timestamp — without dedup we would push FallAlertScreen twice.
      */
-    fun sendFallDetectedToFlutter(timestamp: Long, clientAlertId: String? = null) {
-        if (timestamp == lastForwardedTimestamp) return  // duplicate — already in progress
+    fun sendFallDetectedToFlutter(
+        timestamp: Long,
+        clientAlertId: String? = null,
+        incidentId: String? = null
+    ) {
+        // Duplicate transport of the fall already in progress. It is still
+        // forwarded when it brings a new watch incidentId, so Flutter learns
+        // the alias (no second alert screen: Flutter ignores the duplicate).
+        if (timestamp == lastForwardedTimestamp &&
+            (incidentId == null || incidentId == lastForwardedIncidentId)
+        ) {
+            return
+        }
         lastForwardedTimestamp = timestamp
+        lastForwardedIncidentId = incidentId
         runOnUiThread {
             Log.d("MainActivity", "sendFallDetectedToFlutter: timestamp=$timestamp")
             // Cancel the native wakeup notification shown by WearDataListenerService
@@ -217,10 +289,11 @@ class MainActivity : FlutterActivity() {
                 ?.cancel(WearDataListenerService.FALL_WAKEUP_NOTIF_ID)
             channel.invokeMethod(
                 "onFallDetected",
-                mapOf(
-                    "timestamp" to timestamp,
-                    "clientAlertId" to clientAlertId
-                )
+                buildMap<String, Any> {
+                    put("timestamp", timestamp)
+                    if (clientAlertId != null) put("clientAlertId", clientAlertId)
+                    if (incidentId != null) put("incidentId", incidentId)
+                }
             )
         }
     }
@@ -233,19 +306,43 @@ class MainActivity : FlutterActivity() {
         sendFallDetectedToFlutter(timestamp, clientAlertId)
     }
 
-    fun sendCancelAlertToFlutter(incidentId: String? = null, fallTimestamp: Long? = null) {
-        prefs.edit()
-            .putBoolean(PENDING_CANCEL_KEY, false)
-            .remove(PENDING_CANCEL_INCIDENT_KEY)
-            .remove(PENDING_CANCEL_FALL_TIMESTAMP_KEY)
-            .apply()
+    /**
+     * Delivers every persisted watch cancel to Flutter, in arrival order.
+     * Each entry is removed only once Flutter's handler returned successfully;
+     * on error or a missing handler it stays for the next flush.
+     */
+    fun deliverPendingCancelsToFlutter() {
+        val entries = readPendingCancels(applicationContext)
+        if (entries.isEmpty()) return
         runOnUiThread {
-            Log.d("MainActivity", "sendCancelAlertToFlutter: forwarding cancel to Flutter")
-            val arguments = buildMap<String, Any> {
-                if (incidentId != null) put("incidentId", incidentId)
-                if (fallTimestamp != null) put("fallTimestamp", fallTimestamp)
+            entries.forEach { entry ->
+                if (!cancelsInFlight.add(entry.entryId)) return@forEach
+                Log.d("MainActivity", "deliverPendingCancelsToFlutter: forwarding cancel")
+                val arguments = buildMap<String, Any> {
+                    entry.incidentId?.let { put("incidentId", it) }
+                    entry.fallTimestamp?.let { put("fallTimestamp", it) }
+                }
+                channel.invokeMethod(
+                    "onAlertCancelled",
+                    arguments.ifEmpty { null },
+                    object : MethodChannel.Result {
+                        override fun success(result: Any?) {
+                            cancelsInFlight.remove(entry.entryId)
+                            removePendingCancel(applicationContext, entry.entryId)
+                        }
+
+                        override fun error(code: String, message: String?, details: Any?) {
+                            cancelsInFlight.remove(entry.entryId)
+                            Log.w("MainActivity", "onAlertCancelled failed: $code")
+                        }
+
+                        override fun notImplemented() {
+                            // Dart handler not registered yet; retried on next flush.
+                            cancelsInFlight.remove(entry.entryId)
+                        }
+                    }
+                )
             }
-            channel.invokeMethod("onAlertCancelled", arguments.ifEmpty { null })
         }
     }
 
@@ -328,14 +425,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun flushPendingCancelToFlutter() {
-        if (!prefs.getBoolean(PENDING_CANCEL_KEY, false)) return
-        val incidentId = prefs.getString(PENDING_CANCEL_INCIDENT_KEY, null)
-        val fallTimestamp = if (prefs.contains(PENDING_CANCEL_FALL_TIMESTAMP_KEY)) {
-            prefs.getLong(PENDING_CANCEL_FALL_TIMESTAMP_KEY, 0L)
-        } else {
-            null
-        }
-        sendCancelAlertToFlutter(incidentId, fallTimestamp)
+        deliverPendingCancelsToFlutter()
     }
 
     /**

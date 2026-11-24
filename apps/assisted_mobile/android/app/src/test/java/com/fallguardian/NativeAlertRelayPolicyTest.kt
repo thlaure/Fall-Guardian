@@ -80,10 +80,10 @@ class NativeAlertRelayPolicyTest {
     }
 
     @Test
-    fun `revoked credentials require re-pairing instead of retrying`() {
+    fun `only 401 requires re-pairing, 403 is retried`() {
         RelayOperation.values().forEach {
             assertEquals(RelayHttpOutcome.REAUTH_REQUIRED, NativeAlertRelayPolicy.outcomeFor(it, 401))
-            assertEquals(RelayHttpOutcome.REAUTH_REQUIRED, NativeAlertRelayPolicy.outcomeFor(it, 403))
+            assertEquals(RelayHttpOutcome.RETRY, NativeAlertRelayPolicy.outcomeFor(it, 403))
         }
     }
 

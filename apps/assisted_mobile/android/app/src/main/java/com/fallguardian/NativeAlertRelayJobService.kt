@@ -2,7 +2,6 @@ package com.fallguardian
 
 import android.app.job.JobParameters
 import android.app.job.JobService
-import android.net.Uri
 import android.util.Log
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -13,10 +12,9 @@ import java.util.concurrent.Executors
  * Sends every queued incident without requiring a Flutter Activity.
  *
  * JobScheduler retries (exponential backoff) after process death or network
- * loss. Each incident is submitted first, then cancelled if the wearer already
- * cancelled while the phone process was unavailable. HTTP statuses map to an
- * explicit policy ([NativeAlertRelayPolicy.outcomeFor]) so permanent errors
- * never leave an incident stuck forever and revoked credentials never loop.
+ * loss. The per-incident create/cancel flow and the HTTP status policy live
+ * in the pure [RelayProcessor] so they are unit-tested on the JVM; this
+ * service only provides Android storage, credentials and HTTP.
  */
 class NativeAlertRelayJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
@@ -46,88 +44,36 @@ class NativeAlertRelayJobService : JobService() {
                 ?.takeIf { it.isNotBlank() }
                 ?: return true
 
-        var retry = false
-        for (snapshot in queued) {
-            when (relay(snapshot.clientAlertId, baseUrl, deviceToken)) {
-                ItemResult.DONE -> Unit
-                ItemResult.RETRY -> retry = true
-                ItemResult.REAUTH_REQUIRED -> {
-                    // Never re-register silently: a new device has no caregiver
-                    // links. Flag the state for the UI, keep incidents queued,
-                    // and stop retrying until the user re-pairs.
-                    Log.w(TAG, "Device credentials rejected; re-pairing required")
-                    NativeAlertRelay.markReauthRequired(this)
-                    return false
-                }
-            }
-        }
-        return retry
-    }
+        val context = this
+        val processor = RelayProcessor(
+            store = object : RelayQueueStore {
+                override fun find(clientAlertId: String) =
+                    NativeAlertRelay.find(context, clientAlertId)
 
-    private fun relay(clientAlertId: String, baseUrl: String, token: String): ItemResult {
-        var alert = NativeAlertRelay.find(this, clientAlertId) ?: return ItemResult.DONE
+                override fun markSubmitted(clientAlertId: String) =
+                    NativeAlertRelay.markSubmitted(context, clientAlertId)
 
-        if (!alert.submitted) {
-            val operation = if (alert.cancelRequested) {
-                RelayOperation.CREATE_CANCELLED
-            } else {
-                RelayOperation.CREATE
-            }
-            val status = postJson(
-                "$baseUrl/api/v1/fall-alerts",
-                token,
-                NativeAlertRelay.createPayload(alert, cancelled = alert.cancelRequested)
-            )
-            when (NativeAlertRelayPolicy.outcomeFor(operation, status)) {
-                RelayHttpOutcome.SUCCESS, RelayHttpOutcome.ALREADY_DONE -> {
-                    if (operation == RelayOperation.CREATE_CANCELLED) {
-                        NativeAlertRelay.complete(this, clientAlertId)
-                        return ItemResult.DONE
-                    }
-                    NativeAlertRelay.markSubmitted(this, clientAlertId)
-                }
-                RelayHttpOutcome.TOO_LATE -> {
-                    NativeAlertRelay.complete(this, clientAlertId, RelayOutcomeKind.CANCEL_TOO_LATE)
-                    return ItemResult.DONE
-                }
-                RelayHttpOutcome.REJECTED -> {
-                    Log.e(TAG, "Fall alert rejected permanently (HTTP $status)")
-                    NativeAlertRelay.complete(this, clientAlertId, RelayOutcomeKind.CREATE_REJECTED)
-                    return ItemResult.DONE
-                }
-                RelayHttpOutcome.REAUTH_REQUIRED -> return ItemResult.REAUTH_REQUIRED
-                RelayHttpOutcome.RETRY -> return ItemResult.RETRY
-            }
-            alert = NativeAlertRelay.find(this, clientAlertId) ?: return ItemResult.DONE
-        }
+                override fun complete(clientAlertId: String, outcome: RelayOutcomeKind?) =
+                    NativeAlertRelay.complete(context, clientAlertId, outcome)
 
-        if (!alert.cancelRequested) {
-            // Keep the submitted state until the retention window ends. A later
-            // watch/phone cancel can reschedule this job without Flutter.
-            return ItemResult.DONE
-        }
-
-        val status = postJson(
-            "$baseUrl/api/v1/fall-alerts/${Uri.encode(clientAlertId)}/cancel",
-            token,
-            null
+                override fun recordOutcome(clientAlertId: String, outcome: RelayOutcomeKind) =
+                    NativeAlertRelay.recordOutcome(context, clientAlertId, outcome)
+            },
+            post = { path, body -> postJson("$baseUrl$path", deviceToken, body) },
+            createPayload = NativeAlertRelay::createPayload
         )
-        return when (NativeAlertRelayPolicy.outcomeFor(RelayOperation.CANCEL, status)) {
-            RelayHttpOutcome.SUCCESS, RelayHttpOutcome.ALREADY_DONE -> {
-                NativeAlertRelay.complete(this, clientAlertId)
-                ItemResult.DONE
+
+        return when (processor.relay(queued.map { it.clientAlertId })) {
+            RelayPassResult.DONE -> false
+            RelayPassResult.RETRY -> true
+            RelayPassResult.REAUTH_REQUIRED -> {
+                // 401 only. Never re-register silently: a new device has no
+                // caregiver links. Flag the state for the UI, keep incidents
+                // queued, and stop until the user re-pairs.
+                Log.w(TAG, "Device credentials rejected; re-pairing required")
+                NativeAlertRelay.markReauthRequired(this)
+                false
             }
-            RelayHttpOutcome.TOO_LATE -> {
-                NativeAlertRelay.complete(this, clientAlertId, RelayOutcomeKind.CANCEL_TOO_LATE)
-                ItemResult.DONE
-            }
-            RelayHttpOutcome.REJECTED -> {
-                Log.e(TAG, "Fall alert cancellation rejected permanently (HTTP $status)")
-                NativeAlertRelay.complete(this, clientAlertId, RelayOutcomeKind.CANCEL_REJECTED)
-                ItemResult.DONE
-            }
-            RelayHttpOutcome.REAUTH_REQUIRED -> ItemResult.REAUTH_REQUIRED
-            RelayHttpOutcome.RETRY -> ItemResult.RETRY
         }
     }
 
@@ -165,8 +111,6 @@ class NativeAlertRelayJobService : JobService() {
             connection.disconnect()
         }
     }
-
-    private enum class ItemResult { DONE, RETRY, REAUTH_REQUIRED }
 
     private companion object {
         const val TAG = "NativeAlertRelay"
