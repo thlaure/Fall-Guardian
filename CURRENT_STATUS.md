@@ -185,6 +185,9 @@ file, an issue, or a PR.
 
 ## 8. Running locally
 
+Local development requires Flutter **stable 3.50.1** for both mobile apps
+(the version pinned in assisted and caregiver CI; 🟡 in PR stack).
+
 From the root:
 
 ```sh
