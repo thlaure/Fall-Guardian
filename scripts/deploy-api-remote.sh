@@ -9,7 +9,8 @@
 #   2. pull the new image
 #   3. run Doctrine migrations with the NEW image in a one-off container
 #   4. start the new containers
-#   5. probe /health; on failure restore the previous image and exit non-zero
+#   5. probe /health; if starting containers or the probe fails, restore the
+#      previous image and exit non-zero
 #
 # Schema changes are NOT rolled back. Migrations must therefore be backward
 # compatible with the previously deployed code (expand/contract): add columns
@@ -82,28 +83,32 @@ echo "==> Running database migrations with the new image"
 compose run --rm migrate \
     php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
 
+# From here on, a failing `compose up` may already have stopped or recreated
+# production containers, so it must not abort via `set -e`: both an `up`
+# failure and a failed health probe go through the same diagnostics/rollback.
 echo "==> Starting new containers"
-compose up -d --no-build --remove-orphans "${app_services[@]}"
-
-echo "==> Probing health"
-if probe_health; then
+if ! compose up -d --no-build --remove-orphans "${app_services[@]}"; then
+    echo "::error::Starting containers on ${new_image} failed." >&2
+elif echo "==> Probing health" && probe_health; then
     printf '%s\n' "$new_image" > "$last_image_file"
     echo "Deployed ${new_image}."
     exit 0
+else
+    echo "::error::Health probe failed for ${new_image}." >&2
 fi
-
-echo "::error::Health probe failed for ${new_image}." >&2
 dump_diagnostics
 
 if [ -z "$previous_image" ] || [ "$previous_image" = "$new_image" ]; then
-    echo "::error::No previous image to roll back to." >&2
+    echo "::error::No previous image to roll back to. Manual intervention required." >&2
     exit 1
 fi
 
 echo "==> Rolling containers back to ${previous_image} (database schema is not rolled back)"
 export API_IMAGE="$previous_image"
-compose up -d --no-build --remove-orphans "${app_services[@]}"
-if probe_health; then
+if ! compose up -d --no-build --remove-orphans "${app_services[@]}"; then
+    echo "::error::Rollback to ${previous_image} failed to start containers. Manual intervention required." >&2
+    dump_diagnostics
+elif probe_health; then
     echo "::error::Rolled back to ${previous_image}; deploy of ${new_image} failed." >&2
 else
     echo "::error::Rollback to ${previous_image} is also unhealthy. Manual intervention required." >&2
